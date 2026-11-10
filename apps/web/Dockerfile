@@ -7,8 +7,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global --ignore-scripts --no-fund --no-audit npm@11.21.2
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY . .
+# Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
+RUN node node_modules/nuxt/bin/nuxt.mjs prepare
 
 # Проверки запускаются явно: make test / docker build --target checks.
 FROM source AS checks
@@ -20,6 +22,7 @@ RUN npm run build
 FROM gcr.io/distroless/nodejs26-debian13:nonroot AS runtime
 WORKDIR /app
 COPY --from=build --chown=nonroot:nonroot /app/.output ./.output
+USER nonroot:nonroot
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \

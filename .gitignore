@@ -16,6 +16,13 @@ __pycache__/
 *.pyc
 *.dump
 
+# Local analyzer configuration, caches and generated files.
+/.codacy/
+/.sonarlint/
+/.scannerwork/
+/.sonarqube/
+/.sonar/
+
 # Internal material belongs to the separate documentation repository.
 /docs/
 /AGENTS.md
@@ -26,3 +33,7 @@ __pycache__/
 !/sites/example.test/
 /sites/example.test/*
 !/sites/example.test/.env.example
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

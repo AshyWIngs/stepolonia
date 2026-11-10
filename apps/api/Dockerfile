@@ -21,5 +21,6 @@ RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' 
 FROM gcr.io/distroless/static-debian13:nonroot AS runtime
 WORKDIR /app
 COPY --from=build --chown=nonroot:nonroot /out/api ./api
+USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]

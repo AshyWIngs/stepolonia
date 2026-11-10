@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useHead, useRuntimeConfig } from '#imports'
+
 const { site } = useRuntimeConfig().public
 useHead({
   title: site.name,
