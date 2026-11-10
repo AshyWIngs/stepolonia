@@ -1,0 +1,167 @@
+name: ${COMPOSE_PROJECT_NAME:?Select an installation with its env file}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    user: "10001:10001"
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    tmpfs:
+      - /data:uid=10001,gid=10001,mode=0700
+      - /config:uid=10001,gid=10001,mode=0700
+    networks: [app]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 100
+    logging: *logging
+    depends_on:
+      api: { condition: service_healthy }
+      web: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -q, --spider, "http://127.0.0.1:8081/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  web:
+    image: sp-web:stage0
+    build: { context: ../apps/web }
+    environment:
+      NODE_OPTIONS: --max-old-space-size=384
+      NUXT_PUBLIC_SITE_NAME: ${NUXT_PUBLIC_SITE_NAME:?}
+      NUXT_PUBLIC_SITE_TAGLINE: ${NUXT_PUBLIC_SITE_TAGLINE:-}
+      NUXT_PUBLIC_SITE_DESCRIPTION: ${NUXT_PUBLIC_SITE_DESCRIPTION:-}
+      NUXT_PUBLIC_SITE_NOTICE: ${NUXT_PUBLIC_SITE_NOTICE:-}
+      NUXT_PUBLIC_SITE_LOCALE: ${NUXT_PUBLIC_SITE_LOCALE:-ru}
+      NUXT_PUBLIC_SITE_ACCENT: ${NUXT_PUBLIC_SITE_ACCENT:-#a52837}
+    networks: [app]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 100
+    logging: *logging
+    healthcheck:
+      test: [CMD, /nodejs/bin/node, --input-type=module, -e, "const r = await fetch('http://127.0.0.1:3000/health/live', {signal: AbortSignal.timeout(2000)}); process.exit(r.ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  api:
+    image: sp-api:stage0
+    build: { context: ../apps/api }
+    environment:
+      DB_PASSWORD_FILE: /run/secrets/db_app_password
+      DB_NAME: ${POSTGRES_DB:?}
+      DB_USER: ${DB_USER:?}
+      GOMEMLIMIT: 192MiB
+    secrets: [db_app_password]
+    networks: [app, data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    logging: *logging
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, /app/api, healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  postgres-init:
+    image: sp-postgres-init:stage0
+    build: { context: ./postgres, target: bootstrap }
+    user: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?}
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      DB_USER: ${DB_USER:?}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_owner_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=trust
+    secrets: [db_owner_password, db_app_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=999,gid=999,mode=0770
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+    stop_grace_period: 30s
+    mem_limit: 1536m
+    cpus: 0.5
+    pids_limit: 150
+    logging: *logging
+
+  postgres:
+    image: sp-postgres:stage0
+    build: { context: ./postgres }
+    user: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?}
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      DB_USER: ${DB_USER:?}
+    secrets: [db_app_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=999,gid=999,mode=0770
+    networks: [data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 1536m
+    cpus: 0.5
+    pids_limit: 150
+    logging: *logging
+    depends_on:
+      postgres-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, /usr/local/bin/pg-healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+networks:
+  app: {}
+  data: { internal: true }
+
+volumes:
+  postgres_data:
+    name: ${DB_VOLUME_NAME:?}
+    external: ${DB_VOLUME_EXTERNAL:-false}
+
+secrets:
+  db_owner_password: { file: "../sites/${SITE_ID:?}/.secrets/db_owner_password" }
+  db_app_password: { file: "../sites/${SITE_ID:?}/.secrets/db_app_password" }

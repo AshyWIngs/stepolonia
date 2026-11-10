@@ -1,0 +1,9 @@
+node_modules
+.nuxt
+.output
+coverage
+test-results
+.git
+.env
+.env.*
+.secrets

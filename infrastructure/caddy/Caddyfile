@@ -1,0 +1,47 @@
+{
+	admin off
+	auto_https off
+	grace_period 8s
+}
+
+:8080 {
+	log {
+		output stdout
+		format json
+	}
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Robots-Tag "noindex, nofollow"
+	}
+	request_body {
+		max_size 1MB
+	}
+	@private path /health/* /docs /docs/* /openapi* /schemas/*
+	handle @private {
+		respond 404
+	}
+	handle /api/v1/* {
+		reverse_proxy api:8080 {
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 10s
+			}
+		}
+	}
+	handle {
+		reverse_proxy web:3000 {
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 10s
+			}
+		}
+	}
+}
+
+# Container-only liveness listener; this port is never published.
+:8081 {
+	respond /health/live "ok" 200
+}

@@ -1,0 +1,28 @@
+.DS_Store
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+.secrets/
+.site.mk
+node_modules/
+.nuxt/
+.output/
+coverage/
+test-results/
+reports/
+__pycache__/
+*.pyc
+*.dump
+
+# Internal material belongs to the separate documentation repository.
+/docs/
+/AGENTS.md
+/writing-block*
+
+# Only the generic installation example is published.
+/sites/*
+!/sites/example.test/
+/sites/example.test/*
+!/sites/example.test/.env.example
