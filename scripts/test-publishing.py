@@ -20,14 +20,29 @@ def command(arguments, log, *, env=None, capture=False, cwd=ROOT):
     return result.stdout.strip() if capture else ""
 
 
+def verify_named_volume(project, token, volume, log):
+    """Проверяем точный том: чужой том может не попасть в фильтр Compose project."""
+    existing = command(["docker", "volume", "ls", "--format", "{{.Name}}"], log, capture=True).splitlines()
+    if volume not in existing:
+        return
+    inspected = json.loads(command(["docker", "volume", "inspect", volume], log, capture=True))
+    if len(inspected) != 1 or (inspected[0].get("Labels") or {}).get(LABEL) != token:
+        raise RuntimeError(f"Очистка запрещена: том {volume} не принадлежит тесту {project}")
+
+
+def verify_resource_owner(item, resource, project, token):
+    """Отсутствующий или чужой маркер запрещает очистку найденного ресурса."""
+    metadata = item.get("Config", {}) if resource == "container" else item
+    labels = metadata.get("Labels") or {}
+    if labels.get(LABEL) != token:
+        raise RuntimeError(f"Очистка запрещена: другой маркер владельца ресурса {resource}; "
+                           f"проект {project}. Сохраните ресурсы и проверьте их владельца вручную")
+
+
 def verify_owned(project, token, log, *, volume=None):
     # Имена ресурсов недостаточны: удалять можно только ресурсы с нашим маркером.
     if volume is not None:
-        existing = command(["docker", "volume", "ls", "--format", "{{.Name}}"], log, capture=True).splitlines()
-        if volume in existing:
-            inspected = json.loads(command(["docker", "volume", "inspect", volume], log, capture=True))
-            if len(inspected) != 1 or (inspected[0].get("Labels") or {}).get(LABEL) != token:
-                raise RuntimeError(f"Очистка запрещена: том {volume} не принадлежит тесту {project}")
+        verify_named_volume(project, token, volume, log)
     for resource, listing, inspect in (
         ("container", ["docker", "ps", "-aq"], ["docker", "inspect"]),
         ("volume", ["docker", "volume", "ls", "-q"], ["docker", "volume", "inspect"]),
@@ -39,10 +54,7 @@ def verify_owned(project, token, log, *, volume=None):
             continue
         resources = json.loads(command([*inspect, *ids], log, capture=True))
         for item in resources:
-            labels = (item.get("Config", {}).get("Labels") if resource == "container" else item.get("Labels")) or {}
-            if labels.get(LABEL) != token:
-                raise RuntimeError(f"Очистка запрещена: другой маркер владельца ресурса {resource}; "
-                                   f"проект {project}. Сохраните ресурсы и проверьте их владельца вручную")
+            verify_resource_owner(item, resource, project, token)
 
 
 def main():
