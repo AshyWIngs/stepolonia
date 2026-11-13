@@ -2,7 +2,7 @@
 SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed sdk
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -42,6 +42,13 @@ lifecycle: setup
 isolation: setup
 	python3 scripts/check-isolation.py --site "$(SITE)"
 
-migrate seed sdk:
+migrate seed import-languages:
+	@test "$(origin SITE)" = "command line" || { echo 'Укажите SITE в командной строке для обслуживания БД'; exit 2; }
+	python3 scripts/db_tools.py --site "$(SITE)" $@ $(if $(filter migrate,$@),$(or $(ACTION),up)) $(if $(filter import-languages,$@),"$(FILE)")
+
+db-test:
+	python3 scripts/test-publishing.py
+
+sdk:
 	@echo "$@ is not implemented in Stage 0; Publishing, migrations and SDK belong to Stage 1."
 	@exit 2
