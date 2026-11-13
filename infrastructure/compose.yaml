@@ -93,6 +93,26 @@ services:
       retries: 3
       start_period: 10s
 
+  db-tools:
+    profiles: [tools]
+    image: sp-db-tools:stage1.2
+    build: { context: ../apps/api, target: dbtools }
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:?}
+      DB_USER: ${POSTGRES_USER:?}
+      RUNTIME_DB_USER: ${DB_USER:?}
+      DB_PASSWORD_FILE: /run/secrets/db_owner_password
+    secrets: [db_owner_password]
+    networks: [data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+    mem_limit: 192m
+    pids_limit: 64
+    logging: *logging
+
   postgres-init:
     image: sp-postgres-init:stage0
     build: { context: ./postgres, target: bootstrap }
