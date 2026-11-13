@@ -1,0 +1,43 @@
+name: Verify
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: Compose configuration
+        run: make SITE=ci.test config
+      - name: Source checks
+        run: make SITE=ci.test test
+      - name: Runtime images
+        run: make SITE=ci.test build
+      - name: Disposable PostgreSQL integration
+        run: make db-test
+      - name: PostgreSQL failure details
+        if: failure()
+        run: |
+          for log in reports/publishing-*.log; do
+            if [ -f "$log" ]; then
+              tail -n 120 "$log"
+            fi
+          done

@@ -1,4 +1,17 @@
 -- +goose Up
+-- +goose StatementBegin
+DO $precondition$
+BEGIN
+ -- Не принимаем чужие publishing-объекты за новую установку.
+ IF EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
+ ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','public_languages','public_article_translations','public_article_routes'))
+ OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
+ ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages')) THEN
+ RAISE EXCEPTION 'publishing-объекты уже существуют; установка остановлена до DDL';
+ END IF;
+END;
+$precondition$;
+-- +goose StatementEnd
 -- Match Go strings.TrimSpace Unicode White_Space independently of DB locale.
 CREATE TABLE public.languages (
  code text COLLATE "C" CONSTRAINT languages_pkey PRIMARY KEY,
@@ -180,7 +193,95 @@ GRANT EXECUTE ON FUNCTION public.lock_languages(text[]) TO sp_publisher;
 GRANT SELECT ON public.languages TO sp_language_importer;
 GRANT INSERT(code,name,native_name,direction), UPDATE(name,native_name,direction) ON public.languages TO sp_language_importer;
 
+
+COMMENT ON TABLE public.languages IS 'Каталог языков установки; включение языка разрешается отдельно от импорта метаданных.';
+COMMENT ON COLUMN public.languages.code IS 'Нормализованный код языка BCP 47 в нижнем регистре; ключ переводов и маршрутов.';
+COMMENT ON COLUMN public.languages.name IS 'Название языка для выбора языка интерфейса.';
+COMMENT ON COLUMN public.languages.native_name IS 'Самоназвание языка на его родном языке.';
+COMMENT ON COLUMN public.languages.direction IS 'Направление письма: ltr или rtl.';
+COMMENT ON COLUMN public.languages.is_enabled IS 'Разрешение публичной выдачи языка; новый язык по умолчанию выключен.';
+COMMENT ON TABLE public.articles IS 'Статьи с независимым черновиком и указателем на текущую опубликованную ревизию.';
+COMMENT ON COLUMN public.articles.id IS 'Стабильный идентификатор статьи, общий для всех её переводов и ревизий.';
+COMMENT ON COLUMN public.articles.version IS 'Версия статьи для проверки конкурентных изменений; начинается с единицы.';
+COMMENT ON COLUMN public.articles.published_revision_id IS 'Текущая собственная закрытая ревизия; NULL означает отсутствие публикации.';
+COMMENT ON TABLE public.article_draft_translations IS 'Редактируемые переводы черновика; содержимое недоступно публичной роли.';
+COMMENT ON COLUMN public.article_draft_translations.article_id IS 'Статья, которой принадлежит редактируемый перевод.';
+COMMENT ON COLUMN public.article_draft_translations.language_code IS 'Язык редактируемого перевода из каталога установки.';
+COMMENT ON COLUMN public.article_draft_translations.title IS 'Заголовок черновика; NULL допустим до готовности перевода.';
+COMMENT ON COLUMN public.article_draft_translations.slug IS 'Предлагаемый адрес перевода; черновик не резервирует публичный маршрут.';
+COMMENT ON COLUMN public.article_draft_translations.body_markdown IS 'Текст черновика в Markdown; NULL допустим до готовности перевода.';
+COMMENT ON COLUMN public.article_draft_translations.is_ready IS 'Редактор подтвердил полноту перевода; изменение содержимого сбрасывает готовность.';
+COMMENT ON TABLE public.article_revisions IS 'Снимки публикации статьи; после закрытия неизменяемы и сохраняются в истории.';
+COMMENT ON COLUMN public.article_revisions.id IS 'Идентификатор снимка публикации.';
+COMMENT ON COLUMN public.article_revisions.article_id IS 'Статья-владелец снимка; внешний указатель публикации проверяет этого владельца.';
+COMMENT ON COLUMN public.article_revisions.revision_no IS 'Порядковый номер снимка внутри статьи, начиная с единицы.';
+COMMENT ON COLUMN public.article_revisions.sealed IS 'Снимок закрыт для добавления и изменения переводов; незакрытый снимок нельзя зафиксировать.';
+COMMENT ON COLUMN public.article_revisions.created_at IS 'Время создания снимка по часам PostgreSQL с часовым поясом.';
+COMMENT ON TABLE public.public_routes IS 'Постоянные резервирования адресов статьи; старый адрес ведёт к текущему переводу владельца.';
+COMMENT ON COLUMN public.public_routes.language_code IS 'Язык адреса; публичная выдача допускается только при включённом языке.';
+COMMENT ON COLUMN public.public_routes.slug IS 'Навсегда зарезервированный адрес в пределах языка, включая исторические alias.';
+COMMENT ON COLUMN public.public_routes.article_id IS 'Владелец адреса; адрес нельзя передать другой статье или удалить.';
+COMMENT ON TABLE public.article_revision_translations IS 'Неизменяемые переводы закрытых снимков; история не выдаётся публичной роли.';
+COMMENT ON COLUMN public.article_revision_translations.article_id IS 'Владелец перевода; должен совпадать с владельцем снимка и адреса.';
+COMMENT ON COLUMN public.article_revision_translations.revision_id IS 'Снимок, в который включён перевод.';
+COMMENT ON COLUMN public.article_revision_translations.language_code IS 'Язык перевода; в снимке допускается один перевод на язык.';
+COMMENT ON COLUMN public.article_revision_translations.title IS 'Непустой заголовок перевода в момент публикации.';
+COMMENT ON COLUMN public.article_revision_translations.slug IS 'Адрес перевода в данном снимке, закреплённый за той же статьёй.';
+COMMENT ON COLUMN public.article_revision_translations.body_markdown IS 'Непустой текст Markdown в момент публикации.';
+COMMENT ON FUNCTION public.reset_draft_ready() IS 'Сбрасывает готовность чернового перевода при изменении содержимого.';
+COMMENT ON FUNCTION public.guard_revision_translation() IS 'Сериализует добавление перевода с закрытием снимка и запрещает изменение закрытого снимка.';
+COMMENT ON FUNCTION public.guard_revision() IS 'Запрещает изменение закрытого снимка, идентификаторов и закрытие пустого снимка.';
+COMMENT ON FUNCTION public.require_closed_revision() IS 'На границе транзакции запрещает сохранение незакрытого снимка.';
+COMMENT ON FUNCTION public.guard_published_revision() IS 'Разрешает публикацию только собственной закрытой ревизии статьи.';
+COMMENT ON FUNCTION public.keep_route_reservation() IS 'Сохраняет постоянное владение публичным адресом при изменении публикации.';
+COMMENT ON FUNCTION public.lock_languages(text[]) IS 'Блокирует выбранные языки до конца транзакции публикации без выдачи редактору права менять каталог.';
+COMMENT ON TRIGGER article_drafts_reset_ready ON public.article_draft_translations IS 'Сбрасывает готовность чернового перевода при изменении содержимого.';
+COMMENT ON TRIGGER article_revision_translations_guard ON public.article_revision_translations IS 'Сериализует добавление перевода с закрытием снимка и запрещает изменение закрытого снимка.';
+COMMENT ON TRIGGER article_revisions_guard ON public.article_revisions IS 'Запрещает изменение закрытого снимка, идентификаторов и закрытие пустого снимка.';
+COMMENT ON TRIGGER article_revisions_closed ON public.article_revisions IS 'На границе транзакции запрещает сохранение незакрытого снимка.';
+COMMENT ON TRIGGER articles_published_guard ON public.articles IS 'Разрешает публикацию только собственной закрытой ревизии статьи.';
+COMMENT ON TRIGGER public_routes_permanent ON public.public_routes IS 'Сохраняет постоянное владение публичным адресом при изменении публикации.';
+COMMENT ON INDEX public.article_revisions_owner_key IS 'Составной ключ проверяет совпадение владельца опубликованного снимка.';
+COMMENT ON INDEX public.article_revisions_number_key IS 'Номер снимка уникален только внутри статьи.';
+COMMENT ON INDEX public.public_routes_owner_key IS 'Составной ключ проверяет совпадение владельца адреса и перевода снимка.';
+
+-- Представления исполняются с правами владельца; runtime не получает доступ к истории.
+CREATE VIEW public.public_languages WITH (security_barrier=true) AS
+ SELECT code,name,native_name,direction FROM public.languages WHERE is_enabled;
+CREATE VIEW public.public_article_translations WITH (security_barrier=true) AS
+ SELECT t.article_id,t.revision_id,t.language_code,t.title,t.slug,t.body_markdown
+ FROM public.article_revision_translations t
+ JOIN public.articles a ON a.id=t.article_id AND a.published_revision_id=t.revision_id
+ JOIN public.languages l ON l.code=t.language_code AND l.is_enabled;
+CREATE VIEW public.public_article_routes WITH (security_barrier=true) AS
+ SELECT r.language_code,r.slug,r.article_id,t.slug AS current_slug,t.revision_id
+ FROM public.public_routes r
+ JOIN public.public_article_translations t ON t.article_id=r.article_id AND t.language_code=r.language_code;
+COMMENT ON VIEW public.public_languages IS 'Публичные метаданные только включённых языков установки.';
+COMMENT ON COLUMN public.public_languages.code IS 'Код включённого языка для публичного выбора.';
+COMMENT ON COLUMN public.public_languages.name IS 'Название включённого языка.';
+COMMENT ON COLUMN public.public_languages.native_name IS 'Самоназвание включённого языка.';
+COMMENT ON COLUMN public.public_languages.direction IS 'Направление письма включённого языка: ltr или rtl.';
+COMMENT ON VIEW public.public_article_translations IS 'Только текущие опубликованные переводы на включённых языках; история и черновики скрыты.';
+COMMENT ON COLUMN public.public_article_translations.article_id IS 'Стабильный владелец опубликованного перевода.';
+COMMENT ON COLUMN public.public_article_translations.revision_id IS 'Текущая опубликованная ревизия статьи.';
+COMMENT ON COLUMN public.public_article_translations.language_code IS 'Включённый язык опубликованного перевода.';
+COMMENT ON COLUMN public.public_article_translations.title IS 'Текущий опубликованный заголовок.';
+COMMENT ON COLUMN public.public_article_translations.slug IS 'Текущий опубликованный адрес перевода.';
+COMMENT ON COLUMN public.public_article_translations.body_markdown IS 'Текущий опубликованный текст Markdown.';
+COMMENT ON VIEW public.public_article_routes IS 'Публичные адреса и alias, разрешаемые к текущему переводу того же владельца и языка.';
+COMMENT ON COLUMN public.public_article_routes.language_code IS 'Включённый язык публичного адреса.';
+COMMENT ON COLUMN public.public_article_routes.slug IS 'Запрошенный текущий адрес или исторический alias.';
+COMMENT ON COLUMN public.public_article_routes.article_id IS 'Статья-владелец публичного адреса.';
+COMMENT ON COLUMN public.public_article_routes.current_slug IS 'Текущий адрес перевода для разрешения alias.';
+COMMENT ON COLUMN public.public_article_routes.revision_id IS 'Текущая опубликованная ревизия владельца адреса.';
+REVOKE ALL ON public.public_languages,public.public_article_translations,public.public_article_routes FROM PUBLIC;
+
+
 -- +goose Down
+DROP VIEW public.public_article_routes;
+DROP VIEW public.public_article_translations;
+DROP VIEW public.public_languages;
 DROP TABLE public.article_revision_translations;
 DROP TABLE public.public_routes;
 ALTER TABLE public.articles DROP CONSTRAINT articles_published_revision_fkey;

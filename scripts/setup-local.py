@@ -4,8 +4,51 @@ import argparse
 import json
 import os
 import secrets
+import stat
 
 from site_config import load_config, site_directory
+
+
+def setup_secrets(root):
+    """Меняем права только проверенных inode, не переходя по ссылкам."""
+    root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            os.mkdir(".secrets", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+        directory_fd = os.open(".secrets", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                               dir_fd=root_fd)
+        try:
+            if os.fstat(directory_fd).st_uid != os.geteuid():
+                raise ValueError("Каталог секретов должен принадлежать текущему пользователю")
+            os.fchmod(directory_fd, 0o700)
+            for name in ("db_owner_password", "db_app_password"):
+                created = False
+                try:
+                    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o600, dir_fd=directory_fd)
+                    created = True
+                except FileExistsError:
+                    # NONBLOCK исключает зависание на FIFO до проверки типа inode.
+                    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=directory_fd)
+                try:
+                    metadata = os.fstat(fd)
+                    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                            or metadata.st_uid != os.geteuid()):
+                        raise ValueError("Секрет должен быть обычным файлом владельца без жёстких ссылок")
+                    if created:
+                        with os.fdopen(os.dup(fd), "w") as output:
+                            output.write(secrets.token_urlsafe(32) + "\n")
+                    # Bind mount доступен non-root UID контейнера; на хосте каталог 0700.
+                    os.fchmod(fd, 0o444)
+                finally:
+                    os.close(fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(root_fd)
 
 
 def setup(site, port=None, name=None):
@@ -35,19 +78,9 @@ def setup(site, port=None, name=None):
         fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as output:
             output.write(text)
-    # Validate the selected installation before creating or touching its secrets.
+    # Проверяем выбранную установку до создания и изменения секретов.
     load_config(site)
-    directory = root / ".secrets"
-    directory.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(directory, 0o700)
-    for secret_name in ("db_owner_password", "db_app_password"):
-        path = directory / secret_name
-        if not path.exists():
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w") as output:
-                output.write(secrets.token_urlsafe(32) + "\n")
-        # Compose retains host permissions; the parent directory is owner-only.
-        os.chmod(path, 0o444)
+    setup_secrets(root)
     print(f"Configuration ready: {site}; existing settings and credentials were preserved.")
 
 

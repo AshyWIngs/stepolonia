@@ -24,8 +24,13 @@ def compose_command(site):
             "-f", str(ROOT / "infrastructure/compose.yaml")]
 
 
-def load_config(site):
-    command = [*compose_command(site), "config", "--format", "json"]
+def load_config(site, *, override=None, profile=None):
+    command = compose_command(site)
+    if override is not None:
+        command += ["-f", str(override)]
+    if profile is not None:
+        command += ["--profile", profile]
+    command += ["config", "--format", "json"]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
     if result.returncode:
         raise ValueError(f"Invalid Compose configuration for {site}: {result.stderr.strip()}")

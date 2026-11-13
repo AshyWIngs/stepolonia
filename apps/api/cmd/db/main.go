@@ -83,23 +83,20 @@ func run(ctx context.Context, args []string) error {
 	case "import-languages":
 		return database.ImportLanguages(ctx, db, rows)
 	case "migrate":
-		p, err := database.Provider(db)
-		if err != nil {
-			return err
-		}
 		switch args[1] {
 		case "up":
-			if err := database.CheckRuntime(ctx, db, os.Getenv("RUNTIME_DB_USER")); err != nil {
-				return err
-			}
-			if _, err = p.Up(ctx); err != nil {
-				return err
-			}
-			return database.GrantRuntime(ctx, db, os.Getenv("RUNTIME_DB_USER"))
+			return database.Up(ctx, db, os.Getenv("RUNTIME_DB_USER"))
 		case "down":
-			_, err = p.Down(ctx)
-			return err
+			token := os.Getenv("DB_DISPOSABLE_TOKEN")
+			if token == "" {
+				return inputError{"для down требуется DB_DISPOSABLE_TOKEN одноразовой БД"}
+			}
+			return database.Down(ctx, db, token)
 		case "status":
+			p, err := database.Provider(db)
+			if err != nil {
+				return err
+			}
 			status, err := p.Status(ctx)
 			if err != nil {
 				return err
