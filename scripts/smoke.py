@@ -3,22 +3,23 @@
 import argparse
 from datetime import datetime, timezone
 from html import escape
+from http.client import HTTPConnection
 import json
 import os
 import subprocess
 import time
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 from site_config import ROOT, compose_command, load_config, postgres_sql_args
 
 COMPOSE = []
 RESULTS = []
 READY_PATH = "/health/ready"
+LIVE_PATH = "/health/live"
 
 
-def run(args, *, check=True, env=None):
-    return subprocess.run(args, cwd=ROOT, check=check, capture_output=True, text=True, env=env)
+def run(args, *, check=True):
+    return subprocess.run(args, cwd=ROOT, check=check, capture_output=True, text=True)
 
 
 def compose(*args, check=True):
@@ -34,11 +35,21 @@ def verify(name, condition):
 
 
 def request(url, *, method="GET"):
+    target = urlsplit(url)
+    if (target.scheme != "http" or target.hostname != "127.0.0.1" or target.username is not None
+            or target.port is None or not 1 <= target.port <= 65535):
+        raise ValueError("Smoke разрешает только HTTP loopback с явным TCP-портом")
+    # Прямое соединение исключает file/custom schemes, proxy и следование redirects.
+    connection = HTTPConnection("127.0.0.1", target.port, timeout=5)
     try:
-        with urlopen(Request(url, method=method), timeout=5) as response:
-            return response.status, response.headers, response.read().decode()
-    except HTTPError as error:
-        return error.code, error.headers, error.read().decode()
+        path = target.path or "/"
+        if target.query:
+            path += "?" + target.query
+        connection.request(method, path)
+        response = connection.getresponse()
+        return response.status, response.headers, response.read().decode()
+    finally:
+        connection.close()
 
 
 def private_api(path):
@@ -65,10 +76,12 @@ def publishing_sdk(base, *, unavailable=False):
     """Используем тот же SDK и статью, которую публикует Go runtime fixture."""
     environment = {**os.environ, "STAGE14_API_URL": base, "STAGE14_ARTICLE_LANG": "fr",
                    "STAGE14_ARTICLE_SLUG": "stage15-fr-current", "STAGE14_REDIRECT_SLUG": "stage15-fr-first"}
-    arguments = ["node", "packages/sdk/tests/live.mjs"]
-    if unavailable:
-        arguments.append("--unavailable")
-    result = run(arguments, env=environment)
+    # B603 требует аудита даже фиксированного argv. Программа и script постоянны,
+    # режим имеет два литеральных значения, env принадлежит disposable harness.
+    # Пересмотреть при изменении executable/script/mode или источника окружения.
+    result = subprocess.run(  # nosec B603 - фиксированный SDK argv, доверенное test env
+        ["node", "packages/sdk/tests/live.mjs", "--unavailable" if unavailable else "--published"],
+        cwd=ROOT, check=True, capture_output=True, text=True, env=environment)
     print(result.stdout, end="", flush=True)
 
 
@@ -96,7 +109,7 @@ def check_publishing_recovery(base):
     previous = json.loads(run(["docker", "inspect", identifier]).stdout)[0]
     try:
         compose("stop", "postgres")
-        verify("Publishing outage: private liveness stays healthy", private_api("/health/live")["status"] == 200)
+        verify("Publishing outage: private liveness stays healthy", private_api(LIVE_PATH)["status"] == 200)
         verify("Publishing outage: private readiness reports 503", private_api(READY_PATH)["status"] == 503)
         publishing_sdk(base, unavailable=True)
     finally:
@@ -142,7 +155,7 @@ def main(site, lifecycle):
     status, headers, body = request(base + "/api/v1/unknown")
     verify("Caddy routes API requests to Go", status == 404 and json.loads(body)["status"] == 404
            and bool(headers.get("X-Request-ID")) and headers.get_content_type() == "application/problem+json")
-    for path in ("/health/live", READY_PATH, "/docs", "/openapi.json"):
+    for path in (LIVE_PATH, READY_PATH, "/docs", "/openapi.json"):
         verify(f"private external route {path}", request(base + path)[0] == 404)
     verify("private API readiness checks PostgreSQL", private_api(READY_PATH)["status"] == 200)
     privilege = compose(*postgres_sql_args(config,
@@ -173,7 +186,7 @@ def check_lifecycle(config, base, containers):
     identifier = compose(*identifier_cmd).stdout.strip()
     try:
         compose("stop", "postgres")
-        verify("API liveness survives database outage", private_api("/health/live")["status"] == 200)
+        verify("API liveness survives database outage", private_api(LIVE_PATH)["status"] == 200)
         unavailable = private_api(READY_PATH)
         verify("API readiness reports database outage", unavailable["status"] == 503
                and config["services"]["api"]["environment"]["DB_USER"] not in unavailable["body"])
