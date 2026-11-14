@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -17,14 +18,16 @@ import (
 	"stepolonia/apps/api/internal/database"
 )
 
+const commandImportLanguages = "import-languages"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil {
-		// Connection/query errors can contain SQL or connection details. Keep them
-		// private; SQLSTATE is enough to distinguish an operator failure safely.
+		// Ошибки соединения и запросов могут содержать SQL и параметры подключения.
+		// Для диагностики выводим SQLSTATE, сохраняя остальные подробности закрытыми.
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) {
 			fmt.Fprintln(os.Stderr, "Операция БД отклонена; SQLSTATE="+pgerr.Code)
@@ -47,23 +50,16 @@ func safeError(err error) string {
 }
 
 func run(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE"}
-	}
-	valid := len(args) == 1 && (args[0] == "prepare-roles" || args[0] == "seed") || len(args) == 2 && (args[0] == "import-languages" || args[0] == "migrate" && (args[1] == "up" || args[1] == "down" || args[1] == "status"))
-	if !valid {
-		return inputError{"неверная команда db"}
+	if err := validateCommand(args); err != nil {
+		return err
 	}
 	var rows []database.Language
-	if args[0] == "import-languages" {
-		f, err := os.Open(args[1])
+	if args[0] == commandImportLanguages {
+		// Проверяем весь CSV до подключения к БД и любых изменений данных.
+		var err error
+		rows, err = readLanguageFile(args[1])
 		if err != nil {
-			return inputError{"не удалось открыть CSV"}
-		}
-		defer f.Close()
-		rows, err = database.ReadLanguages(f)
-		if err != nil {
-			return inputError{err.Error()}
+			return err
 		}
 	}
 	cfg, err := toolConfig()
@@ -80,35 +76,79 @@ func run(ctx context.Context, args []string) error {
 		return database.PrepareRoles(ctx, db)
 	case "seed":
 		return database.Seed(ctx, db)
-	case "import-languages":
+	case commandImportLanguages:
 		return database.ImportLanguages(ctx, db, rows)
 	case "migrate":
-		switch args[1] {
-		case "up":
-			return database.Up(ctx, db, os.Getenv("RUNTIME_DB_USER"))
-		case "down":
-			token := os.Getenv("DB_DISPOSABLE_TOKEN")
-			if token == "" {
-				return inputError{"для down требуется DB_DISPOSABLE_TOKEN одноразовой БД"}
-			}
-			return database.Down(ctx, db, token)
-		case "status":
-			p, err := database.Provider(db)
-			if err != nil {
-				return err
-			}
-			status, err := p.Status(ctx)
-			if err != nil {
-				return err
-			}
-			for _, s := range status {
-				fmt.Printf("%d %s\n", s.Source.Version, s.State)
-			}
-			return nil
-		}
+		return runMigration(ctx, db, args[1])
 	}
 	return nil
 }
+
+func validateCommand(args []string) error {
+	if len(args) == 0 {
+		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE"}
+	}
+	switch args[0] {
+	case "prepare-roles", "seed":
+		if len(args) == 1 {
+			return nil
+		}
+	case commandImportLanguages:
+		if len(args) == 2 {
+			return nil
+		}
+	case "migrate":
+		if len(args) == 2 && (args[1] == "up" || args[1] == "down" || args[1] == "status") {
+			return nil
+		}
+	}
+	return inputError{"неверная команда db"}
+}
+
+func readLanguageFile(path string) ([]database.Language, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, inputError{"не удалось открыть CSV"}
+	}
+	defer f.Close()
+	rows, err := database.ReadLanguages(f)
+	if err != nil {
+		return nil, inputError{err.Error()}
+	}
+	return rows, nil
+}
+
+func runMigration(ctx context.Context, db *sql.DB, action string) error {
+	switch action {
+	case "up":
+		return database.Up(ctx, db, os.Getenv("RUNTIME_DB_USER"))
+	case "down":
+		token := os.Getenv("DB_DISPOSABLE_TOKEN")
+		if token == "" {
+			return inputError{"для down требуется DB_DISPOSABLE_TOKEN одноразовой БД"}
+		}
+		return database.Down(ctx, db, token)
+	case "status":
+		return printMigrationStatus(ctx, db)
+	}
+	return nil
+}
+
+func printMigrationStatus(ctx context.Context, db *sql.DB) error {
+	p, err := database.Provider(db)
+	if err != nil {
+		return err
+	}
+	status, err := p.Status(ctx)
+	if err != nil {
+		return err
+	}
+	for _, s := range status {
+		fmt.Printf("%d %s\n", s.Source.Version, s.State)
+	}
+	return nil
+}
+
 func toolConfig() (*pgx.ConnConfig, error) {
 	cfg, err := config.DatabaseConfig()
 	if err != nil {

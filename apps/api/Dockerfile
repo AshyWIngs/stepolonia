@@ -1,4 +1,4 @@
-FROM golang:1.27.3-alpine3.24 AS source
+FROM golang:1.27.4-alpine3.24 AS source
 # Доступные обновления musl/zlib из репозитория той же ветки Alpine.
 RUN apk upgrade --no-cache musl zlib
 WORKDIR /src

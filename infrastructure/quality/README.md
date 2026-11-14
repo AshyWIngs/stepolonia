@@ -5,52 +5,43 @@
 `db-test`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
 собственным disposable harness, постоянные volumes не очищаются.
 
-Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.3+
+Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.4+
 той же minor-ветки и C compiler для race detector. CI берёт Go из `go.mod`.
 Логи находятся в игнорируемом `reports/`. Передавайте `SITE` явно, если локально
 выбран другой сайт.
 
 | Инструмент | Версия и блокирующие правила |
 |---|---|
-| golangci-lint | 2.15.0, Go 1.27.3: staticcheck, errcheck, gosec, gocognit, gocyclo, unused |
-| Ruff | 0.17.5: E4/E7/E9/F/B, только scripts |
+| golangci-lint | 2.15.0, Go 1.27.4: staticcheck, errcheck, gosec, gocognit, gocyclo, unused, funlen, goconst |
+| Ruff | 0.17.5: E4/E7/E9/F/B/C901/PLR0915, только scripts |
 | Nuxt ESLint / ESLint | 1.17.0 / 10.14.0: штатный Vue/TypeScript flat config, warnings=0 |
-| jscpd | 5.4.3, Node 26.13.0/npm 11.21.2, Go/Python/TypeScript/Vue |
+| jscpd | 5.4.3, Node 26.13.1/npm 11.21.2, Go/Python/TypeScript/Vue |
 
-Go cognitive/cyclomatic и ESLint cyclomatic: максимум 15 для нового кода.
-Существующие три функции Go имеют ограниченные бюджеты:
-
-| Функция | Cognitive / cyclomatic |
-|---|---|
-| cmd/db.run | 30 / 27 |
-| ReadLanguages | 25 / 22 |
-| checkDefinitions | 20 / 18 |
-
-Рост выше этих значений блокируется. Пересматривать бюджет при следующей правке
-функции; обслуживание schema_contract относится к Issue #2. Интеграционный
-SQL-сценарий освобождён только от двух complexity-правил, остальные анализаторы
-и CPD продолжают его проверять. Размер функции >80 строк и файла >500 строк
-требует ревью, но не механического дробления. Cognitive complexity Python/Vue
-и общий рейтинг качества также оценивает независимый SonarCloud.
+Go cognitive/cyclomatic и ESLint cognitive/cyclomatic: максимум 15 для всех
+функций, включая тесты. Исключений по сложности и повышенных baseline-бюджетов
+нет. Go funlen и ESLint ограничивают функцию 80 строками и 50 statements;
+комментарии не учитываются, ESLint также пропускает пустые строки.
+Ruff C901 ограничивает cyclomatic complexity Python значением 15, PLR0915
+ограничивает функцию 50 statements. Это не cognitive metric Python: её отдельно
+проверяет SonarQube IDE/Cloud. Go goconst проверяет повтор литералов длиной
+от трёх символов при трёх и более вхождениях, включая тесты. Штатное
+исключение goconst для аргументов вызовов сохраняется: независимые SQL fixtures
+и сообщения ошибок не объединяются механически. Это не полный аналог S1192.
+Для TypeScript/Vue подключён только cognitive-complexity из
+eslint-plugin-sonarjs 4.2.2; остальные его правила не дублируют Nuxt ESLint.
+Лимиты не требуют объединять разные сценарии или создавать абстракции ради
+чисел: превышение блокирует проверку и требует осмысленного изменения.
 
 jscpd блокирует любое совпадение размером не менее 10 строк и 80 токенов:
 порог дублирования 0%. Тесты включены. Исключены зависимости, Nuxt output,
 генерируемые Go-файлы, lockfiles и отчёты. Результат требует смыслового разбора:
 похожие fixtures или SQL не объединяются автоматически.
 
-Baseline на main `652bd2f`: Go выдаёт 25 сообщений без дедупликации по строке:
-9 cleanup errcheck, 8 complexity (по два правила на четыре функции),
-8 gosec на пяти sinks. Отдельный baseline unused дал 0 замечаний;
-он проверяет неиспользуемые package declarations, дополняя compiler/staticcheck. Независимый source-to-sink разбор gosec не подтвердил
-уязвимости: operator-owned file/env, quoted SQL identifier и фиксированный psql.
-Точные path/rule/source-исключения и условия пересмотра находятся в `.golangci.yml`.
+Точечные gosec-исключения относятся к operator-owned file/env, quoted SQL
+identifier и фиксированному psql. Точные
+path/rule/source-исключения и условия пересмотра находятся в `.golangci.yml`.
 Cleanup исключения относятся только к проверенным defer после обработки основных
 ошибок чтения, Commit и rows.Err; глобального Close/Rollback ignore нет.
-
-Ruff: 2 E402 при явной настройке sys.path тестовым harness; исключение только
-для этого правила и файла. Nuxt: 0 ошибок/предупреждений. CPD: 0 совпадений,
-0%; контрольный запуск с меньшим размером 5 строк/50 токенов также дал 0.
-Существующий долг не исправляется массовым рефакторингом в инфраструктурном PR.
 
 `go vet` выполняется в `test`, не дублируется golangci-lint. Race-тесты включают
 обычное исполнение: отдельный повтор `go test` удалён. После blocking `go vet`
@@ -60,7 +51,34 @@ Nuxt typecheck и production build сохранены. Собственный а
 локальный CPD и обязательный allocation/coverage gate не вводятся.
 
 SonarCloud остаётся независимым облачным Gate с прежними порогами. Локальный
-PASS не означает cloud PASS. Сетевые dependency-аудиты и benchmarks рекомендуются
-по отдельной задаче: они не смешиваются с детерминированным lint. npm audit
+PASS не означает cloud PASS. Benchmarks и сетевой npm audit остаются отдельными командами;
+образные CVE проверяет обязательный image-audit. npm audit
 показал существующие 7 low в цепочке deepmerge/Rollup/Nitro; обновление runtime
 зависимостей в этот инфраструктурный PR не входит.
+
+`make image-audit` входит в `verify` один раз после lint/build и проверяет
+реальное содержимое одиннадцати образов через Grype 0.121.3. High/Critical
+блокируют результат, в том числе без исправленной версии. Ошибка сети/сканера
+тоже блокирует проверку. Проверка обновлений CVE DB обязательна при каждом сканировании; база старше
+72 часов отклоняется: это отдельная сетевая
+часть verify, её результат зависит от актуальной базы advisories.
+
+Образы Go/Python/web/CPD и npm builder анализаторов, runtime API/web/PostgreSQL,
+db-tools, initializer PostgreSQL и точный Caddy image из Compose передаются как Docker archives без Docker socket и секретов.
+Сохраняются image ID, платформа, JSON findings и версия/возраст базы в
+`reports/images/`; архив удаляется при выходе. Фиксированный volume
+`sp-grype-cache` содержит только публичную базу сканера.
+API, web, PostgreSQL, db-tools и исполнение CPD используют non-root distroless.
+golangci-lint 2.15.0 пересобирается штатным `go install` на Go 1.27.4:
+готовый upstream binary собран старым Go и содержит исправленные stdlib CVE.
+Go compiler и npm install остаются в отдельных builder stages: они требуют
+инструментов сборки и проверяются по содержимому, а не по названию дистрибутива.
+Host Go/C compiler и другие промежуточные build stages не входят в эти
+одиннадцать образов; команда не доказывает отсутствие уязвимостей во всей цепочке
+поставки. Сканирование собирает результаты всех образов и возвращает ненулевой
+код, если хотя бы один не прошёл. Findings всех severity остаются в JSON.
+
+Блокирующий CVE gate не означает, что каждый пакетный alert доказан как
+эксплуатируемая уязвимость приложения. Findings требуют проверки реального
+компонента, backports и source-to-sink. Не добавляйте общие исключения для
+неисправленных или унаследованных CVE ради зелёного результата.

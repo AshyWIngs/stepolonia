@@ -3,39 +3,23 @@ run:
   timeout: 5m
 linters:
   default: none
-  enable: [staticcheck, errcheck, gosec, gocognit, gocyclo, unused]
+  enable: [staticcheck, errcheck, gosec, gocognit, gocyclo, unused, funlen, goconst]
   settings:
     gocognit:
       min-complexity: 15
     gocyclo:
       min-complexity: 15
+    funlen:
+      lines: 80
+      statements: 50
+      ignore-comments: true
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+      ignore-tests: false
   exclusions:
     presets: []
     rules:
-      # Интеграционный сценарий содержит самостоятельные SQL/transaction fixtures.
-      # Остальные анализаторы продолжают проверять этот файл.
-      - path: ^apps/api/internal/database/integration_test\.go$
-        linters: [gocognit, gocyclo]
-      # Существующий долг: рост выше baseline блокируется. Пересмотр при следующей
-      # правке функции; schema_contract отдельно рассматривается в Issue #2.
-      - path: ^apps/api/cmd/db/main\.go$
-        linters: [gocognit]
-        text: 'cognitive complexity (1[6-9]|2[0-9]|30) of func `run` '
-      - path: ^apps/api/internal/database/languages\.go$
-        linters: [gocognit]
-        text: 'cognitive complexity (1[6-9]|2[0-5]) of func `ReadLanguages` '
-      - path: ^apps/api/internal/database/schema_contract\.go$
-        linters: [gocognit]
-        text: 'cognitive complexity (1[6-9]|20) of func `checkDefinitions` '
-      - path: ^apps/api/cmd/db/main\.go$
-        linters: [gocyclo]
-        text: 'cyclomatic complexity (1[6-9]|2[0-7]) of func `run` '
-      - path: ^apps/api/internal/database/languages\.go$
-        linters: [gocyclo]
-        text: 'cyclomatic complexity (1[6-9]|2[0-2]) of func `ReadLanguages` '
-      - path: ^apps/api/internal/database/schema_contract\.go$
-        linters: [gocyclo]
-        text: 'cyclomatic complexity 1[6-8] of func `checkDefinitions` '
       # Проверенные cleanup: результат чтения/Commit/rows.Err проверяется отдельно.
       # Пересматривать при изменении файловой операции или границы транзакции.
       - path: ^apps/api/cmd/db/main\.go$
@@ -56,8 +40,8 @@ linters:
       # Пересматривать при добавлении внешнего источника пути.
       - path: ^apps/api/cmd/db/main\.go$
         linters: [gosec]
-        text: '^G703:'
-        source: 'f, err := os\.Open\(args\[1\]\)'
+        text: '^G(304|703):'
+        source: 'f, err := os\.Open\(path\)'
       # FP: путь secret задаётся Compose, файл читается non-root процессом.
       - path: ^apps/api/internal/config/config\.go$
         linters: [gosec]

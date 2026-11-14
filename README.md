@@ -58,7 +58,8 @@ SITE ?= another.test
 | `make config` | Проверить конфигурацию Compose |
 | `make lint` | Go, Ruff, Nuxt ESLint и проверка дублирования без запуска БД |
 | `make duplicates` | Проверить copy-paste через jscpd, включая тесты |
-| `make verify` | Выполнить lint, config, test, build и disposable db-test |
+| `make verify` | Lint, config, test, build, disposable db-test и High/Critical CVE gate |
+| `make image-audit` | Проверить собранные образы: Grype, включая уязвимости без исправлений |
 | `make test` | Проверить Dockerfile, Go и TypeScript |
 | `make build` | Собрать образы |
 | `make up` | Собрать и запустить установку |
