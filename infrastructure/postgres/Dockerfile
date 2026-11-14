@@ -15,11 +15,11 @@ RUN apk upgrade --no-cache \
         bash \
         icu-data-full \
         libpq=18.7-r0 \
-        postgresql18=18.7-r0 \
         postgresql18-client=18.7-r0 \
-        postgresql18-contrib=18.7-r0 \
         postgresql18-contrib-jit=18.7-r0 \
+        postgresql18-contrib=18.7-r0 \
         postgresql18-jit=18.7-r0 \
+        postgresql18=18.7-r0 \
         tzdata \
     && test -z "$(find /var/lib/postgresql -mindepth 1 -print -quit)" \
     && sed -i 's/^postgres:x:70:70:/postgres:x:999:999:/' /etc/passwd \
