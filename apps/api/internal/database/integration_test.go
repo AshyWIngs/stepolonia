@@ -67,6 +67,8 @@ func prepareDisposableSchema(t *testing.T, ctx context.Context, db *sql.DB) {
 }
 
 func testMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Run("committed migration recovers after runtime grant failure", func(t *testing.T) { testRuntimeGrantRecovery(t, ctx, db) })
+
 	t.Run("fresh conflict metadata repeat up and guarded down", func(t *testing.T) { testFreshMigrationLifecycle(t, ctx, db) })
 	t.Run("repeated up rejects changed column and removed guard before DDL", func(t *testing.T) { testColumnAndGuardDrift(t, ctx, db) })
 	t.Run("semantic drift fails before catalog history or grants change", func(t *testing.T) { testSemanticDrift(t, ctx, db) })
@@ -113,6 +115,48 @@ func publishInitialSnapshot(t *testing.T, ctx context.Context, db *sql.DB, artic
 	execSQL(t, ctx, tx, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", revision)
 	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", revision, article)
 	requireNoError(t, tx.Commit())
+}
+
+// Ошибка финального GRANT не должна откатывать историю goose или оставлять частичные права.
+func testRuntimeGrantRecovery(t *testing.T, ctx context.Context, db *sql.DB) {
+	_, err := db.ExecContext(ctx, `CREATE FUNCTION public.reject_runtime_grant() RETURNS event_trigger
+ LANGUAGE plpgsql AS $$ BEGIN
+ IF current_query() LIKE 'GRANT SELECT%TO "stage12_app"' THEN
+ RAISE EXCEPTION 'injected runtime grant failure' USING ERRCODE='42501';
+ END IF; END; $$;
+ CREATE EVENT TRIGGER reject_runtime_grant ON ddl_command_start WHEN TAG IN ('GRANT')
+ EXECUTE FUNCTION public.reject_runtime_grant()`)
+	requireNoError(t, err)
+	assertSQLState(t, Up(ctx, db, "stage12_app"), "42501")
+	var version int
+	requireNoError(t, db.QueryRowContext(ctx, "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied").Scan(&version))
+	if version != 1 {
+		t.Fatal("grant failure lost the committed goose migration")
+	}
+	requireNoError(t, CheckSchema(ctx, db))
+	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.public_languages", "42501")
+	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.article_draft_translations", "42501")
+	_, err = db.ExecContext(ctx, `DROP EVENT TRIGGER reject_runtime_grant; DROP FUNCTION public.reject_runtime_grant();
+ INSERT INTO public.languages(code,name,native_name,direction) VALUES('fr','French','Français','ltr')`)
+	requireNoError(t, err)
+	// История, OID и данные отделяют безопасное восстановление grants от повторного DDL.
+	const stateSQL = `SELECT json_build_object(
+ 'history',(SELECT json_agg(row_to_json(v) ORDER BY id) FROM public.goose_db_version v),
+ 'table_oid','public.languages'::regclass::oid,
+ 'data',(SELECT json_agg(row_to_json(l) ORDER BY code) FROM public.languages l))::text`
+	var before, after string
+	requireNoError(t, db.QueryRowContext(ctx, stateSQL).Scan(&before))
+	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, db.QueryRowContext(ctx, stateSQL).Scan(&after))
+	if before != after {
+		t.Fatal("retry changed committed schema, goose history or language data")
+	}
+	tx := beginRoleTx(t, ctx, db, "stage12_app")
+	var count int
+	requireNoError(t, tx.QueryRowContext(ctx, "SELECT count(*) FROM public.public_languages").Scan(&count))
+	requireNoError(t, tx.Rollback())
+	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.article_revision_translations", "42501")
+	requireNoError(t, Down(ctx, db, os.Getenv("DB_DISPOSABLE_TOKEN")))
 }
 
 func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) {
