@@ -4,8 +4,7 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-  push:
-    branches: [main]
+  # Полный PR Gate обязателен для защищённой main; после merge повторный Verify не запускаем.
   workflow_dispatch:
 
 permissions:
@@ -46,7 +45,7 @@ jobs:
               exit 0
             fi
           fi
-          # Push main, ручной запуск и все прочие PR: полный Gate.
+          # Готовые PR с изменениями кода и ручной запуск: полный Gate.
           echo "full=true" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         if: steps.scope.outputs.full == 'true'
