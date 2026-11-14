@@ -12,7 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-type Database interface {
+type Pinger interface {
 	Ping(context.Context) error
 }
 
@@ -30,7 +30,7 @@ func healthy() *healthOutput {
 	return out
 }
 
-func Handler(db Database, logger *slog.Logger) http.Handler {
+func Handler(db Pinger, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
 	// Contracts are generated offline in Stage 1, never exposed as public routes.
