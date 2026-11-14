@@ -19,7 +19,7 @@
 	request_body {
 		max_size 1MB
 	}
-	@private path /health/* /docs /docs/* /openapi* /schemas/*
+	@private path /health/* /docs /docs/* /openapi* /schemas /schemas/*
 	handle @private {
 		respond 404
 	}

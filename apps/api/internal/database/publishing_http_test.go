@@ -59,13 +59,25 @@ func assertHTTPArticles(t *testing.T, body []byte, ids ...string) {
 }
 
 func (f applicationFixture) testPublicHTTP(t *testing.T, ctx context.Context) {
-	_, err := f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=(code<>'pl') WHERE code IN ('kk','pl')")
-	requireNoError(t, err)
 	server := httptest.NewServer(platform.Handler(httpTestDatabase{f.runtime}, f.reader, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer server.Close()
+	client := publicHTTPClient(t)
+	f.testHTTPPublishing(t, ctx, client, server.URL)
+	f.testHTTPFailures(t, ctx, client, server.URL)
+}
+
+func publicHTTPClient(t *testing.T) *http.Client {
+	t.Helper()
 	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	defer client.CloseIdleConnections()
-	languages, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/languages", http.StatusOK)
+	t.Cleanup(client.CloseIdleConnections)
+	return client
+}
+
+// Один сценарий проверяет и встроенный transport, и собранную цепочку через Caddy.
+func (f applicationFixture) testHTTPPublishing(t *testing.T, ctx context.Context, client *http.Client, base string) {
+	_, err := f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=(code<>'pl') WHERE code IN ('kk','pl')")
+	requireNoError(t, err)
+	languages, _ := publicRequest(t, ctx, client, base+"/api/v1/languages", http.StatusOK)
 	var catalog []struct {
 		Code string `json:"code"`
 	}
@@ -77,17 +89,16 @@ func (f applicationFixture) testPublicHTTP(t *testing.T, ctx context.Context) {
 	if !slices.Contains(codes, "kk") || slices.Contains(codes, "pl") {
 		t.Fatal("HTTP language catalog lost enabled or exposed disabled language")
 	}
-	empty, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/articles?lang=kk", http.StatusOK)
+	empty, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=kk", http.StatusOK)
 	assertHTTPArticles(t, empty)
 	first := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation(firstHTTPSlug)})
 	second := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation("http-second")})
 	_ = createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation("http-private")})
-	list, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/articles?lang=kk", http.StatusOK)
+	list, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=kk", http.StatusOK)
 	assertHTTPArticles(t, list, second.ID, first.ID)
-	page, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/articles?lang=kk&limit=1&offset=1", http.StatusOK)
+	page, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=kk&limit=1&offset=1", http.StatusOK)
 	assertHTTPArticles(t, page, first.ID)
-	f.testHTTPAliases(t, ctx, client, server.URL, first)
-	f.testHTTPFailures(t, ctx, client, server.URL)
+	f.testHTTPAliases(t, ctx, client, base, first)
 }
 
 func (f applicationFixture) testHTTPAliases(t *testing.T, ctx context.Context, client *http.Client, base string, state publishing.ArticleState) {

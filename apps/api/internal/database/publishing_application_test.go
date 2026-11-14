@@ -26,12 +26,7 @@ type applicationFixture struct {
 func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB, cfg *pgx.ConnConfig) {
 	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('ru','pl','en')")
 	requireNoError(t, err)
-	editorDB := applicationDatabase(t, cfg, publisherTestRole, "publishing-editor")
-	runtimeCfg := cfg.Copy()
-	runtimeCfg.User = runtimeTestRole
-	runtimeCfg.Password = readDisposablePassword(t, os.Getenv("STAGE12_TEST_RUNTIME_PASSWORD_FILE"))
-	runtime := applicationDatabase(t, runtimeCfg, "", "publishing-runtime")
-	f := applicationFixture{owner, publishing.NewService(editorDB), publishing.NewPublicReader(runtime), cfg, runtime}
+	f := newApplicationFixture(t, owner, cfg)
 	t.Run("application partial patches ready and privilege boundaries", func(t *testing.T) { f.testDraft(t, ctx) })
 	t.Run("application publication merges languages and resolves aliases", func(t *testing.T) { f.testPublication(t, ctx) })
 	t.Run("application failed publication is atomic", func(t *testing.T) { f.testRollback(t, ctx) })
@@ -42,6 +37,16 @@ func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB,
 	t.Run("application public listing order and pagination", func(t *testing.T) { f.testListOrder(t, ctx) })
 	t.Run("application publication time after lock wait", func(t *testing.T) { f.testPublicationTime(t, ctx) })
 	t.Run("public HTTP publishing lifecycle", func(t *testing.T) { f.testPublicHTTP(t, ctx) })
+}
+
+func newApplicationFixture(t *testing.T, owner *sql.DB, cfg *pgx.ConnConfig) applicationFixture {
+	t.Helper()
+	editorDB := applicationDatabase(t, cfg, publisherTestRole, "publishing-editor")
+	runtimeCfg := cfg.Copy()
+	runtimeCfg.User = runtimeTestRole
+	runtimeCfg.Password = readDisposablePassword(t, os.Getenv("STAGE12_TEST_RUNTIME_PASSWORD_FILE"))
+	runtime := applicationDatabase(t, runtimeCfg, "", "publishing-runtime")
+	return applicationFixture{owner, publishing.NewService(editorDB), publishing.NewPublicReader(runtime), cfg, runtime}
 }
 
 func applicationDatabase(t *testing.T, cfg *pgx.ConnConfig, role, name string) *sql.DB {

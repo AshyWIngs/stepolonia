@@ -2,7 +2,7 @@
 
 `make lint` проверяет исходники без БД. `make duplicates` запускает только CPD.
 `make SITE=example.test verify` выполняет `lint`, `config`, `test`, `build`,
-`db-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
+`db-test`, `publishing-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
 собственным disposable harness, постоянные volumes не очищаются.
 
 Для короткого локального цикла используйте только нужную цель:
@@ -14,12 +14,20 @@
 | Nuxt/Vue/TypeScript | `make check-web` (ESLint, typecheck) |
 | OpenAPI/SDK | `make sdk-check` (актуальность артефактов, ESLint, typecheck) |
 | PostgreSQL/Publishing SQL | `make check-db` (реальная одноразовая БД) |
+| Publishing через контейнеры | `make publishing-test` (SDK, Caddy, API, импорт пятого языка, 503 и восстановление БД) |
 | Только Markdown | Автоматические проверки не требуются |
 
 Это не замена `verify`. При редактировании нескольких подсистем запускайте
 соответствующие цели. При изменениях образов/зависимостей отдельно проверяйте
 затронутую сборку и безопасность. Для окончательного PR с исполняемыми
 изменениями обязателен полный `make verify` на финальной ревизии.
+
+`publishing-test` использует runtime-режим существующего disposable harness.
+Общие HTTP fixtures выполняются через Caddy. Миграционные, транзакционные
+и конкурентные сценарии остаются в `db-test`. Оба targets используют общий
+`sdk-check`, который Make выполняет один раз. Для Go fixtures одноразовая БД
+публикует случайный loopback-порт, data-сеть допускает соединение с хоста.
+Эта тестовая конфигурация не подтверждает production readiness.
 
 GitHub Actions сохраняет job `verify`: для Draft PR тяжёлые шаги пропускаются,
 при переводе в Ready for review и последующих изменениях готового PR полный
