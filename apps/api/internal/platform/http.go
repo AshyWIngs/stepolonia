@@ -3,13 +3,13 @@ package platform
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"stepolonia/apps/api/internal/publishing"
 )
 
 type Pinger interface {
@@ -30,11 +30,30 @@ func healthy() *healthOutput {
 	return out
 }
 
-func Handler(db Pinger, logger *slog.Logger) http.Handler {
+type requestIDKey struct{}
+
+func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) http.Handler {
+	mux, _ := newAPI(db, reader, logger)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		requestID := rand.Text()
+		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("Cache-Control", "no-store")
+		response := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID))
+		mux.ServeHTTP(response, r)
+		logger.Info("http_request", "request_id", requestID, "method", r.Method,
+			"path", r.URL.Path, "status", response.status,
+			"duration_ms", time.Since(start).Milliseconds())
+	})
+}
+
+func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) (*http.ServeMux, huma.API) {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
-	// Contracts are generated offline in Stage 1, never exposed as public routes.
+	// Контракт генерируется из операций вне HTTP; служебные маршруты закрыты.
 	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
+	cfg.CreateHooks = nil
 	api := humago.New(mux, cfg)
 	huma.Register(api, huma.Operation{
 		OperationID: "liveness", Method: http.MethodGet, Path: "/health/live",
@@ -43,33 +62,23 @@ func Handler(db Pinger, logger *slog.Logger) http.Handler {
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "readiness", Method: http.MethodGet, Path: "/health/ready",
-		Errors: []int{http.StatusServiceUnavailable},
+		Responses: problemResponses(api, http.StatusServiceUnavailable),
 	}, func(ctx context.Context, _ *struct{}) (*healthOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
-			return nil, huma.Error503ServiceUnavailable("Required dependency is unavailable")
+			logDependency(ctx, logger, err)
+			return nil, newProblem(http.StatusServiceUnavailable, "database_unavailable")
 		}
 		return healthy(), nil
 	})
+	registerPublishing(api, reader, logger)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"type": "about:blank", "title": "Not Found", "status": http.StatusNotFound,
-		})
+		_ = api.Marshal(w, "application/problem+json", newProblem(http.StatusNotFound, "resource_not_found"))
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		requestID := rand.Text()
-		w.Header().Set("X-Request-ID", requestID)
-		w.Header().Set("Cache-Control", "no-store")
-		response := &statusWriter{ResponseWriter: w, status: http.StatusOK}
-		mux.ServeHTTP(response, r)
-		logger.Info("http_request", "request_id", requestID, "method", r.Method,
-			"path", r.URL.Path, "status", response.status,
-			"duration_ms", time.Since(start).Milliseconds())
-	})
+	return mux, api
 }
 
 type statusWriter struct {
