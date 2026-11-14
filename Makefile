@@ -52,6 +52,7 @@ image-audit: lint build
 	  name=$$(echo "$$image" | tr ':/' '__'); \
 	  docker image inspect "$$image" --format '{{.Id}} {{.Os}}/{{.Architecture}}' > "reports/images/$$name.identity"; \
 	  docker image save --output reports/images/image.tar "$$image"; \
+	  chmod 0644 reports/images/image.tar; \
 	  echo "CVE audit: $$image"; \
 	  docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp \
 	    --mount type=bind,src="$(CURDIR)/reports/images",dst=/scan,readonly \
