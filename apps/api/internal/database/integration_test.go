@@ -133,7 +133,8 @@ func publishInitialSnapshot(t *testing.T, ctx context.Context, db *sql.DB, artic
 	execSQL(t, ctx, tx, insertFirstRevisionSQL, revision, article)
 	execSQL(t, ctx, tx, insertOriginalRussianTranslationSQL, article, revision)
 	// Указатель не должен принимать незакрытый снимок даже внутри той же транзакции.
-	_, err := tx.ExecContext(ctx, setPublishedRevisionSQL, revision, article)
+	// Запрещённую команду задаём независимо от подготовки успешного снимка.
+	_, err := tx.ExecContext(ctx, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", revision, article)
 	assertSQLState(t, err, "23514")
 	_ = tx.Rollback()
 	tx = beginRoleTx(t, ctx, db, publisherTestRole)
