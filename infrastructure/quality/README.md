@@ -5,6 +5,29 @@
 `db-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
 собственным disposable harness, постоянные volumes не очищаются.
 
+Для короткого локального цикла используйте только нужную цель:
+
+| Область изменения | Быстрая проверка |
+|---|---|
+| Go | `make check-go` (Go lint, vet, race/unit) |
+| Python-скрипты | `make check-python` (Ruff, safety unittest) |
+| Nuxt/Vue/TypeScript | `make check-web` (ESLint, typecheck) |
+| PostgreSQL/Publishing SQL | `make check-db` (реальная одноразовая БД) |
+| Только Markdown | Автоматические проверки не требуются |
+
+Это не замена `verify`. При редактировании нескольких подсистем запускайте
+соответствующие цели. При изменениях образов/зависимостей отдельно проверяйте
+затронутую сборку и безопасность. Для окончательного PR с исполняемыми
+изменениями обязателен полный `make verify` на финальной ревизии.
+
+GitHub Actions сохраняет job `verify`: для Draft PR тяжёлые шаги пропускаются,
+при переводе в Ready for review и последующих изменениях готового PR полный
+`verify` запускается. PR только с Markdown также пропускает тяжёлые шаги.
+Для push в `main` и ручного `workflow_dispatch` полный `verify` сохраняется.
+Успешный пустой job в Draft означает лишь отсутствие запуска, не Gate PASS;
+Draft нельзя считать принятым для merge. SonarCloud/Codacy остаются
+независимыми проверками, их пороги не меняются.
+
 Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.4+
 той же minor-ветки и C compiler для race detector. CI берёт Go из `go.mod`.
 Логи находятся в игнорируемом `reports/`. Передавайте `SITE` явно, если локально
