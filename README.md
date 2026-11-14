@@ -56,6 +56,9 @@ SITE ?= another.test
 |---|---|
 | `make setup` | Создать локальные настройки |
 | `make config` | Проверить конфигурацию Compose |
+| `make lint` | Go, Ruff, Nuxt ESLint и проверка дублирования без запуска БД |
+| `make duplicates` | Проверить copy-paste через jscpd, включая тесты |
+| `make verify` | Выполнить lint, config, test, build и disposable db-test |
 | `make test` | Проверить Dockerfile, Go и TypeScript |
 | `make build` | Собрать образы |
 | `make up` | Собрать и запустить установку |
@@ -147,4 +150,7 @@ Runtime читает только `public_languages`, `public_article_translatio
 Проверяются создание схемы, повторный `up`, отказ при дрейфе, каталог
 описаний, публичные права и защищённый откат. Локальные файловые ограничения
 дополнительно проверяются командой `python3 -m unittest discover -s scripts/tests -v`.
-GitHub Actions повторяет `config`, `test`, `build` и `db-test` для PR в `main`.
+GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`.
+Для полного `verify`, как и для `db-test`, нужен Go на хосте и C compiler.
+Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
+Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).

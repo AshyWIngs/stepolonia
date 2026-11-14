@@ -1,0 +1,85 @@
+version: '2'
+run:
+  timeout: 5m
+linters:
+  default: none
+  enable: [staticcheck, errcheck, gosec, gocognit, gocyclo, unused]
+  settings:
+    gocognit:
+      min-complexity: 15
+    gocyclo:
+      min-complexity: 15
+  exclusions:
+    presets: []
+    rules:
+      # Интеграционный сценарий содержит самостоятельные SQL/transaction fixtures.
+      # Остальные анализаторы продолжают проверять этот файл.
+      - path: ^apps/api/internal/database/integration_test\.go$
+        linters: [gocognit, gocyclo]
+      # Существующий долг: рост выше baseline блокируется. Пересмотр при следующей
+      # правке функции; schema_contract отдельно рассматривается в Issue #2.
+      - path: ^apps/api/cmd/db/main\.go$
+        linters: [gocognit]
+        text: 'cognitive complexity (1[6-9]|2[0-9]|30) of func `run` '
+      - path: ^apps/api/internal/database/languages\.go$
+        linters: [gocognit]
+        text: 'cognitive complexity (1[6-9]|2[0-5]) of func `ReadLanguages` '
+      - path: ^apps/api/internal/database/schema_contract\.go$
+        linters: [gocognit]
+        text: 'cognitive complexity (1[6-9]|20) of func `checkDefinitions` '
+      - path: ^apps/api/cmd/db/main\.go$
+        linters: [gocyclo]
+        text: 'cyclomatic complexity (1[6-9]|2[0-7]) of func `run` '
+      - path: ^apps/api/internal/database/languages\.go$
+        linters: [gocyclo]
+        text: 'cyclomatic complexity (1[6-9]|2[0-2]) of func `ReadLanguages` '
+      - path: ^apps/api/internal/database/schema_contract\.go$
+        linters: [gocyclo]
+        text: 'cyclomatic complexity 1[6-8] of func `checkDefinitions` '
+      # Проверенные cleanup: результат чтения/Commit/rows.Err проверяется отдельно.
+      # Пересматривать при изменении файловой операции или границы транзакции.
+      - path: ^apps/api/cmd/db/main\.go$
+        linters: [errcheck]
+        source: '^\s*defer (f|db)\.Close\(\)'
+      - path: ^apps/api/internal/database/(database|languages|schema_contract)\.go$
+        linters: [errcheck]
+        source: '^\s*defer tx\.Rollback\(\)'
+      - path: ^apps/api/internal/database/integration_test\.go$
+        linters: [errcheck]
+        source: '^\s*defer (db\.Close\(\)|second\.Close\(ctx\))'
+      - path: ^apps/api/internal/database/schema_contract\.go$
+        linters: [errcheck]
+        source: '^\s*defer rows\.Close\(\)'
+      # Все security-исключения пересматриваются при изменении source, sink, caller
+      # или границы доверия. Новое внешнее управление входом требует нового triage.
+      # FP: явный файл локального оператора, read-only import mount; не HTTP input.
+      # Пересматривать при добавлении внешнего источника пути.
+      - path: ^apps/api/cmd/db/main\.go$
+        linters: [gosec]
+        text: '^G703:'
+        source: 'f, err := os\.Open\(args\[1\]\)'
+      # FP: путь secret задаётся Compose, файл читается non-root процессом.
+      - path: ^apps/api/internal/config/config\.go$
+        linters: [gosec]
+        text: '^G(304|703):'
+        source: 'password, err := os\.ReadFile\(path\)'
+      # FP: тестовый путь задаёт собственный disposable harness.
+      - path: ^apps/api/internal/database/integration_test\.go$
+        linters: [gosec]
+        text: '^G(304|703):'
+        source: 'raw, err := os\.ReadFile\(path\)'
+      # FP: current_user экранирован pgx.Identifier.Sanitize перед GRANT.
+      - path: ^apps/api/internal/database/integration_test\.go$
+        linters: [gosec]
+        text: '^G202:'
+        source: 'grant := "GRANT " \+ pgx\.Identifier\{owner\}\.Sanitize\(\)'
+      # FP: абсолютный psql, фиксированный SQL и argv; env принадлежит оператору.
+      # libpq conninfo в DB name допустим только в доверенной конфигурации.
+      - path: ^infrastructure/postgres/healthcheck/main\.go$
+        linters: [gosec]
+        text: '^G(204|702):'
+        source: 'cmd := exec\.CommandContext\(ctx, "/usr/lib/postgresql/18/bin/psql",'
+issues:
+  uniq-by-line: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

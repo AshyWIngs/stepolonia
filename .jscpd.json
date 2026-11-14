@@ -1,0 +1,12 @@
+{
+  "minLines": 10,
+  "minTokens": 80,
+  "threshold": 0,
+  "format": ["go", "python", "typescript", "vue"],
+  "reporters": ["consoleFull"],
+  "ignore": [
+    "**/node_modules/**", "**/.nuxt/**", "**/.output/**",
+    "**/reports/**", "**/coverage/**", "**/test-results/**", "**/.git/**",
+    "**/package-lock.json", "**/go.sum", "**/*.gen.go", "**/*_generated.go"
+  ]
+}

@@ -158,7 +158,9 @@ def main():
             environment["STAGE12_TEST_DATABASE_URL"] = (
                 f"postgres://stage12_owner@127.0.0.1:{port}/{database}?sslmode=disable")
             environment["STAGE12_TEST_PASSWORD_FILE"] = str(directory / ".secrets/db_owner_password")
-            command(["go", "test", "-count=1", "-race", "-v", "./..."], log, env=environment, cwd=ROOT / "apps/api")
+            # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
+            command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
+                     "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
             success = True
     finally:
         if resources_owned:

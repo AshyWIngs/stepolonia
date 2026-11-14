@@ -12,8 +12,7 @@ FROM source AS checks
 RUN apk add --no-cache gcc musl-dev \
     && test -z "$(gofmt -l .)" \
     && go vet ./... \
-    && go test ./... \
-    && go test -race ./...
+    && go test -race -vet=off ./...
 
 FROM source AS build
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o /out/api ./cmd/api

@@ -12,7 +12,10 @@ COPY . .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare
 
-# Проверки запускаются явно: make test / docker build --target checks.
+# Проверки запускаются явно: make lint / make test.
+FROM source AS lint
+RUN npm run lint
+
 FROM source AS checks
 RUN npm run typecheck
 

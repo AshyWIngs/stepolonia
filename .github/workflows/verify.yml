@@ -25,14 +25,8 @@ jobs:
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
-      - name: Compose configuration
-        run: make SITE=ci.test config
-      - name: Source checks
-        run: make SITE=ci.test test
-      - name: Runtime images
-        run: make SITE=ci.test build
-      - name: Disposable PostgreSQL integration
-        run: make db-test
+      - name: Lint, duplicates, checks, builds and disposable PostgreSQL
+        run: make SITE=ci.test verify
       - name: PostgreSQL failure details
         if: failure()
         run: |
