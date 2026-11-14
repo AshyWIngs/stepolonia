@@ -112,6 +112,11 @@ def main(site, lifecycle):
     if not lifecycle:
         return
 
+    check_lifecycle(config, base, containers)
+
+
+def check_lifecycle(config, base, containers):
+    """Проверяем восстановление и сохранность БД только по явному --lifecycle."""
     # No application data is modified by fault or restart checks.
     identifier_cmd = postgres_sql_args(config, "SELECT system_identifier FROM pg_control_system()")
     identifier = compose(*identifier_cmd).stdout.strip()

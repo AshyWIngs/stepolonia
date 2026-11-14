@@ -25,14 +25,8 @@ jobs:
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
-      - name: Compose configuration
-        run: make SITE=ci.test config
-      - name: Source checks
-        run: make SITE=ci.test test
-      - name: Runtime images
-        run: make SITE=ci.test build
-      - name: Disposable PostgreSQL integration
-        run: make db-test
+      - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
+        run: make SITE=ci.test verify
       - name: PostgreSQL failure details
         if: failure()
         run: |
@@ -41,3 +35,16 @@ jobs:
               tail -n 120 "$log"
             fi
           done
+      - name: Quality and image CVE reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: quality-reports
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            reports/*lint.log
+            reports/duplicates.log
+            reports/images/*.json
+            reports/images/*.identity
+            reports/images/*.log

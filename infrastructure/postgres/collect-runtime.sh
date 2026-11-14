@@ -41,7 +41,7 @@ done < /tmp/runtime-libraries
 while IFS= read -r package; do
     dpkg-query -s "$package" > "$root/var/lib/dpkg/status.d/${package%%:*}"
     copyright="/usr/share/doc/${package%%:*}/copyright"
-    if [ -f "$copyright" ]; then
+    if [[ -f "$copyright" ]]; then
         # Distroless содержит symlink-каталоги в /usr/share/doc.
         install -D -m 0644 "$copyright" "$root/usr/share/licenses/postgresql-runtime/${package%%:*}/copyright"
     fi

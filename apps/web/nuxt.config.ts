@@ -2,6 +2,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-11-10',
   devtools: { enabled: false },
   telemetry: false,
+  modules: ['@nuxt/eslint'],
   typescript: { strict: true },
   nitro: { preset: 'node-server' },
   runtimeConfig: {

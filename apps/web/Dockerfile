@@ -1,4 +1,4 @@
-FROM node:26.13.0-trixie-slim AS source
+FROM node:26.13.1-trixie-slim AS source
 WORKDIR /app
 ENV NUXT_TELEMETRY_DISABLED=1
 # Исправления builder: Debian zlib и зависимости встроенного npm.
@@ -12,7 +12,10 @@ COPY . .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare
 
-# Проверки запускаются явно: make test / docker build --target checks.
+# Проверки запускаются явно: make lint / make test.
+FROM source AS lint
+RUN npm run lint
+
 FROM source AS checks
 RUN npm run typecheck
 

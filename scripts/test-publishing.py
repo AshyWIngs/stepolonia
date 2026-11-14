@@ -57,13 +57,8 @@ def verify_owned(project, token, log, *, volume=None):
             verify_resource_owner(item, resource, project, token)
 
 
-def main():
-    if shutil.which("go") is None:
-        raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
-    token = secrets.token_hex(6)
-    site = f"stage12-{token}.test"
-    project = f"sp-stage12-{token}"
-    database = f"stage12_{token}"
+def prepare_installation(site, project, database, token):
+    """Создаём новую одноразовую конфигурацию с маркерами владельца ресурсов."""
     directory = site_directory(site)
     directory.mkdir(mode=0o700, exist_ok=False)
     reports = ROOT / "reports"
@@ -95,19 +90,63 @@ def main():
                                    "networks": {"data": {"internal": False, "labels": labels}},
                                    "volumes": {"postgres_data": {"name": values["DB_VOLUME_NAME"],
                                                                   "external": False, "labels": labels}}}))
+    return directory, override, log_path, values["DB_VOLUME_NAME"]
+
+
+def check_cli(site, directory, override, compose, config, log):
+    """Проверяем поставляемый CLI и защиту Down до SQL-сценариев Go."""
+    # Проверяем поставляемый CLI, включая защищённый Down, до SQL-тестов Go.
+    run_tool(site, ["prepare-roles"], override=override, log=log)
+    run_tool(site, ["migrate", "up"], override=override, log=log)
+    # Обходим Python guard только в этом отрицательном тесте настоящего Go CLI.
+    # Сравниваем всю историю версий и publishing-каталог, чтобы заметить выполненный Down.
+    snapshot_query = """SELECT json_build_object(
+ 'migration_history', (SELECT json_agg(row_to_json(v) ORDER BY id) FROM public.goose_db_version v),
+ 'relations', (SELECT json_agg(json_build_array(relname,relkind,oid,relowner,relacl,reloptions) ORDER BY relname)
+       FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace),
+ 'views', (SELECT json_agg(json_build_array(viewname,definition) ORDER BY viewname)
+   FROM pg_catalog.pg_views WHERE schemaname='public'))::text"""
+    before_down = command([*compose, *postgres_sql_args(config, snapshot_query)], log, capture=True)
+    rejected_down = subprocess.run(
+        [*compose, "run", "--rm", "--no-deps", "-T", "--env", "DB_DISPOSABLE_TOKEN=",
+         "db-tools", "migrate", "down"], cwd=ROOT, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    log.write(rejected_down.stdout)
+    after_down = command([*compose, *postgres_sql_args(config, snapshot_query)], log, capture=True)
+    if (rejected_down.returncode == 0 or "для down требуется DB_DISPOSABLE_TOKEN" not in rejected_down.stdout
+            or before_down != after_down):
+        raise RuntimeError("CLI Down с пустым токеном должен отказать без изменения каталога и версий")
+    log.write("PASS: CLI Down с пустым токеном отклонён; catalog/version сохранены\n")
+    run_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
+    run_tool(site, ["migrate", "up"], override=override, log=log)
+    run_tool(site, ["seed"], override=override, log=log)
+    csv = directory / "languages.csv"
+    csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
+    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+
+
+def main():
+    if shutil.which("go") is None:
+        raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
+    token = secrets.token_hex(6)
+    site = f"stage12-{token}.test"
+    project = f"sp-stage12-{token}"
+    database = f"stage12_{token}"
+    directory, override, log_path, volume = prepare_installation(site, project, database, token)
     compose = [*compose_command(site), "-f", str(override), "--project-name", project]
     success = False
     resources_owned = False
     try:
         subprocess.run(["python3", "scripts/setup-local.py", "--site", site], cwd=ROOT, check=True)
         config = load_config(site, override=override)
-        if config["name"] != project or config["volumes"]["postgres_data"]["name"] != values["DB_VOLUME_NAME"]:
+        if config["name"] != project or config["volumes"]["postgres_data"]["name"] != volume:
             raise RuntimeError("Не совпадает идентичность временной установки")
         print(f"Проверка временной установки {site}; лог: {log_path}", flush=True)
         with log_path.open("w") as log:
             # Compose может принять существующий именованный том без наших labels.
             # Проверяем точное имя до первого запуска, а затем и перед удалением.
-            verify_owned(project, token, log, volume=values["DB_VOLUME_NAME"])
+            verify_owned(project, token, log, volume=volume)
             resources_owned = True
             command([*compose, "build", "postgres-init", "postgres", "db-tools"], log)
             command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
@@ -121,49 +160,23 @@ def main():
                 raise RuntimeError("Тестовый порт PostgreSQL должен быть доступен только на loopback")
             port = bindings[0]["HostPort"]
             # Метку БД создаёт только владелец новой тестовой установки после проверки ресурсов.
-            verify_owned(project, token, log, volume=values["DB_VOLUME_NAME"])
+            verify_owned(project, token, log, volume=volume)
             query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
             command([*compose, *postgres_sql_args(config, query)], log)
-            # Проверяем поставляемый CLI, включая защищённый Down, до SQL-тестов Go.
-            run_tool(site, ["prepare-roles"], override=override, log=log)
-            run_tool(site, ["migrate", "up"], override=override, log=log)
-            # Обходим Python guard только в этом отрицательном тесте настоящего Go CLI.
-            # Сравниваем всю историю версий и publishing-каталог, чтобы заметить выполненный Down.
-            snapshot_query = """SELECT json_build_object(
- 'migration_history', (SELECT json_agg(row_to_json(v) ORDER BY id) FROM public.goose_db_version v),
- 'relations', (SELECT json_agg(json_build_array(relname,relkind,oid,relowner,relacl,reloptions) ORDER BY relname)
-               FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace),
- 'views', (SELECT json_agg(json_build_array(viewname,definition) ORDER BY viewname)
-           FROM pg_catalog.pg_views WHERE schemaname='public'))::text"""
-            before_down = command([*compose, *postgres_sql_args(config, snapshot_query)], log, capture=True)
-            rejected_down = subprocess.run(
-                [*compose, "run", "--rm", "--no-deps", "-T", "--env", "DB_DISPOSABLE_TOKEN=",
-                 "db-tools", "migrate", "down"], cwd=ROOT, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            log.write(rejected_down.stdout)
-            after_down = command([*compose, *postgres_sql_args(config, snapshot_query)], log, capture=True)
-            if (rejected_down.returncode == 0 or "для down требуется DB_DISPOSABLE_TOKEN" not in rejected_down.stdout
-                    or before_down != after_down):
-                raise RuntimeError("CLI Down с пустым токеном должен отказать без изменения каталога и версий")
-            log.write("PASS: CLI Down с пустым токеном отклонён; catalog/version сохранены\n")
-            run_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
-            run_tool(site, ["migrate", "up"], override=override, log=log)
-            run_tool(site, ["seed"], override=override, log=log)
-            csv = directory / "languages.csv"
-            csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
-            run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
-            run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+            check_cli(site, directory, override, compose, config, log)
             environment = dict(os.environ)
             environment["DB_DISPOSABLE_TOKEN"] = token
             environment["STAGE12_TEST_DATABASE_URL"] = (
                 f"postgres://stage12_owner@127.0.0.1:{port}/{database}?sslmode=disable")
             environment["STAGE12_TEST_PASSWORD_FILE"] = str(directory / ".secrets/db_owner_password")
-            command(["go", "test", "-count=1", "-race", "-v", "./..."], log, env=environment, cwd=ROOT / "apps/api")
+            # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
+            command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
+                     "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
             success = True
     finally:
         if resources_owned:
             with log_path.open("a") as log:
-                verify_owned(project, token, log, volume=values["DB_VOLUME_NAME"])
+                verify_owned(project, token, log, volume=volume)
                 command([*compose, "down", "--volumes", "--remove-orphans"], log)
         shutil.rmtree(directory)
         override.unlink()

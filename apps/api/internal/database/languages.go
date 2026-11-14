@@ -15,8 +15,10 @@ import (
 
 type Language struct{ Code, Name, NativeName, Direction string }
 
-// ReadLanguages validates the complete UTF-8 CSV before any write. is_enabled
-// is intentionally absent: metadata import must never activate a language.
+const directionLTR = "ltr"
+
+// ReadLanguages проверяет весь UTF-8 CSV до записи. Поле is_enabled отсутствует:
+// импорт метаданных не должен активировать язык.
 func ReadLanguages(reader io.Reader) ([]Language, error) {
 	raw, err := io.ReadAll(io.LimitReader(reader, 8*1024*1024+1))
 	if err != nil {
@@ -44,25 +46,12 @@ func ReadLanguages(reader io.Reader) ([]Language, error) {
 		if err != nil {
 			return nil, fmt.Errorf("CSV строка %d: неверный формат", line)
 		}
-		for i := range record {
-			record[i] = strings.TrimSpace(record[i])
+		row, err := readLanguageRecord(record, line, seen)
+		if err != nil {
+			return nil, err
 		}
-		if strings.ContainsAny(record[0], "_@. ") {
-			return nil, fmt.Errorf("CSV строка %d: некорректный BCP 47 код", line)
-		}
-		tag, err := language.Parse(record[0])
-		if err != nil || record[0] == "" {
-			return nil, fmt.Errorf("CSV строка %d: некорректный BCP 47 код", line)
-		}
-		code := strings.ToLower(tag.String())
-		if len(code) < 2 || len(code) > 63 || seen[code] {
-			return nil, fmt.Errorf("CSV строка %d: длина кода или повтор языка", line)
-		}
-		if record[1] == "" || record[2] == "" || strings.ContainsRune(strings.Join(record, ""), 0) || (record[3] != "ltr" && record[3] != "rtl") {
-			return nil, fmt.Errorf("CSV строка %d: обязательные имена и направление ltr/rtl", line)
-		}
-		seen[code] = true
-		result = append(result, Language{code, record[1], record[2], record[3]})
+		seen[row.Code] = true
+		result = append(result, row)
 	}
 	if len(result) == 0 {
 		return nil, fmt.Errorf("CSV не содержит языков")
@@ -70,15 +59,36 @@ func ReadLanguages(reader io.Reader) ([]Language, error) {
 	return result, nil
 }
 
+func readLanguageRecord(record []string, line int, seen map[string]bool) (Language, error) {
+	for i := range record {
+		record[i] = strings.TrimSpace(record[i])
+	}
+	if strings.ContainsAny(record[0], "_@. ") {
+		return Language{}, fmt.Errorf("CSV строка %d: некорректный BCP 47 код", line)
+	}
+	tag, err := language.Parse(record[0])
+	if err != nil || record[0] == "" {
+		return Language{}, fmt.Errorf("CSV строка %d: некорректный BCP 47 код", line)
+	}
+	code := strings.ToLower(tag.String())
+	if len(code) < 2 || len(code) > 63 || seen[code] {
+		return Language{}, fmt.Errorf("CSV строка %d: длина кода или повтор языка", line)
+	}
+	if record[1] == "" || record[2] == "" || strings.ContainsRune(strings.Join(record, ""), 0) || (record[3] != directionLTR && record[3] != "rtl") {
+		return Language{}, fmt.Errorf("CSV строка %d: обязательные имена и направление ltr/rtl", line)
+	}
+	return Language{code, record[1], record[2], record[3]}, nil
+}
+
 func Seed(ctx context.Context, db *sql.DB) error {
 	return ImportLanguages(ctx, db, []Language{
-		{"ru", "Russian", "Русский", "ltr"}, {"pl", "Polish", "Polski", "ltr"},
-		{"kk", "Kazakh", "Қазақша", "ltr"}, {"en", "English", "English", "ltr"},
+		{"ru", "Russian", "Русский", directionLTR}, {"pl", "Polish", "Polski", directionLTR},
+		{"kk", "Kazakh", "Қазақша", directionLTR}, {"en", "English", "English", directionLTR},
 	})
 }
 
-// ImportLanguages commits the entire validated file atomically. Sorted UPSERTs
-// align catalog row locks with lock_languages used by future publishing code.
+// ImportLanguages записывает проверенный файл атомарно. Сортировка UPSERT
+// согласует порядок блокировок строк каталога с lock_languages.
 func ImportLanguages(ctx context.Context, db *sql.DB, rows []Language) error {
 	ordered := append([]Language(nil), rows...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Code < ordered[j].Code })
