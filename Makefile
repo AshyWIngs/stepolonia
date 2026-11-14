@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -20,7 +20,7 @@ config: setup
 build: setup
 	$(COMPOSE) build
 
-lint: lint-go lint-python lint-web duplicates
+lint: lint-go lint-python lint-web duplicates sdk-check
 
 # Во время разработки запускаем только нужную подсистему; перед merge полный verify.
 check-go: lint-go api-checks
@@ -113,9 +113,11 @@ migrate seed import-languages:
 	@test "$(origin SITE)" = "command line" || { echo 'Укажите SITE в командной строке для обслуживания БД'; exit 2; }
 	python3 scripts/db_tools.py --site "$(SITE)" $@ $(if $(filter migrate,$@),$(or $(ACTION),up)) $(if $(filter import-languages,$@),"$(FILE)") $(if $(and $(filter migrate,$@),$(filter down,$(ACTION)),$(filter 1,$(DISPOSABLE))),--disposable)
 
-db-test:
+db-test: sdk-check
 	python3 scripts/test-publishing.py
 
 sdk:
-	@echo "$@ is not implemented in Stage 0; Publishing, migrations and SDK belong to Stage 1."
-	@exit 2
+	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run generate
+
+sdk-check:
+	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run check

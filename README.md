@@ -3,9 +3,9 @@
 Платформа порталов на Go и Nuxt. Общий код, отдельные установки сайтов со
 своими PostgreSQL, настройками и данными.
 
-Реализованы инфраструктура, healthchecks, стартовая SSR-страница, схема данных
-публикаций и инструменты каталога языков. Публикация материалов через API,
-авторизация и редактор пока не реализованы.
+Реализованы инфраструктура, healthchecks, стартовая SSR-страница, доменная логика
+публикаций, публичный read-only API и генерируемые типы SDK.
+Авторизация и редактор пока не реализованы.
 Проект находится в дорелизной разработке; релизов и развёртываний пока не было.
 Исходная схема меняется напрямую в `00001`, без переходов между черновыми версиями.
 
@@ -14,6 +14,7 @@
 ```text
 apps/api/                 Go API
 apps/web/                 Nuxt frontend
+packages/sdk/             OpenAPI, TypeScript-типы и Fetch-клиент
 infrastructure/           Docker Compose, Caddy, PostgreSQL
 scripts/                  настройка и проверки установок
 sites/example.test/       пример конфигурации сайта
@@ -58,6 +59,8 @@ SITE ?= another.test
 | `make config` | Проверить конфигурацию Compose |
 | `make lint` | Go, Ruff, Nuxt ESLint и проверка дублирования без запуска БД |
 | `make duplicates` | Проверить copy-paste через jscpd, включая тесты |
+| `make sdk` | Обновить OpenAPI и типы SDK из зарегистрированных Huma-операций |
+| `make sdk-check` | Проверить актуальность SDK, ESLint и TypeScript |
 | `make verify` | Lint, config, test, build, disposable db-test и High/Critical CVE gate |
 | `make image-audit` | Проверить собранные образы: Grype, включая уязвимости без исправлений |
 | `make test` | Проверить Dockerfile, Go и TypeScript |
@@ -77,7 +80,10 @@ volumes с данными.
 PostgreSQL 18.7 работает в минимальном runtime без shell; bootstrap
 выполняет одноразовый `postgres-init`. API, web и Caddy также запускаются
 non-root без shell. API, frontend и PostgreSQL не публикуют порты хоста;
-HTTP обслуживает Caddy. Генерация SDK пока не реализована.
+HTTP обслуживает Caddy. Для генерации и проверки SDK нужны Go из `apps/api/go.mod`,
+Node.js 26.13.1 и npm 11.21.2 на хосте. Эти же инструменты нужны для `make lint`,
+`make verify` и `make check-db`. Команды и ограничения Fetch-клиента описаны
+в [packages/sdk/README.md](packages/sdk/README.md).
 
 Образы PostgreSQL используют Alpine/musl и предназначены для новых кластеров.
 Сохраняются UID/GID 999 и путь `/var/lib/postgresql/18/docker`. Готовый кластер

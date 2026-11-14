@@ -16,6 +16,8 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
+      # Аргументы transport-вызовов также содержат MIME, query/header и error codes.
+      ignore-calls: false
       ignore-tests: false
   exclusions:
     presets: []

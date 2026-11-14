@@ -147,7 +147,7 @@ func (r *PublicReader) ResolveArticle(ctx context.Context, languageCode, slug st
  ON t.article_id=r.article_id AND t.revision_id=r.revision_id AND t.language_code=r.language_code
  WHERE r.language_code=$1 AND r.slug=$2`, code, slug).Scan(&article.ArticleID, &article.RevisionID, &article.LanguageCode, &article.Title, &article.Slug, &article.BodyMarkdown)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Resolution{}, problem(NotFound, "article_not_found")
+		return Resolution{}, problem(NotFound, articleNotFoundCode)
 	}
 	if err != nil {
 		return Resolution{}, databaseError(err)

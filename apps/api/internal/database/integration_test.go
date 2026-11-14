@@ -14,6 +14,27 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// Имена и SQL принадлежат тестовому harness. Они не берутся из production:
+// одинаковые команды сохраняют независимую проверку схемы и прав каждой роли.
+const (
+	disposableTokenEnv                  = "DB_DISPOSABLE_TOKEN"
+	publisherTestRole                   = "sp_publisher"
+	runtimeTestRole                     = "stage12_app"
+	languageImporterTestRole            = "sp_language_importer"
+	enableRussianSQL                    = "UPDATE public.languages SET is_enabled=true WHERE code='ru'"
+	disableRussianSQL                   = "UPDATE public.languages SET is_enabled=false WHERE code='ru'"
+	enablePolishSQL                     = "UPDATE public.languages SET is_enabled=true WHERE code='pl'"
+	insertArticleSQL                    = "INSERT INTO public.articles(id)VALUES($1)"
+	reserveOriginalRussianRouteSQL      = "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','original',$1)"
+	insertFirstRevisionSQL              = "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)"
+	insertOriginalRussianTranslationSQL = "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Public','original','Body')"
+	setPublishedRevisionSQL             = "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2"
+	sealRevisionSQL                     = "UPDATE public.article_revisions SET sealed=true WHERE id=$1"
+	appliedMigrationVersionSQL          = "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied"
+	russianEnabledSQL                   = "SELECT is_enabled FROM public.languages WHERE code='ru'"
+	backendPIDSQL                       = "SELECT pg_backend_pid()"
+)
+
 func TestPublishingSchemaIntegration(t *testing.T) {
 	cfg := disposableDatabaseConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -68,7 +89,7 @@ func prepareDisposableSchema(t *testing.T, ctx context.Context, db *sql.DB) {
 	requireNoError(t, err)
 	for _, state := range status {
 		if state.State == "applied" {
-			requireNoError(t, Down(ctx, db, os.Getenv("DB_DISPOSABLE_TOKEN")))
+			requireNoError(t, Down(ctx, db, os.Getenv(disposableTokenEnv)))
 		}
 	}
 }
@@ -84,13 +105,13 @@ func testMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) {
 func testPublishingIntegrity(t *testing.T, ctx context.Context, db *sql.DB, cfg *pgx.ConnConfig) {
 	requireNoError(t, Seed(ctx, db))
 	requireNoError(t, Seed(ctx, db))
-	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
+	_, err := db.ExecContext(ctx, enableRussianSQL)
 	requireNoError(t, err)
 	var serial int
 	id := func() string { serial++; return fmt.Sprintf("00000000-0000-0000-0000-%012d", serial) }
 	article := id()
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
-	execSQL(t, ctx, tx, "INSERT INTO public.articles(id)VALUES($1)", article)
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
+	execSQL(t, ctx, tx, insertArticleSQL, article)
 	requireNoError(t, tx.Commit())
 	t.Run("draft completeness and content edit", func(t *testing.T) { testDraftCompleteness(t, ctx, db, article) })
 	t.Run("foreign keys", func(t *testing.T) { testForeignKeys(t, ctx, db, article, id) })
@@ -107,20 +128,21 @@ func testPublishingIntegrity(t *testing.T, ctx context.Context, db *sql.DB, cfg 
 }
 
 func publishInitialSnapshot(t *testing.T, ctx context.Context, db *sql.DB, article, revision string) {
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
-	execSQL(t, ctx, tx, "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','original',$1)", article)
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", revision, article)
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Public','original','Body')", article, revision)
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
+	execSQL(t, ctx, tx, reserveOriginalRussianRouteSQL, article)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, revision, article)
+	execSQL(t, ctx, tx, insertOriginalRussianTranslationSQL, article, revision)
 	// Указатель не должен принимать незакрытый снимок даже внутри той же транзакции.
+	// Запрещённую команду задаём независимо от подготовки успешного снимка.
 	_, err := tx.ExecContext(ctx, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", revision, article)
 	assertSQLState(t, err, "23514")
 	_ = tx.Rollback()
-	tx = beginRoleTx(t, ctx, db, "sp_publisher")
-	execSQL(t, ctx, tx, "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','original',$1)", article)
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", revision, article)
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Public','original','Body')", article, revision)
-	execSQL(t, ctx, tx, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", revision)
-	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", revision, article)
+	tx = beginRoleTx(t, ctx, db, publisherTestRole)
+	execSQL(t, ctx, tx, reserveOriginalRussianRouteSQL, article)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, revision, article)
+	execSQL(t, ctx, tx, insertOriginalRussianTranslationSQL, article, revision)
+	execSQL(t, ctx, tx, sealRevisionSQL, revision)
+	execSQL(t, ctx, tx, setPublishedRevisionSQL, revision, article)
 	requireNoError(t, tx.Commit())
 }
 
@@ -134,15 +156,15 @@ func testRuntimeGrantRecovery(t *testing.T, ctx context.Context, db *sql.DB) {
  CREATE EVENT TRIGGER reject_runtime_grant ON ddl_command_start WHEN TAG IN ('GRANT')
  EXECUTE FUNCTION public.reject_runtime_grant()`)
 	requireNoError(t, err)
-	assertSQLState(t, Up(ctx, db, "stage12_app"), "42501")
+	assertSQLState(t, Up(ctx, db, runtimeTestRole), "42501")
 	var version int
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied").Scan(&version))
+	requireNoError(t, db.QueryRowContext(ctx, appliedMigrationVersionSQL).Scan(&version))
 	if version != 1 {
 		t.Fatal("grant failure lost the committed goose migration")
 	}
 	requireNoError(t, CheckSchema(ctx, db))
-	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.public_languages", "42501")
-	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.article_draft_translations", "42501")
+	rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public.public_languages", "42501")
+	rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public.article_draft_translations", "42501")
 	_, err = db.ExecContext(ctx, `DROP EVENT TRIGGER reject_runtime_grant; DROP FUNCTION public.reject_runtime_grant();
  INSERT INTO public.languages(code,name,native_name,direction) VALUES('fr','French','Français','ltr')`)
 	requireNoError(t, err)
@@ -153,17 +175,17 @@ func testRuntimeGrantRecovery(t *testing.T, ctx context.Context, db *sql.DB) {
  'data',(SELECT json_agg(row_to_json(l) ORDER BY code) FROM public.languages l))::text`
 	var before, after string
 	requireNoError(t, db.QueryRowContext(ctx, stateSQL).Scan(&before))
-	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, Up(ctx, db, runtimeTestRole))
 	requireNoError(t, db.QueryRowContext(ctx, stateSQL).Scan(&after))
 	if before != after {
 		t.Fatal("retry changed committed schema, goose history or language data")
 	}
-	tx := beginRoleTx(t, ctx, db, "stage12_app")
+	tx := beginRoleTx(t, ctx, db, runtimeTestRole)
 	var count int
 	requireNoError(t, tx.QueryRowContext(ctx, "SELECT count(*) FROM public.public_languages").Scan(&count))
 	requireNoError(t, tx.Rollback())
-	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.article_revision_translations", "42501")
-	requireNoError(t, Down(ctx, db, os.Getenv("DB_DISPOSABLE_TOKEN")))
+	rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public.article_revision_translations", "42501")
+	requireNoError(t, Down(ctx, db, os.Getenv(disposableTokenEnv)))
 }
 
 func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -173,7 +195,7 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	const defaultACL = `SELECT COALESCE(json_agg(row_to_json(d) ORDER BY oid)::text,'[]') FROM pg_default_acl d WHERE defaclrole=current_user::regrole`
 	var beforeDefaults, afterDefaults string
 	requireNoError(t, db.QueryRowContext(ctx, defaultACL).Scan(&beforeDefaults))
-	if err := Up(ctx, db, "stage12_app"); err == nil {
+	if err := Up(ctx, db, runtimeTestRole); err == nil {
 		t.Fatal("unsafe default ACL accepted before initial DDL")
 	}
 	requireNoError(t, db.QueryRowContext(ctx, defaultACL).Scan(&afterDefaults))
@@ -186,7 +208,7 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	requireNoError(t, err)
 	_, err = db.ExecContext(ctx, "CREATE TABLE public.languages (unexpected integer)")
 	requireNoError(t, err)
-	if err := Up(ctx, db, "stage12_app"); err == nil {
+	if err := Up(ctx, db, runtimeTestRole); err == nil {
 		t.Fatal("unexpected object accepted without migration history")
 	}
 	var untouched bool
@@ -196,13 +218,13 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	}
 	_, err = db.ExecContext(ctx, "DROP TABLE public.languages")
 	requireNoError(t, err)
-	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, Up(ctx, db, runtimeTestRole))
 	requireNoError(t, Seed(ctx, db))
-	_, err = db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
+	_, err = db.ExecContext(ctx, enableRussianSQL)
 	requireNoError(t, err)
-	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, Up(ctx, db, runtimeTestRole))
 	var enabled bool
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT is_enabled FROM public.languages WHERE code='ru'").Scan(&enabled))
+	requireNoError(t, db.QueryRowContext(ctx, russianEnabledSQL).Scan(&enabled))
 	if !enabled {
 		t.Fatal("repeated up changed enabled-language data")
 	}
@@ -230,23 +252,23 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 		}
 	}
 	var version int
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied").Scan(&version))
+	requireNoError(t, db.QueryRowContext(ctx, appliedMigrationVersionSQL).Scan(&version))
 	if version != 1 {
 		t.Fatal("rejected down changed migration history")
 	}
-	requireNoError(t, Down(ctx, db, os.Getenv("DB_DISPOSABLE_TOKEN")))
+	requireNoError(t, Down(ctx, db, os.Getenv(disposableTokenEnv)))
 	requireNoError(t, CheckSchema(ctx, db))
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied").Scan(&version))
+	requireNoError(t, db.QueryRowContext(ctx, appliedMigrationVersionSQL).Scan(&version))
 	if version != 0 {
 		t.Fatal("down did not return goose history to version zero")
 	}
-	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, Up(ctx, db, runtimeTestRole))
 }
 
 func testColumnAndGuardDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx, "ALTER TABLE public.articles ALTER COLUMN version TYPE integer")
 	requireNoError(t, err)
-	if err := Up(ctx, db, "stage12_app"); err == nil {
+	if err := Up(ctx, db, runtimeTestRole); err == nil {
 		t.Fatal("changed column accepted")
 	}
 	var typ string
@@ -258,7 +280,7 @@ func testColumnAndGuardDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 	requireNoError(t, err)
 	_, err = db.ExecContext(ctx, "DROP TRIGGER articles_published_guard ON public.articles")
 	requireNoError(t, err)
-	if err := Up(ctx, db, "stage12_app"); err == nil {
+	if err := Up(ctx, db, runtimeTestRole); err == nil {
 		t.Fatal("removed publication guard accepted")
 	}
 	var count int
@@ -270,7 +292,7 @@ func testColumnAndGuardDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 	requireNoError(t, err)
 	_, err = db.ExecContext(ctx, "COMMENT ON TRIGGER articles_published_guard ON public.articles IS 'Разрешает публикацию только собственной закрытой ревизии статьи.'")
 	requireNoError(t, err)
-	requireNoError(t, Up(ctx, db, "stage12_app"))
+	requireNoError(t, Up(ctx, db, runtimeTestRole))
 }
 
 func testSemanticDrift(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -303,7 +325,7 @@ func testSemanticDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 			requireNoError(t, err)
 			var before, after string
 			requireNoError(t, db.QueryRowContext(ctx, snapshotSQL).Scan(&before))
-			if err := Up(ctx, db, "stage12_app"); err == nil {
+			if err := Up(ctx, db, runtimeTestRole); err == nil {
 				t.Fatal("semantic drift accepted")
 			}
 			requireNoError(t, db.QueryRowContext(ctx, snapshotSQL).Scan(&after))
@@ -318,10 +340,10 @@ func testSemanticDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 }
 
 func testDraftCompleteness(t *testing.T, ctx context.Context, db *sql.DB, article string) {
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_draft_translations(article_id,language_code,is_ready)VALUES($1,'ru',true)", "23514", article)
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_draft_translations(article_id,language_code,title,slug,body_markdown,is_ready)VALUES($1,'ru',E'\t\n','ok','body',true)", "23514", article)
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_draft_translations(article_id,language_code,title,slug,body_markdown,is_ready)VALUES($1,'ru',chr(160),'ok',chr(160),true)", "23514", article)
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_draft_translations(article_id,language_code,is_ready)VALUES($1,'ru',true)", "23514", article)
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_draft_translations(article_id,language_code,title,slug,body_markdown,is_ready)VALUES($1,'ru',E'\t\n','ok','body',true)", "23514", article)
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_draft_translations(article_id,language_code,title,slug,body_markdown,is_ready)VALUES($1,'ru',chr(160),'ok',chr(160),true)", "23514", article)
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, "INSERT INTO public.article_draft_translations(article_id,language_code,title,slug,body_markdown,is_ready)VALUES($1,'ru','Title','draft','Body',true)", article)
 	execSQL(t, ctx, tx, "UPDATE public.article_draft_translations SET title='Changed',is_ready=true WHERE article_id=$1", article)
 	var ready bool
@@ -333,18 +355,18 @@ func testDraftCompleteness(t *testing.T, ctx context.Context, db *sql.DB, articl
 }
 
 func testForeignKeys(t *testing.T, ctx context.Context, db *sql.DB, article string, id func() string) {
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_draft_translations(article_id,language_code)VALUES($1,'ru')", "23503", id())
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_draft_translations(article_id,language_code)VALUES($1,'zzzz')", "23503", article)
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_draft_translations(article_id,language_code)VALUES($1,'ru')", "23503", id())
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_draft_translations(article_id,language_code)VALUES($1,'zzzz')", "23503", article)
 	rejectSQL(t, ctx, db, "", "INSERT INTO public.languages(code,name,native_name,direction)VALUES('RU','Russian','Русский','ltr')", "23514")
 }
 
 func testUnsealedRevision(t *testing.T, ctx context.Context, db *sql.DB, article string, id func() string) {
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	revision := id()
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", revision, article)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, revision, article)
 	assertSQLState(t, tx.Commit(), "23514")
-	tx = beginRoleTx(t, ctx, db, "sp_publisher")
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", id(), article)
+	tx = beginRoleTx(t, ctx, db, publisherTestRole)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, id(), article)
 	_, err := tx.ExecContext(ctx, "UPDATE public.article_revisions SET sealed=true WHERE article_id=$1", article)
 	assertSQLState(t, err, "23514")
 	_ = tx.Rollback()
@@ -354,35 +376,35 @@ func testClosedSnapshotReservations(t *testing.T, ctx context.Context, db *sql.D
 	for _, q := range []string{"UPDATE public.article_revision_translations SET title='changed' WHERE revision_id=$1", "DELETE FROM public.article_revision_translations WHERE revision_id=$1", "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown) SELECT article_id,revision_id,'pl','Added','other','Body' FROM public.article_revision_translations WHERE revision_id=$1"} {
 		rejectSQL(t, ctx, db, "", q, "23514", revision)
 	}
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown) SELECT article_id,revision_id,'pl','Added','other','Body' FROM public.article_revision_translations WHERE revision_id=$1", "23514", revision)
-	rejectSQL(t, ctx, db, "sp_publisher", "UPDATE public.article_revisions SET sealed=false WHERE id=$1", "23514", revision)
-	rejectSQL(t, ctx, db, "sp_publisher", "UPDATE public.article_revision_translations SET title='changed' WHERE revision_id=$1", "42501", revision)
-	rejectSQL(t, ctx, db, "sp_publisher", "DELETE FROM public.article_revision_translations WHERE revision_id=$1", "42501", revision)
+	rejectSQL(t, ctx, db, publisherTestRole, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown) SELECT article_id,revision_id,'pl','Added','other','Body' FROM public.article_revision_translations WHERE revision_id=$1", "23514", revision)
+	rejectSQL(t, ctx, db, publisherTestRole, "UPDATE public.article_revisions SET sealed=false WHERE id=$1", "23514", revision)
+	rejectSQL(t, ctx, db, publisherTestRole, "UPDATE public.article_revision_translations SET title='changed' WHERE revision_id=$1", "42501", revision)
+	rejectSQL(t, ctx, db, publisherTestRole, "DELETE FROM public.article_revision_translations WHERE revision_id=$1", "42501", revision)
 	rejectSQL(t, ctx, db, "", "UPDATE public.article_revisions SET sealed=false WHERE id=$1", "23514", revision)
 	rejectSQL(t, ctx, db, "", "DELETE FROM public.article_revisions WHERE id=$1", "23514", revision)
 	rejectSQL(t, ctx, db, "", "DELETE FROM public.public_routes WHERE article_id=$1", "23514", article)
 	rejectSQL(t, ctx, db, "", "UPDATE public.public_routes SET slug='other' WHERE article_id=$1", "23514", article)
 	other := id()
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
-	execSQL(t, ctx, tx, "INSERT INTO public.articles(id)VALUES($1)", other)
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
+	execSQL(t, ctx, tx, insertArticleSQL, other)
 	requireNoError(t, tx.Commit())
-	rejectSQL(t, ctx, db, "sp_publisher", "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", "23514", revision, other)
-	rejectSQL(t, ctx, db, "sp_publisher", "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','original',$1)", "23505", other)
-	tx = beginRoleTx(t, ctx, db, "sp_publisher")
+	rejectSQL(t, ctx, db, publisherTestRole, setPublishedRevisionSQL, "23514", revision, other)
+	rejectSQL(t, ctx, db, publisherTestRole, reserveOriginalRussianRouteSQL, "23505", other)
+	tx = beginRoleTx(t, ctx, db, publisherTestRole)
 	unsealed := id()
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", unsealed, other)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, unsealed, other)
 	_, err := tx.ExecContext(ctx, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Title','original','Body')", other, unsealed)
 	assertSQLState(t, err, "23503")
 	_ = tx.Rollback()
-	tx = beginRoleTx(t, ctx, db, "sp_publisher")
+	tx = beginRoleTx(t, ctx, db, publisherTestRole)
 	mismatched := id()
-	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,1)", mismatched, other)
+	execSQL(t, ctx, tx, insertFirstRevisionSQL, mismatched, other)
 	_, err = tx.ExecContext(ctx, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Title','original','Body')", article, mismatched)
 	assertSQLState(t, err, "23503")
 	_ = tx.Rollback()
-	tx = beginRoleTx(t, ctx, db, "sp_publisher")
+	tx = beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,2)", id(), article)
-	_, err = tx.ExecContext(ctx, "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','original',$1)", other)
+	_, err = tx.ExecContext(ctx, reserveOriginalRussianRouteSQL, other)
 	assertSQLState(t, err, "23505")
 	_ = tx.Rollback()
 	var count int
@@ -393,20 +415,20 @@ func testClosedSnapshotReservations(t *testing.T, ctx context.Context, db *sql.D
 }
 
 func testConcurrentSnapshotAppend(t *testing.T, ctx context.Context, db *sql.DB, article string, id func() string) {
-	routes := beginRoleTx(t, ctx, db, "sp_publisher")
+	routes := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, routes, "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('pl','concurrent',$1)", article)
 	requireNoError(t, routes.Commit())
-	assembling := beginRoleTx(t, ctx, db, "sp_publisher")
+	assembling := beginRoleTx(t, ctx, db, publisherTestRole)
 	pending := id()
 	execSQL(t, ctx, assembling, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,2)", pending, article)
-	execSQL(t, ctx, assembling, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Public','original','Body')", article, pending)
-	contender := beginRoleTx(t, ctx, db, "sp_publisher")
+	execSQL(t, ctx, assembling, insertOriginalRussianTranslationSQL, article, pending)
+	contender := beginRoleTx(t, ctx, db, publisherTestRole)
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	_, err := contender.ExecContext(bounded, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'pl','Concurrent','concurrent','Body')", article, pending)
 	assertSQLState(t, err, "23503")
 	_ = contender.Rollback()
-	execSQL(t, ctx, assembling, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", pending)
+	execSQL(t, ctx, assembling, sealRevisionSQL, pending)
 	requireNoError(t, assembling.Commit())
 	var count int
 	requireNoError(t, db.QueryRowContext(ctx, "SELECT count(*) FROM public.article_revision_translations WHERE revision_id=$1", pending).Scan(&count))
@@ -421,7 +443,7 @@ func testLanguageImport(t *testing.T, ctx context.Context, db *sql.DB, revision 
 	requireNoError(t, ImportLanguages(ctx, db, rows))
 	requireNoError(t, ImportLanguages(ctx, db, rows))
 	var enabled bool
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT is_enabled FROM public.languages WHERE code='ru'").Scan(&enabled))
+	requireNoError(t, db.QueryRowContext(ctx, russianEnabledSQL).Scan(&enabled))
 	if !enabled {
 		t.Fatal("import disabled existing language")
 	}
@@ -454,24 +476,24 @@ func testRuntimeRoleMembership(t *testing.T, ctx context.Context, db *sql.DB) {
 			t.Fatal(err)
 		}
 	}()
-	if err := GrantRuntime(ctx, db, "stage12_app"); err == nil {
+	if err := GrantRuntime(ctx, db, runtimeTestRole); err == nil {
 		t.Fatal("runtime accepted membership that permits SET ROLE")
 	}
 }
 
 func testLeastPrivileges(t *testing.T, ctx context.Context, db *sql.DB, revision string, id func() string) {
-	rejectSQL(t, ctx, db, "sp_language_importer", "UPDATE public.languages SET is_enabled=false WHERE code='ru'", "42501")
-	rejectSQL(t, ctx, db, "sp_language_importer", "INSERT INTO public.articles(id)VALUES($1)", "42501", id())
-	rejectSQL(t, ctx, db, "sp_publisher", "UPDATE public.languages SET is_enabled=false WHERE code='ru'", "42501")
-	for _, role := range []string{"stage12_app", "sp_publisher", "sp_language_importer"} {
+	rejectSQL(t, ctx, db, languageImporterTestRole, disableRussianSQL, "42501")
+	rejectSQL(t, ctx, db, languageImporterTestRole, insertArticleSQL, "42501", id())
+	rejectSQL(t, ctx, db, publisherTestRole, disableRussianSQL, "42501")
+	for _, role := range []string{runtimeTestRole, publisherTestRole, languageImporterTestRole} {
 		rejectSQL(t, ctx, db, role, "CREATE TABLE public.forbidden(id int)", "42501")
 	}
 	for _, table := range []string{"languages", "articles", "article_draft_translations", "article_revisions", "article_revision_translations", "public_routes"} {
-		rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public."+table, "42501")
+		rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public."+table, "42501")
 	}
-	rejectSQL(t, ctx, db, "stage12_app", "INSERT INTO public.articles(id)VALUES($1)", "42501", id())
-	rejectSQL(t, ctx, db, "stage12_app", "SELECT * FROM public.lock_languages(ARRAY['ru'])", "42501")
-	tx := beginRoleTx(t, ctx, db, "stage12_app")
+	rejectSQL(t, ctx, db, runtimeTestRole, insertArticleSQL, "42501", id())
+	rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public.lock_languages(ARRAY['ru'])", "42501")
+	tx := beginRoleTx(t, ctx, db, runtimeTestRole)
 	var title string
 	requireNoError(t, tx.QueryRowContext(ctx, "SELECT title FROM public.public_article_translations WHERE revision_id=$1", revision).Scan(&title))
 	if title != "Public" {
@@ -482,17 +504,17 @@ func testLeastPrivileges(t *testing.T, ctx context.Context, db *sql.DB, revision
 
 func testRuntimeVisibility(t *testing.T, ctx context.Context, db *sql.DB, article string, id func() string) {
 	current := id()
-	tx := beginRoleTx(t, ctx, db, "sp_publisher")
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, "INSERT INTO public.public_routes(language_code,slug,article_id)VALUES('ru','current',$1),('de','disabled',$1)", article)
 	execSQL(t, ctx, tx, "INSERT INTO public.article_revisions(id,article_id,revision_no)VALUES($1,$2,3)", current, article)
 	execSQL(t, ctx, tx, "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Current','current','Current body'),($1,$2,'de','Disabled','disabled','Hidden body')", article, current)
-	execSQL(t, ctx, tx, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", current)
-	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", current, article)
+	execSQL(t, ctx, tx, sealRevisionSQL, current)
+	execSQL(t, ctx, tx, setPublishedRevisionSQL, current, article)
 	requireNoError(t, tx.Commit())
 	// Язык старого alias включён, но в текущей ревизии перевода на нём нет.
-	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='pl'")
+	_, err := db.ExecContext(ctx, enablePolishSQL)
 	requireNoError(t, err)
-	tx = beginRoleTx(t, ctx, db, "stage12_app")
+	tx = beginRoleTx(t, ctx, db, runtimeTestRole)
 	var title, slug string
 	requireNoError(t, tx.QueryRowContext(ctx, "SELECT title,slug FROM public.public_article_translations WHERE article_id=$1", article).Scan(&title, &slug))
 	if title != "Current" || slug != "current" {
@@ -511,10 +533,10 @@ func testRuntimeVisibility(t *testing.T, ctx context.Context, db *sql.DB, articl
 		enabled  bool
 	}{{nil, true}, {current, false}} {
 		fixture := beginRoleTx(t, ctx, db, "")
-		execSQL(t, ctx, fixture, "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2", state.revision, article)
+		execSQL(t, ctx, fixture, setPublishedRevisionSQL, state.revision, article)
 		execSQL(t, ctx, fixture, "UPDATE public.languages SET is_enabled=$1 WHERE code='ru'", state.enabled)
 		requireNoError(t, fixture.Commit())
-		tx = beginRoleTx(t, ctx, db, "stage12_app")
+		tx = beginRoleTx(t, ctx, db, runtimeTestRole)
 		requireNoError(t, tx.QueryRowContext(ctx, "SELECT count(*) FROM public.public_article_translations").Scan(&translations))
 		requireNoError(t, tx.QueryRowContext(ctx, "SELECT count(*) FROM public.public_article_routes").Scan(&routes))
 		if translations != 0 || routes != 0 {
@@ -522,12 +544,12 @@ func testRuntimeVisibility(t *testing.T, ctx context.Context, db *sql.DB, articl
 		}
 		requireNoError(t, tx.Commit())
 	}
-	_, err = db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
+	_, err = db.ExecContext(ctx, enableRussianSQL)
 	requireNoError(t, err)
 }
 
 func testLanguageLockRelease(t *testing.T, ctx context.Context, db *sql.DB, cfg *pgx.ConnConfig) {
-	first := beginRoleTx(t, ctx, db, "sp_publisher")
+	first := beginRoleTx(t, ctx, db, publisherTestRole)
 	var enabled bool
 	requireNoError(t, first.QueryRowContext(ctx, "SELECT is_enabled FROM public.lock_languages(ARRAY['ru'])").Scan(&enabled))
 	if !enabled {
@@ -537,10 +559,10 @@ func testLanguageLockRelease(t *testing.T, ctx context.Context, db *sql.DB, cfg 
 	requireNoError(t, err)
 	defer second.Close(ctx)
 	var pid int
-	requireNoError(t, second.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&pid))
+	requireNoError(t, second.QueryRow(ctx, backendPIDSQL).Scan(&pid))
 	result := make(chan error, 1)
 	go func() {
-		_, err := second.Exec(ctx, "UPDATE public.languages SET is_enabled=false WHERE code='ru'")
+		_, err := second.Exec(ctx, disableRussianSQL)
 		result <- err
 	}()
 	waitForLock(t, ctx, db, pid, result)
@@ -552,7 +574,7 @@ func testLanguageLockRelease(t *testing.T, ctx context.Context, db *sql.DB, cfg 
 		t.Fatal("disable remained blocked")
 	}
 	var final bool
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT is_enabled FROM public.languages WHERE code='ru'").Scan(&final))
+	requireNoError(t, db.QueryRowContext(ctx, russianEnabledSQL).Scan(&final))
 	if final {
 		t.Fatal("disable did not commit after release")
 	}
