@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk lint lint-go lint-python lint-web duplicates image-audit verify
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -21,6 +21,15 @@ build: setup
 	$(COMPOSE) build
 
 lint: lint-go lint-python lint-web duplicates
+
+# Во время разработки запускаем только нужную подсистему; перед merge полный verify.
+check-go: lint-go api-checks
+
+check-python: lint-python python-tests
+
+check-web: lint-web web-checks
+
+check-db: db-test
 
 lint-go:
 	mkdir -p reports
@@ -72,13 +81,22 @@ docker-check:
 	docker build --check infrastructure/postgres > reports/postgres-docker-check.log 2>&1 || { cat reports/postgres-docker-check.log; exit 1; }
 	docker build --check -f infrastructure/quality/Dockerfile . > reports/quality-docker-check.log 2>&1 || { cat reports/quality-docker-check.log; exit 1; }
 
-test: setup docker-check
+test: setup docker-check python-tests api-checks web-checks
 	mkdir -p reports
-	python3 -m unittest discover -s scripts/tests -v > reports/python-checks.log 2>&1 || { cat reports/python-checks.log; exit 1; }
-	docker build --progress=plain --target checks -t sp-api-checks:stage0 apps/api > reports/api-checks.log 2>&1 || { cat reports/api-checks.log; exit 1; }
-	docker build --progress=plain --target checks -t sp-web-checks:stage0 apps/web > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-caddy-checks:stage0 infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-postgres-checks:stage0 infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
+
+python-tests:
+	mkdir -p reports
+	python3 -m unittest discover -s scripts/tests -v > reports/python-checks.log 2>&1 || { cat reports/python-checks.log; exit 1; }
+
+api-checks:
+	mkdir -p reports
+	docker build --progress=plain --target checks -t sp-api-checks:stage0 apps/api > reports/api-checks.log 2>&1 || { cat reports/api-checks.log; exit 1; }
+
+web-checks:
+	mkdir -p reports
+	docker build --progress=plain --target checks -t sp-web-checks:stage0 apps/web > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
 
 smoke: setup
 	python3 scripts/smoke.py --site "$(SITE)"

@@ -3,8 +3,10 @@ name: Verify
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,20 +17,47 @@ concurrency:
 
 jobs:
   verify:
+    # Имя job сохраняем: существующий required status check не переименовываем.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 2
+      - name: Select checks for current PR
+        id: scope
+        shell: bash
+        env:
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$PR_DRAFT" == "true" ]]; then
+              echo "full=false" >> "$GITHUB_OUTPUT"
+              echo "Draft PR: полный verify запускается при ready_for_review."
+              exit 0
+            fi
+            # Checkout PR merge commit: HEAD^1 — целевая main.
+            changed="$(git diff --name-only HEAD^1 HEAD)"
+            if [[ -n "$changed" ]] && ! grep -qvE '\.md$' <<< "$changed"; then
+              echo "full=false" >> "$GITHUB_OUTPUT"
+              echo "Только Markdown: автоматические проверки исходников не требуются."
+              exit 0
+            fi
+          fi
+          # Push main, ручной запуск и все прочие PR: полный Gate.
+          echo "full=true" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
+        if: steps.scope.outputs.full == 'true'
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
       - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
+        if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test verify
       - name: PostgreSQL failure details
-        if: failure()
+        if: ${{ failure() && steps.scope.outputs.full == 'true' }}
         run: |
           for log in reports/publishing-*.log; do
             if [ -f "$log" ]; then
@@ -36,7 +65,7 @@ jobs:
             fi
           done
       - name: Quality and image CVE reports
-        if: always()
+        if: ${{ always() && steps.scope.outputs.full == 'true' }}
         uses: actions/upload-artifact@v7.0.2
         with:
           name: quality-reports
