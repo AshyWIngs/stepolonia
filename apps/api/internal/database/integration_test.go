@@ -26,6 +26,7 @@ func TestPublishingSchemaIntegration(t *testing.T) {
 	prepareDisposableSchema(t, ctx, db)
 	testMigrationLifecycle(t, ctx, db)
 	testPublishingIntegrity(t, ctx, db, cfg)
+	testPublishingApplication(t, ctx, db, cfg)
 }
 
 func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
@@ -42,13 +43,19 @@ func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
 		t.Fatal("refusing non-disposable database: expected loopback and stage12_ database prefix")
 	}
 	if path := os.Getenv("STAGE12_TEST_PASSWORD_FILE"); path != "" {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal("cannot read disposable password")
-		}
-		cfg.Password = strings.TrimSpace(string(raw))
+		cfg.Password = readDisposablePassword(t, path)
 	}
 	return cfg
+}
+
+// Пути задаёт собственный disposable harness, а не внешний запрос.
+func readDisposablePassword(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("cannot read disposable password")
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func prepareDisposableSchema(t *testing.T, ctx context.Context, db *sql.DB) {
