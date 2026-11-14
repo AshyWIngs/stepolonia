@@ -65,12 +65,12 @@ def verify_postgres_runtime(site, config):
     compose(site, "exec", "-T", "postgres", "/usr/local/bin/pg-healthcheck")
 
     archive = subprocess.check_output([
-        *compose_command(site), "exec", "-T", "postgres", "/usr/lib/postgresql/18/bin/pg_dump",
+        *compose_command(site), "exec", "-T", "postgres", "/usr/libexec/postgresql18/pg_dump",
         "--username=" + database["POSTGRES_USER"], "--dbname=" + database["POSTGRES_DB"],
         "--format=custom", "--no-owner", "--no-acl", "--table=public.sp_runtime_probe"])
     sql("CREATE DATABASE sp_restore_probe TEMPLATE template0")
     subprocess.run([*compose_command(site), "exec", "-T", "postgres",
-                    "/usr/lib/postgresql/18/bin/pg_restore", "--username=" + database["POSTGRES_USER"],
+                    "/usr/libexec/postgresql18/pg_restore", "--username=" + database["POSTGRES_USER"],
                     "--dbname=sp_restore_probe", "--exit-on-error", "--no-owner", "--no-acl"],
                    input=archive, capture_output=True, check=True)
     verify("PostgreSQL custom dump restores data and UTF-8 in disposable database",

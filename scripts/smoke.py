@@ -44,7 +44,7 @@ def private_api(path):
     code = (f"const r = await fetch('http://api:8080{path}', "
             "{signal: AbortSignal.timeout(3000)}); "
             "console.log(JSON.stringify({status:r.status, body:await r.text()}))")
-    output = compose("exec", "-T", "web", "/nodejs/bin/node", "--input-type=module", "-e", code)
+    output = compose("exec", "-T", "web", "/usr/bin/node", "--input-type=module", "-e", code)
     return json.loads(output.stdout)
 
 
@@ -99,7 +99,7 @@ def main(site, lifecycle):
                         "AND NOT has_schema_privilege(current_user, 'public', 'CREATE') "
                         "FROM pg_roles WHERE rolname=current_user", runtime_role=True)).stdout.strip()
     verify("API database role has restricted privileges", privilege == "t")
-    for service in ("api", "web", "postgres"):
+    for service in ("caddy", "api", "web", "postgres"):
         verify(f"{service}: distroless has no shell", compose("exec", "-T", service, "/bin/sh", "-c", "exit 0", check=False).returncode != 0)
     init_id = compose("ps", "--all", "-q", "postgres-init").stdout.strip()
     initializer = json.loads(run(["docker", "inspect", init_id]).stdout)[0]

@@ -48,12 +48,11 @@ image-audit: lint build
 	docker build --progress=plain -f infrastructure/quality/Dockerfile --target duplicates-build -t sp-quality-npm:verify . > reports/images/npm-build.log 2>&1 || { cat reports/images/npm-build.log; exit 1; }
 	docker build --progress=plain --target dbtools -t sp-db-tools:verify apps/api > reports/images/db-tools-build.log 2>&1 || { cat reports/images/db-tools-build.log; exit 1; }
 	@set -eu; trap 'rm -f reports/images/image.tar' EXIT; status=0; \
-	caddy=$$($(COMPOSE) config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["caddy"]["image"])'); \
-	docker pull "$$caddy" > reports/images/caddy-pull.log 2>&1; \
-	for image in sp-quality-go:verify sp-quality-python:verify sp-quality-web:verify sp-quality-duplicates:verify sp-quality-npm:verify sp-api:stage0 sp-web:stage0 sp-postgres:stage0 sp-db-tools:verify sp-postgres-init:stage0 "$$caddy"; do \
+	for image in sp-quality-go:verify sp-quality-python:verify sp-quality-web:verify sp-quality-duplicates:verify sp-quality-npm:verify sp-api:stage0 sp-web:stage0 sp-postgres:stage0 sp-db-tools:verify sp-postgres-init:stage0 sp-caddy:stage0; do \
 	  name=$$(echo "$$image" | tr ':/' '__'); \
 	  docker image inspect "$$image" --format '{{.Id}} {{.Os}}/{{.Architecture}}' > "reports/images/$$name.identity"; \
 	  docker image save --output reports/images/image.tar "$$image"; \
+	  chmod 0644 reports/images/image.tar; \
 	  echo "CVE audit: $$image"; \
 	  docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp \
 	    --mount type=bind,src="$(CURDIR)/reports/images",dst=/scan,readonly \
@@ -69,6 +68,7 @@ docker-check:
 	mkdir -p reports
 	docker build --check apps/api > reports/api-docker-check.log 2>&1 || { cat reports/api-docker-check.log; exit 1; }
 	docker build --check apps/web > reports/web-docker-check.log 2>&1 || { cat reports/web-docker-check.log; exit 1; }
+	docker build --check infrastructure/caddy > reports/caddy-docker-check.log 2>&1 || { cat reports/caddy-docker-check.log; exit 1; }
 	docker build --check infrastructure/postgres > reports/postgres-docker-check.log 2>&1 || { cat reports/postgres-docker-check.log; exit 1; }
 	docker build --check -f infrastructure/quality/Dockerfile . > reports/quality-docker-check.log 2>&1 || { cat reports/quality-docker-check.log; exit 1; }
 
@@ -77,6 +77,7 @@ test: setup docker-check
 	python3 -m unittest discover -s scripts/tests -v > reports/python-checks.log 2>&1 || { cat reports/python-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-api-checks:stage0 apps/api > reports/api-checks.log 2>&1 || { cat reports/api-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-web-checks:stage0 apps/web > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
+	docker build --progress=plain --target checks -t sp-caddy-checks:stage0 infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-postgres-checks:stage0 infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
 
 smoke: setup
