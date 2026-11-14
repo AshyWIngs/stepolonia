@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -162,8 +163,8 @@ func (f applicationFixture) testDraft(t *testing.T) {
 	}
 	editorial, err := f.editor.GetEditorialList(f.ctx, publishing.Page{Limit: 100})
 	requireNoError(t, err)
-	if len(editorial) < 2 {
-		t.Fatal("editorial list omitted drafts or published articles")
+	if !slices.ContainsFunc(editorial, func(a publishing.ArticleState) bool { return a.ID == state.ID }) {
+		t.Fatal("editorial list omitted the current draft")
 	}
 	empty, err := f.reader.ListArticles(f.ctx, "en", publishing.Page{Limit: 20})
 	requireNoError(t, err)
@@ -219,7 +220,7 @@ func (f applicationFixture) testPublication(t *testing.T) {
 	state, err = f.editor.SaveDraft(f.ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug)})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, f, state, "ru")
-	_, err = f.editor.Publish(f.ctx, state.ID, state.Version)
+	state, err = f.editor.Publish(f.ctx, state.ID, state.Version)
 	requireNoError(t, err)
 	second, err := f.reader.ResolveArticle(f.ctx, "ru", "app-second")
 	requireNoError(t, err)
@@ -228,10 +229,9 @@ func (f applicationFixture) testPublication(t *testing.T) {
 	}
 	list, err := f.reader.ListArticles(f.ctx, "ru", publishing.Page{Limit: 100})
 	requireNoError(t, err)
-	for _, a := range list {
-		if a.ArticleID == state.ID && a.Slug != firstSlug {
-			t.Fatal("public list exposed historical revision")
-		}
+	current := slices.DeleteFunc(list, func(a publishing.PublicArticle) bool { return a.ArticleID != state.ID })
+	if len(current) != 1 || current[0].Slug != firstSlug || current[0].RevisionID != *state.PublishedRevisionID {
+		t.Fatal("public list omitted the current snapshot or exposed historical revisions")
 	}
 }
 

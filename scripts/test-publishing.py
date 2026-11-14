@@ -164,12 +164,14 @@ def main():
             query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
             command([*compose, *postgres_sql_args(config, query)], log)
             check_cli(site, directory, override, compose, config, log)
-            environment = dict(os.environ)
-            environment["DB_DISPOSABLE_TOKEN"] = token
-            environment["STAGE12_TEST_DATABASE_URL"] = (
-                f"postgres://stage12_owner@127.0.0.1:{port}/{database}?sslmode=disable")
-            environment["STAGE12_TEST_PASSWORD_FILE"] = str(directory / ".secrets/db_owner_password")
-            environment["STAGE12_TEST_RUNTIME_PASSWORD_FILE"] = str(directory / ".secrets/db_app_password")
+            environment = {
+                **os.environ,
+                "DB_DISPOSABLE_TOKEN": token,
+                "STAGE12_TEST_DATABASE_URL": (
+                    f"postgres://stage12_owner@127.0.0.1:{port}/{database}?sslmode=disable"),
+                "STAGE12_TEST_PASSWORD_FILE": str(directory / ".secrets/db_owner_password"),
+                "STAGE12_TEST_RUNTIME_PASSWORD_FILE": str(directory / ".secrets/db_app_password"),
+            }
             # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
             command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
                      "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
