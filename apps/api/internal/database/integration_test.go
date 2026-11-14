@@ -26,6 +26,7 @@ func TestPublishingSchemaIntegration(t *testing.T) {
 	prepareDisposableSchema(t, ctx, db)
 	testMigrationLifecycle(t, ctx, db)
 	testPublishingIntegrity(t, ctx, db, cfg)
+	testPublishingApplication(t, ctx, db, cfg)
 }
 
 func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
@@ -42,13 +43,19 @@ func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
 		t.Fatal("refusing non-disposable database: expected loopback and stage12_ database prefix")
 	}
 	if path := os.Getenv("STAGE12_TEST_PASSWORD_FILE"); path != "" {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal("cannot read disposable password")
-		}
-		cfg.Password = strings.TrimSpace(string(raw))
+		cfg.Password = readDisposablePassword(t, path)
 	}
 	return cfg
+}
+
+// Пути задаёт собственный disposable harness, а не внешний запрос.
+func readDisposablePassword(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("cannot read disposable password")
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func prepareDisposableSchema(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -282,7 +289,7 @@ func testSemanticDrift(t *testing.T, ctx context.Context, db *sql.DB) {
 	 'functions',(SELECT json_agg(json_build_array(oid,proacl,pg_get_functiondef(oid)) ORDER BY oid) FROM pg_proc WHERE pronamespace='public'::regnamespace)
 	 )::text`
 	for _, change := range []struct{ name, mutation, restore string }{
-		{"all history view", `CREATE OR REPLACE VIEW public.public_article_translations WITH (security_barrier=true) AS SELECT article_id,revision_id,language_code,title,slug,body_markdown FROM public.article_revision_translations`, "CREATE OR REPLACE VIEW public.public_article_translations WITH (security_barrier=true) AS " + view},
+		{"all history view", `CREATE OR REPLACE VIEW public.public_article_translations WITH (security_barrier=true) AS SELECT t.article_id,t.revision_id,t.language_code,t.title,t.slug,t.body_markdown,r.created_at AS published_at FROM public.article_revision_translations t JOIN public.article_revisions r ON r.id=t.revision_id`, "CREATE OR REPLACE VIEW public.public_article_translations WITH (security_barrier=true) AS " + view},
 		{"same name weakened check", "ALTER TABLE public.articles DROP CONSTRAINT articles_version_check; ALTER TABLE public.articles ADD CONSTRAINT articles_version_check CHECK(version>=0)", "ALTER TABLE public.articles DROP CONSTRAINT articles_version_check; ALTER TABLE public.articles ADD CONSTRAINT articles_version_check " + check},
 		{"same name weakened ownership FK", "ALTER TABLE public.articles DROP CONSTRAINT articles_published_revision_fkey; ALTER TABLE public.articles ADD CONSTRAINT articles_published_revision_fkey FOREIGN KEY(published_revision_id) REFERENCES public.article_revisions(id)", "ALTER TABLE public.articles DROP CONSTRAINT articles_published_revision_fkey; ALTER TABLE public.articles ADD CONSTRAINT articles_published_revision_fkey " + fk},
 		{"publication guard body", `CREATE OR REPLACE FUNCTION public.guard_published_revision() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,pg_temp AS $$ BEGIN RETURN NEW; END; $$`, guard},

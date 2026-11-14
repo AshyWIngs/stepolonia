@@ -50,7 +50,7 @@ CREATE TABLE public.article_revisions (
  article_id uuid NOT NULL,
  revision_no bigint NOT NULL,
  sealed boolean NOT NULL DEFAULT false,
- created_at timestamptz NOT NULL DEFAULT current_timestamp,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  CONSTRAINT article_revisions_article_fkey FOREIGN KEY (article_id) REFERENCES public.articles(id),
  CONSTRAINT article_revisions_owner_key UNIQUE (article_id,id),
  CONSTRAINT article_revisions_number_key UNIQUE (article_id,revision_no),
@@ -216,7 +216,7 @@ COMMENT ON COLUMN public.article_revisions.id IS 'Идентификатор с�
 COMMENT ON COLUMN public.article_revisions.article_id IS 'Статья-владелец снимка; внешний указатель публикации проверяет этого владельца.';
 COMMENT ON COLUMN public.article_revisions.revision_no IS 'Порядковый номер снимка внутри статьи, начиная с единицы.';
 COMMENT ON COLUMN public.article_revisions.sealed IS 'Снимок закрыт для добавления и изменения переводов; незакрытый снимок нельзя зафиксировать.';
-COMMENT ON COLUMN public.article_revisions.created_at IS 'Время создания снимка по часам PostgreSQL с часовым поясом.';
+COMMENT ON COLUMN public.article_revisions.created_at IS 'Время создания снимка по текущим часам PostgreSQL после ожидания блокировок Publish; не время начала транзакции.';
 COMMENT ON TABLE public.public_routes IS 'Постоянные резервирования адресов статьи; старый адрес ведёт к текущему переводу владельца.';
 COMMENT ON COLUMN public.public_routes.language_code IS 'Язык адреса; публичная выдача допускается только при включённом языке.';
 COMMENT ON COLUMN public.public_routes.slug IS 'Навсегда зарезервированный адрес в пределах языка, включая исторические alias.';
@@ -249,9 +249,10 @@ COMMENT ON INDEX public.public_routes_owner_key IS 'Составной ключ 
 CREATE VIEW public.public_languages WITH (security_barrier=true) AS
  SELECT code,name,native_name,direction FROM public.languages WHERE is_enabled;
 CREATE VIEW public.public_article_translations WITH (security_barrier=true) AS
- SELECT t.article_id,t.revision_id,t.language_code,t.title,t.slug,t.body_markdown
+ SELECT t.article_id,t.revision_id,t.language_code,t.title,t.slug,t.body_markdown,r.created_at AS published_at
  FROM public.article_revision_translations t
  JOIN public.articles a ON a.id=t.article_id AND a.published_revision_id=t.revision_id
+ JOIN public.article_revisions r ON r.id=t.revision_id AND r.article_id=t.article_id
  JOIN public.languages l ON l.code=t.language_code AND l.is_enabled;
 CREATE VIEW public.public_article_routes WITH (security_barrier=true) AS
  SELECT r.language_code,r.slug,r.article_id,t.slug AS current_slug,t.revision_id
@@ -269,6 +270,7 @@ COMMENT ON COLUMN public.public_article_translations.language_code IS 'Вклю�
 COMMENT ON COLUMN public.public_article_translations.title IS 'Текущий опубликованный заголовок.';
 COMMENT ON COLUMN public.public_article_translations.slug IS 'Текущий опубликованный адрес перевода.';
 COMMENT ON COLUMN public.public_article_translations.body_markdown IS 'Текущий опубликованный текст Markdown.';
+COMMENT ON COLUMN public.public_article_translations.published_at IS 'Время создания текущего опубликованного снимка статьи; обновляется при повторной публикации, общее для всех переводов снимка.';
 COMMENT ON VIEW public.public_article_routes IS 'Публичные адреса и alias, разрешаемые к текущему переводу того же владельца и языка.';
 COMMENT ON COLUMN public.public_article_routes.language_code IS 'Включённый язык публичного адреса.';
 COMMENT ON COLUMN public.public_article_routes.slug IS 'Запрошенный текущий адрес или исторический alias.';
