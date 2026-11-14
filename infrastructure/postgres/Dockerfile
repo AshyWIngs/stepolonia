@@ -1,17 +1,26 @@
 FROM postgres:18.7-alpine3.24 AS bootstrap-scripts
 # Из официального образа берём только init-скрипты и проверенную лицензию исходников.
-RUN wget -q -O /tmp/postgresql.tar.bz2 "https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.bz2" \
-    && echo "${PG_SHA256}  /tmp/postgresql.tar.bz2" | sha256sum -c - \
-    && mkdir -p /usr/share/licenses/postgresql \
-    && tar -xOf /tmp/postgresql.tar.bz2 "postgresql-${PG_VERSION}/COPYRIGHT" > /usr/share/licenses/postgresql/COPYRIGHT \
+ADD --checksum=sha256:${PG_SHA256} \
+    https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.bz2 \
+    /tmp/postgresql.tar.bz2
+RUN mkdir -p /usr/share/licenses/postgresql \
+    && tar -xOf /tmp/postgresql.tar.bz2 "postgresql-${PG_VERSION}/COPYRIGHT" \
+        > /usr/share/licenses/postgresql/COPYRIGHT \
     && rm /tmp/postgresql.tar.bz2
 
 FROM alpine:3.24 AS distribution
 # Реальные APK-пакеты связывают PostgreSQL с исправлениями в базе уязвимостей Alpine.
 RUN apk upgrade --no-cache \
-    && apk add --no-cache postgresql18=18.7-r0 postgresql18-client=18.7-r0 \
-        postgresql18-contrib=18.7-r0 postgresql18-jit=18.7-r0 \
-        postgresql18-contrib-jit=18.7-r0 libpq=18.7-r0 icu-data-full bash tzdata \
+    && apk add --no-cache \
+        bash \
+        icu-data-full \
+        libpq=18.7-r0 \
+        postgresql18=18.7-r0 \
+        postgresql18-client=18.7-r0 \
+        postgresql18-contrib=18.7-r0 \
+        postgresql18-contrib-jit=18.7-r0 \
+        postgresql18-jit=18.7-r0 \
+        tzdata \
     && test -z "$(find /var/lib/postgresql -mindepth 1 -print -quit)" \
     && sed -i 's/^postgres:x:70:70:/postgres:x:999:999:/' /etc/passwd \
     && sed -i '/^ping:x:999:/d; s/^postgres:x:70:/postgres:x:999:/' /etc/group \
@@ -19,7 +28,8 @@ RUN apk upgrade --no-cache \
     && install -d -o 999 -g 999 -m 1777 /var/lib/postgresql \
     && install -d -o 999 -g 999 -m 3777 /var/run/postgresql \
     && mkdir -p /docker-entrypoint-initdb.d
-COPY --from=bootstrap-scripts /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-ensure-initdb.sh /usr/local/bin/
+COPY --from=bootstrap-scripts /usr/local/bin/docker-entrypoint.sh \
+    /usr/local/bin/docker-ensure-initdb.sh /usr/local/bin/
 COPY --from=bootstrap-scripts /usr/share/licenses/postgresql /usr/share/licenses/postgresql
 ENV PATH=/usr/libexec/postgresql18:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PG_MAJOR=18 \

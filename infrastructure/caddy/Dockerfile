@@ -13,5 +13,5 @@ FROM source AS build
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o /out/caddy-healthcheck .
 
 FROM dhi.io/caddy:2.11.9-debian13 AS runtime
-COPY --from=build --chown=65532:65532 /out/caddy-healthcheck /usr/local/bin/caddy-healthcheck
+COPY --from=build --chown=0:0 --chmod=0555 /out/caddy-healthcheck /usr/local/bin/caddy-healthcheck
 USER 65532:65532
