@@ -12,6 +12,11 @@ import (
 	"golang.org/x/text/language"
 )
 
+const (
+	articleNotFoundCode = "article_not_found"
+	invalidLanguageCode = "invalid_language"
+)
+
 type Kind string
 
 const (
@@ -92,15 +97,15 @@ func databaseError(err error) error {
 
 func normalizeLanguage(code string) (string, error) {
 	if strings.ContainsAny(code, "_@. ") {
-		return "", problem(Validation, "invalid_language")
+		return "", problem(Validation, invalidLanguageCode)
 	}
 	tag, err := language.Parse(code)
 	if err != nil || code == "" {
-		return "", problem(Validation, "invalid_language")
+		return "", problem(Validation, invalidLanguageCode)
 	}
 	normalized := strings.ToLower(tag.String())
 	if len(normalized) < 2 || len(normalized) > 63 {
-		return "", problem(Validation, "invalid_language")
+		return "", problem(Validation, invalidLanguageCode)
 	}
 	return normalized, nil
 }

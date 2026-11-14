@@ -49,7 +49,8 @@ USER 1000:1000
 WORKDIR /src
 COPY .jscpd.json ./
 COPY apps ./apps
+COPY packages ./packages
 COPY scripts ./scripts
 COPY infrastructure/postgres/healthcheck ./infrastructure/postgres/healthcheck
 COPY infrastructure/caddy/healthcheck ./infrastructure/caddy/healthcheck
-RUN ["/usr/bin/node", "/tools/node_modules/jscpd/run-jscpd.js", "--config", ".jscpd.json", "apps", "scripts", "infrastructure"]
+RUN ["/usr/bin/node", "/tools/node_modules/jscpd/run-jscpd.js", "--config", ".jscpd.json", "apps", "packages", "scripts", "infrastructure"]

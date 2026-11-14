@@ -12,6 +12,7 @@
 | Go | `make check-go` (Go lint, vet, race/unit) |
 | Python-скрипты | `make check-python` (Ruff, safety unittest) |
 | Nuxt/Vue/TypeScript | `make check-web` (ESLint, typecheck) |
+| OpenAPI/SDK | `make sdk-check` (актуальность артефактов, ESLint, typecheck) |
 | PostgreSQL/Publishing SQL | `make check-db` (реальная одноразовая БД) |
 | Только Markdown | Автоматические проверки не требуются |
 
@@ -29,7 +30,8 @@ Draft нельзя считать принятым для merge. SonarCloud/Coda
 независимыми проверками, их пороги не меняются.
 
 Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.4+
-той же minor-ветки и C compiler для race detector. CI берёт Go из `go.mod`.
+той же minor-ветки и C compiler для race detector. SDK также требует Node.js
+26.13.1 и npm 11.21.2 на хосте. CI устанавливает эти версии и берёт Go из `go.mod`.
 Логи находятся в игнорируемом `reports/`. Передавайте `SITE` явно, если локально
 выбран другой сайт.
 
@@ -38,6 +40,7 @@ Draft нельзя считать принятым для merge. SonarCloud/Coda
 | golangci-lint | 2.15.0, Go 1.27.4: staticcheck, errcheck, gosec, gocognit, gocyclo, unused, funlen, goconst |
 | Ruff | 0.17.5: E4/E7/E9/F/B/C901/PLR0915, только scripts |
 | Nuxt ESLint / ESLint | 1.17.0 / 10.14.0: штатный Vue/TypeScript flat config, warnings=0 |
+| SDK | openapi-typescript 7.13.0, openapi-fetch 0.17.0, TypeScript 5.9.3, ESLint с теми же лимитами сложности |
 | jscpd | 5.4.3, Node 26.13.1/npm 11.21.2, Go/Python/TypeScript/Vue |
 
 Go cognitive/cyclomatic и ESLint cognitive/cyclomatic: максимум 15 для всех
@@ -46,10 +49,13 @@ Go cognitive/cyclomatic и ESLint cognitive/cyclomatic: максимум 15 дл
 комментарии не учитываются, ESLint также пропускает пустые строки.
 Ruff C901 ограничивает cyclomatic complexity Python значением 15, PLR0915
 ограничивает функцию 50 statements. Это не cognitive metric Python: её отдельно
-проверяет SonarQube IDE/Cloud. Go goconst проверяет повтор литералов длиной
-от трёх символов при трёх и более вхождениях, включая тесты. Штатное
-исключение goconst для аргументов вызовов сохраняется: независимые SQL fixtures
-и сообщения ошибок не объединяются механически. Это не полный аналог S1192.
+проверяет SonarQube IDE/Cloud. Go goconst проверяет строки длиной от трёх
+символов при трёх и более вхождениях внутри Go-пакета, включая аргументы вызовов
+и новые файлы. Два повтора и повторы между разными пакетами этот порог не ловит.
+Анализатор не классифицирует назначение строки. Теги структур пропускаются.
+Только goconst исключает тестовые файлы, чтобы независимые ожидаемые значения
+и SQL fixtures не требовали общих production-констант. Остальные Go-проверки
+и jscpd продолжают анализировать тесты.
 Для TypeScript/Vue подключён только cognitive-complexity из
 eslint-plugin-sonarjs 4.2.2; остальные его правила не дублируют Nuxt ESLint.
 Лимиты не требуют объединять разные сценарии или создавать абстракции ради
@@ -57,7 +63,8 @@ eslint-plugin-sonarjs 4.2.2; остальные его правила не ду�
 
 jscpd блокирует любое совпадение размером не менее 10 строк и 80 токенов:
 порог дублирования 0%. Тесты включены. Исключены зависимости, Nuxt output,
-генерируемые Go-файлы, lockfiles и отчёты. Результат требует смыслового разбора:
+генерируемые Go-файлы и SDK-типы, lockfiles и отчёты. Авторские SDK-файлы включены.
+Результат требует смыслового разбора:
 похожие fixtures или SQL не объединяются автоматически.
 
 Точечные gosec-исключения относятся к operator-owned file/env, quoted SQL

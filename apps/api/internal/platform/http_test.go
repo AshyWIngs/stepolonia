@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,7 +29,7 @@ func TestHealthAndPrivateContracts(t *testing.T) {
 		status int
 	}{
 		{"/health/live", 200}, {"/health/ready", 503},
-		{"/openapi.json", 404}, {"/docs", 404}, {"/api/v1/unknown", 404},
+		{"/openapi.json", 404}, {"/docs", 404}, {"/schemas", 404}, {"/api/v1/unknown", 404},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -51,9 +52,7 @@ func TestHealthAndPrivateContracts(t *testing.T) {
 func TestPublishingOpenAPI(t *testing.T) {
 	_, api := newAPI(failingDatabase{}, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	spec := api.OpenAPI()
-	if _, err := json.Marshal(spec); err != nil {
-		t.Fatal(err)
-	}
+	assertOfflineOpenAPI(t, spec)
 	if _, err := spec.YAML(); err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +80,24 @@ func TestPublishingOpenAPI(t *testing.T) {
 	registry := spec.Components.Schemas
 	assertPublicFields(t, registry, languages.Responses["200"].Content["application/json"].Schema.Items, "code", "direction", "name", "native_name")
 	assertPublicFields(t, registry, detail.Responses["200"].Content["application/json"].Schema, "article_id", "body_markdown", "language_code", "slug", "title")
+}
+
+// Экспорт не должен создавать независимый контракт или зависеть от окружения.
+func assertOfflineOpenAPI(t *testing.T, spec *huma.OpenAPI) {
+	t.Helper()
+	expected, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		actual, err := OpenAPIJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(actual, expected) {
+			t.Fatal("offline export differs from registered application contract")
+		}
+	}
 }
 
 func assertPublicResponses(t *testing.T, operation *huma.Operation, statuses ...string) {

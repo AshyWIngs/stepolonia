@@ -11,7 +11,7 @@ func lockArticle(ctx context.Context, tx *sql.Tx, id string) (ArticleState, erro
 	var state ArticleState
 	err := tx.QueryRowContext(ctx, "SELECT id,version,published_revision_id FROM public.articles WHERE id=$1 FOR UPDATE", id).Scan(&state.ID, &state.Version, &state.PublishedRevisionID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ArticleState{}, problem(NotFound, "article_not_found")
+		return ArticleState{}, problem(NotFound, articleNotFoundCode)
 	}
 	return state, databaseError(err)
 }

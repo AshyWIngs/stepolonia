@@ -16,7 +16,15 @@ import (
 	"stepolonia/apps/api/internal/publishing"
 )
 
-const problemJSONMediaType = "application/problem+json"
+const (
+	problemJSONMediaType    = "application/problem+json"
+	databaseUnavailableCode = "database_unavailable"
+	contentTypeHeader       = "Content-Type"
+	locationHeader          = "Location"
+	languageQueryKey        = "lang"
+	limitQueryKey           = "limit"
+	offsetQueryKey          = "offset"
+)
 
 type languageDTO struct {
 	Code       string `json:"code"`
@@ -112,7 +120,7 @@ func registerPublishing(api huma.API, reader *publishing.PublicReader, logger *s
 		OperationID: "listArticles", Method: http.MethodGet, Path: "/api/v1/articles",
 		Summary:     "List published articles in one content language",
 		Description: "Ordered by publication time descending, then article ID descending. An active language with no articles returns an empty array. No language fallback.",
-		Responses:   problemResponses(api, 400, 404, 503), Middlewares: huma.Middlewares{publicQuery(api, "lang", "limit", "offset")},
+		Responses:   problemResponses(api, 400, 404, 503), Middlewares: huma.Middlewares{publicQuery(api, languageQueryKey, limitQueryKey, offsetQueryKey)},
 	}, func(ctx context.Context, input *articleListInput) (*articlesOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -129,14 +137,14 @@ func registerPublishing(api huma.API, reader *publishing.PublicReader, logger *s
 	responses := problemResponses(api, 400, 404, 503)
 	responses["301"] = &huma.Response{
 		Description: "Historical slug; Location points directly to the current address in the same content language.",
-		Headers:     map[string]*huma.Param{"Location": {Required: true, Schema: &huma.Schema{Type: "string"}}},
+		Headers:     map[string]*huma.Param{locationHeader: {Required: true, Schema: &huma.Schema{Type: "string"}}},
 		Content:     map[string]*huma.MediaType{"application/json": {Schema: &huma.Schema{Type: huma.TypeNull}}},
 	}
 	huma.Register(api, huma.Operation{
 		OperationID: "getArticle", Method: http.MethodGet, Path: "/api/v1/articles/{slug}",
 		Summary:     "Get a published article or its canonical address",
 		Description: "Missing, unpublished, disabled or untranslated content returns 404. No language fallback.",
-		Responses:   responses, Middlewares: huma.Middlewares{publicQuery(api, "lang")},
+		Responses:   responses, Middlewares: huma.Middlewares{publicQuery(api, languageQueryKey)},
 	}, func(ctx context.Context, input *articleInput) (*articleOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -145,7 +153,7 @@ func registerPublishing(api huma.API, reader *publishing.PublicReader, logger *s
 			return nil, publishingProblem(ctx, logger, err)
 		}
 		if resolved.Redirect {
-			return &articleOutput{Status: http.StatusMovedPermanently, Location: "/api/v1/articles/" + url.PathEscape(resolved.Article.Slug) + "?" + url.Values{"lang": {resolved.Article.LanguageCode}}.Encode()}, nil
+			return &articleOutput{Status: http.StatusMovedPermanently, Location: "/api/v1/articles/" + url.PathEscape(resolved.Article.Slug) + "?" + url.Values{languageQueryKey: {resolved.Article.LanguageCode}}.Encode()}, nil
 		}
 		article := publicArticle(resolved.Article)
 		return &articleOutput{Status: http.StatusOK, Body: &article}, nil
@@ -162,7 +170,7 @@ func publicQuery(api huma.API, allowed ...string) func(huma.Context, func(huma.C
 	return func(ctx huma.Context, next func(huma.Context)) {
 		u := ctx.URL()
 		if !validPublicQuery(u.RawQuery, allowed) {
-			ctx.SetHeader("Content-Type", problemJSONMediaType)
+			ctx.SetHeader(contentTypeHeader, problemJSONMediaType)
 			ctx.SetStatus(http.StatusBadRequest)
 			_ = api.Marshal(ctx.BodyWriter(), problemJSONMediaType, newProblem(http.StatusBadRequest, "invalid_parameters"))
 			return
@@ -181,10 +189,10 @@ func validPublicQuery(raw string, allowed []string) bool {
 			return false
 		}
 	}
-	if slices.Contains(allowed, "lang") && query.Get("lang") == "" {
+	if slices.Contains(allowed, languageQueryKey) && query.Get(languageQueryKey) == "" {
 		return false
 	}
-	return validPageParameter(query, "limit", 1, 100) && validPageParameter(query, "offset", 0, math.MaxInt)
+	return validPageParameter(query, limitQueryKey, 1, 100) && validPageParameter(query, offsetQueryKey, 0, math.MaxInt)
 }
 
 func validPageParameter(query url.Values, name string, minimum, maximum int) bool {
@@ -206,11 +214,11 @@ func publishingProblem(ctx context.Context, logger *slog.Logger, err error) erro
 		}
 	}
 	logDependency(ctx, logger, err)
-	return newProblem(http.StatusServiceUnavailable, "database_unavailable")
+	return newProblem(http.StatusServiceUnavailable, databaseUnavailableCode)
 }
 
 func logDependency(ctx context.Context, logger *slog.Logger, err error) {
-	code, sqlState := "database_unavailable", ""
+	code, sqlState := databaseUnavailableCode, ""
 	var typed *publishing.Error
 	if errors.As(err, &typed) {
 		code = typed.Code

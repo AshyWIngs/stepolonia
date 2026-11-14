@@ -49,7 +49,7 @@ func (s *Service) GetEditorialDetail(ctx context.Context, id string) (EditorialA
 	var article EditorialArticle
 	err = tx.QueryRowContext(ctx, "SELECT id,version,published_revision_id FROM public.articles WHERE id=$1", id).Scan(&article.ID, &article.Version, &article.PublishedRevisionID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return EditorialArticle{}, problem(NotFound, "article_not_found")
+		return EditorialArticle{}, problem(NotFound, articleNotFoundCode)
 	}
 	if err != nil {
 		return EditorialArticle{}, databaseError(err)

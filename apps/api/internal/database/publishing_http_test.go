@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -112,11 +114,25 @@ func (f applicationFixture) testHTTPAliases(t *testing.T, ctx context.Context, c
 		t.Fatalf("unexpected public article payload %s", body)
 	}
 	publicRequest(t, ctx, client, base+"/api/v1/articles/http-final?lang=en", http.StatusNotFound)
+	testLiveSDK(t, ctx, base)
 	_, err := f.editor.UnpublishArticle(ctx, state.ID, state.Version)
 	requireNoError(t, err)
 	for _, slug := range []string{"http-first", middleSlug, finalSlug} {
 		publicRequest(t, ctx, client, base+"/api/v1/articles/"+slug+"?lang=kk", http.StatusNotFound)
 	}
+}
+
+// Генерируемый Fetch-клиент обращается к тому же HTTP-серверу и runtime-роли.
+func testLiveSDK(t *testing.T, ctx context.Context, base string) {
+	t.Helper()
+	command := exec.CommandContext(ctx, "node", "../../../../packages/sdk/tests/live.mjs")
+	command.Env = append(os.Environ(), "STAGE14_API_URL="+base,
+		"STAGE14_ARTICLE_SLUG=http-final", "STAGE14_REDIRECT_SLUG=http-first", "STAGE14_ARTICLE_LANG=kk")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("live generated SDK failed: %v\n%s", err, output)
+	}
+	t.Log(strings.TrimSpace(string(output)))
 }
 
 func (f applicationFixture) testHTTPFailures(t *testing.T, ctx context.Context, client *http.Client, base string) {

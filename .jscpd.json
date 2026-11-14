@@ -7,6 +7,7 @@
   "ignore": [
     "**/node_modules/**", "**/.nuxt/**", "**/.output/**",
     "**/reports/**", "**/coverage/**", "**/test-results/**", "**/.git/**",
-    "**/package-lock.json", "**/go.sum", "**/*.gen.go", "**/*_generated.go"
+    "**/package-lock.json", "**/go.sum", "**/*.gen.go", "**/*_generated.go",
+    "packages/sdk/src/schema.d.ts"
   ]
 }

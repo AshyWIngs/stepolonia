@@ -129,6 +129,9 @@ def check_cli(site, directory, override, compose, config, log):
 def main():
     if shutil.which("go") is None:
         raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
+    node = shutil.which("node")
+    if node is None:
+        raise SystemExit("Для интеграционной проверки SDK нужен Node.js 26")
     token = secrets.token_hex(6)
     site = f"stage12-{token}.test"
     project = f"sp-stage12-{token}"

@@ -68,15 +68,15 @@ func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) (*h
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
 			logDependency(ctx, logger, err)
-			return nil, newProblem(http.StatusServiceUnavailable, "database_unavailable")
+			return nil, newProblem(http.StatusServiceUnavailable, databaseUnavailableCode)
 		}
 		return healthy(), nil
 	})
 	registerPublishing(api, reader, logger)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/problem+json")
+		w.Header().Set(contentTypeHeader, problemJSONMediaType)
 		w.WriteHeader(http.StatusNotFound)
-		_ = api.Marshal(w, "application/problem+json", newProblem(http.StatusNotFound, "resource_not_found"))
+		_ = api.Marshal(w, problemJSONMediaType, newProblem(http.StatusNotFound, "resource_not_found"))
 	})
 	return mux, api
 }
