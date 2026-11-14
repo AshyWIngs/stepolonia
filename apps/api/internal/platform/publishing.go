@@ -16,6 +16,8 @@ import (
 	"stepolonia/apps/api/internal/publishing"
 )
 
+const problemJSONMediaType = "application/problem+json"
+
 type languageDTO struct {
 	Code       string `json:"code"`
 	Name       string `json:"name"`
@@ -66,7 +68,7 @@ type publicProblem struct {
 
 func (p *publicProblem) Error() string             { return p.Code }
 func (p *publicProblem) GetStatus() int            { return p.Status }
-func (p *publicProblem) ContentType(string) string { return "application/problem+json" }
+func (p *publicProblem) ContentType(string) string { return problemJSONMediaType }
 
 func newProblem(status int, code string) *publicProblem {
 	detail := "The request parameters are invalid."
@@ -83,7 +85,7 @@ func problemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
 	result := make(map[string]*huma.Response, len(statuses))
 	schema := api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[publicProblem](), true, "PublicProblem")
 	for _, status := range statuses {
-		result[strconv.Itoa(status)] = &huma.Response{Description: http.StatusText(status), Content: map[string]*huma.MediaType{"application/problem+json": {Schema: schema}}}
+		result[strconv.Itoa(status)] = &huma.Response{Description: http.StatusText(status), Content: map[string]*huma.MediaType{problemJSONMediaType: {Schema: schema}}}
 	}
 	return result
 }
@@ -160,9 +162,9 @@ func publicQuery(api huma.API, allowed ...string) func(huma.Context, func(huma.C
 	return func(ctx huma.Context, next func(huma.Context)) {
 		u := ctx.URL()
 		if !validPublicQuery(u.RawQuery, allowed) {
-			ctx.SetHeader("Content-Type", "application/problem+json")
+			ctx.SetHeader("Content-Type", problemJSONMediaType)
 			ctx.SetStatus(http.StatusBadRequest)
-			_ = api.Marshal(ctx.BodyWriter(), "application/problem+json", newProblem(http.StatusBadRequest, "invalid_parameters"))
+			_ = api.Marshal(ctx.BodyWriter(), problemJSONMediaType, newProblem(http.StatusBadRequest, "invalid_parameters"))
 			return
 		}
 		next(ctx)
