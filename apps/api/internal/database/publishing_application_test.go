@@ -23,7 +23,7 @@ type applicationFixture struct {
 }
 
 func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB, cfg *pgx.ConnConfig) {
-	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('ru','pl','de')")
+	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('ru','pl','en')")
 	requireNoError(t, err)
 	editorDB := applicationDatabase(t, cfg, "sp_publisher", "publishing-editor")
 	runtimeCfg := cfg.Copy()
@@ -92,13 +92,13 @@ func publishApplicationDraft(t *testing.T, f applicationFixture, patch map[strin
 	return next
 }
 
-func assertPublishingError(t *testing.T, err error, kind publishing.Kind) *publishing.Error {
+func assertPublishingError(t *testing.T, err error, kind publishing.Kind) string {
 	t.Helper()
 	var problem *publishing.Error
 	if !errors.As(err, &problem) || problem.Kind != kind {
 		t.Fatalf("expected %s; got %v", kind, err)
 	}
-	return problem
+	return problem.Code
 }
 
 // Снимок сверяет реальные следы отката, включая строки, которые API не возвращает.
@@ -160,7 +160,12 @@ func (f applicationFixture) testDraft(t *testing.T) {
 	if len(languages) < 3 {
 		t.Fatal("public enabled language catalog missing")
 	}
-	empty, err := f.reader.ListArticles(f.ctx, "de", publishing.Page{Limit: 20})
+	editorial, err := f.editor.GetEditorialList(f.ctx, publishing.Page{Limit: 100})
+	requireNoError(t, err)
+	if len(editorial) < 2 {
+		t.Fatal("editorial list omitted drafts or published articles")
+	}
+	empty, err := f.reader.ListArticles(f.ctx, "en", publishing.Page{Limit: 20})
 	requireNoError(t, err)
 	if len(empty) != 0 {
 		t.Fatal("empty enabled language leaked other language articles")
@@ -170,14 +175,21 @@ func (f applicationFixture) testDraft(t *testing.T) {
 }
 
 func (f applicationFixture) testPublication(t *testing.T) {
-	state := publishApplicationDraft(t, f, map[string]publishing.TranslationPatch{"ru": completeTranslation("app-first"), "pl": completeTranslation("app-polish")})
+	const firstSlug = "app-first"
+	state := publishApplicationDraft(t, f, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug), "pl": completeTranslation("app-polish")})
 	old := *state.PublishedRevisionID
 	state, err := f.editor.SaveDraft(f.ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{
 		"ru": completeTranslation("app-second"), "pl": {BodyMarkdown: valueField("Unfinished Polish")},
 	})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, f, state, "ru")
+	_, err = f.owner.ExecContext(f.ctx, "UPDATE public.languages SET is_enabled=false WHERE code='pl'")
+	requireNoError(t, err)
 	state, err = f.editor.Publish(f.ctx, state.ID, state.Version)
+	requireNoError(t, err)
+	_, err = f.reader.ResolveArticle(f.ctx, "pl", "app-polish")
+	assertPublishingError(t, err, publishing.NotFound)
+	_, err = f.owner.ExecContext(f.ctx, "UPDATE public.languages SET is_enabled=true WHERE code='pl'")
 	requireNoError(t, err)
 	polish, err := f.reader.ResolveArticle(f.ctx, "pl", "app-polish")
 	requireNoError(t, err)
@@ -191,7 +203,7 @@ func (f applicationFixture) testPublication(t *testing.T) {
 	}
 	var oldSlug string
 	requireNoError(t, f.owner.QueryRowContext(f.ctx, "SELECT slug FROM public.article_revision_translations WHERE revision_id=$1 AND language_code='ru'", old).Scan(&oldSlug))
-	if oldSlug != "app-first" {
+	if oldSlug != firstSlug {
 		t.Fatal("old immutable snapshot changed")
 	}
 	assertNoPublicationChange(t, f, state)
@@ -199,32 +211,27 @@ func (f applicationFixture) testPublication(t *testing.T) {
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, f, state, "ru")
 	assertNoPublicationChange(t, f, state)
-	first, err := f.reader.ResolveArticle(f.ctx, "ru", "app-first")
+	first, err := f.reader.ResolveArticle(f.ctx, "ru", firstSlug)
 	requireNoError(t, err)
 	if !first.Redirect || first.Article.Slug != "app-second" {
 		t.Fatal("alias did not resolve to current canonical slug")
 	}
-	state, err = f.editor.SaveDraft(f.ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation("app-first")})
+	state, err = f.editor.SaveDraft(f.ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug)})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, f, state, "ru")
 	_, err = f.editor.Publish(f.ctx, state.ID, state.Version)
 	requireNoError(t, err)
 	second, err := f.reader.ResolveArticle(f.ctx, "ru", "app-second")
 	requireNoError(t, err)
-	if !second.Redirect || second.Article.Slug != "app-first" {
+	if !second.Redirect || second.Article.Slug != firstSlug {
 		t.Fatal("return to own old slug failed")
 	}
 	list, err := f.reader.ListArticles(f.ctx, "ru", publishing.Page{Limit: 100})
 	requireNoError(t, err)
 	for _, a := range list {
-		if a.ArticleID == state.ID && a.Slug != "app-first" {
+		if a.ArticleID == state.ID && a.Slug != firstSlug {
 			t.Fatal("public list exposed historical revision")
 		}
-	}
-	editorial, err := f.editor.GetEditorialList(f.ctx, publishing.Page{Limit: 100})
-	requireNoError(t, err)
-	if len(editorial) < 2 {
-		t.Fatal("editorial list omitted drafts or published articles")
 	}
 }
 
@@ -233,7 +240,7 @@ func assertNoPublicationChange(t *testing.T, f applicationFixture, state publish
 	t.Helper()
 	before := applicationSnapshot(t, f, state.ID)
 	_, err := f.editor.Publish(f.ctx, state.ID, state.Version)
-	if assertPublishingError(t, err, publishing.Conflict).Code != "no_draft" {
+	if assertPublishingError(t, err, publishing.Conflict) != "no_draft" {
 		t.Fatal("publication without a real change returned the wrong conflict")
 	}
 	if applicationSnapshot(t, f, state.ID) != before {

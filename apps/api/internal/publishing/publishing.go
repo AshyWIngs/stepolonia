@@ -24,11 +24,15 @@ const (
 
 // Error содержит только безопасный код; SQL, параметры и credentials наружу не попадают.
 type Error struct {
-	Kind Kind
-	Code string
+	Kind     Kind
+	Code     string
+	sqlState string
 }
 
 func (e *Error) Error() string { return "publishing: " + e.Code }
+
+// SQLState сохраняет код для диагностики, не раскрывая SQL или параметры запроса.
+func (e *Error) SQLState() string { return e.sqlState }
 
 // FieldPatch отличает отсутствующее поле от явного NULL без универсального patch-механизма.
 type FieldPatch struct {
@@ -70,20 +74,20 @@ func databaseError(err error) error {
 	if !errors.As(err, &pgerr) {
 		return problem(Dependency, "database_unavailable")
 	}
+	kind, code := Dependency, "database_unavailable"
 	switch pgerr.Code {
 	case "42501":
-		return problem(Forbidden, "insufficient_privileges")
+		kind, code = Forbidden, "insufficient_privileges"
 	case "23505":
-		return problem(Conflict, "slug_conflict")
+		kind, code = Conflict, "slug_conflict"
 	case "40001", "40P01":
-		return problem(Conflict, "concurrent_change")
+		kind, code = Conflict, "concurrent_change"
 	case "23503":
-		return problem(Validation, "unknown_reference")
+		kind, code = Validation, "unknown_reference"
 	case "23514", "23502", "22021", "22P02":
-		return problem(Validation, "invalid_translation")
-	default:
-		return problem(Dependency, "database_unavailable")
+		kind, code = Validation, "invalid_translation"
 	}
+	return &Error{Kind: kind, Code: code, sqlState: pgerr.Code}
 }
 
 func normalizeLanguage(code string) (string, error) {
