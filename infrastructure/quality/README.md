@@ -69,7 +69,7 @@ db-tools, initializer PostgreSQL и точный Caddy image из Compose пер
 `reports/images/`; архив удаляется при выходе. Фиксированный volume
 `sp-grype-cache` содержит только публичную базу сканера.
 API, web, PostgreSQL, db-tools и исполнение CPD используют non-root distroless.
-golangci-lint 2.15.0 пересобирается штатным `go install` на Go 1.27.4:
+golangci-lint 2.15.0 пересобирается `go install` на Go 1.27.4 по точному upstream commit v2.15.0 и его go.mod/go.sum:
 готовый upstream binary собран старым Go и содержит исправленные stdlib CVE.
 Go compiler и npm install остаются в отдельных builder stages: они требуют
 инструментов сборки и проверяются по содержимому, а не по названию дистрибутива.

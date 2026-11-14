@@ -4,7 +4,9 @@ RUN apk upgrade --no-cache musl zlib
 
 FROM go-base AS go-tool
 # Upstream binary 2.15.0 собран старым Go: пересобираем ту же версию с security fixes.
-RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+# Commit соответствует v2.15.0; зависимости берутся из upstream go.mod/go.sum.
+# Go checksum DB проверяет содержимое модулей; обновление toolchain запрещено.
+RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@25c5369a93aacb8cccea0d46e1569ca4a194564d
 
 FROM go-base AS go-lint
 COPY --from=go-tool /out/golangci-lint /usr/local/bin/golangci-lint
