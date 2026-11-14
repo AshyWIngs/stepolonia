@@ -117,7 +117,7 @@ db-test: sdk-check
 	python3 scripts/test-publishing.py
 
 sdk:
-	cd packages/sdk && npm ci --ignore-scripts && npm run generate
+	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run generate
 
 sdk-check:
-	cd packages/sdk && npm ci --ignore-scripts && npm run check
+	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run check

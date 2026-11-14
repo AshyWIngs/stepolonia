@@ -18,9 +18,7 @@ linters:
       min-occurrences: 3
       # Аргументы transport-вызовов также содержат MIME, query/header и error codes.
       ignore-calls: false
-      # Ожидаемые значения в тестах независимы от production-констант.
-      # Остальные линтеры и jscpd продолжают проверять тесты.
-      ignore-tests: true
+      ignore-tests: false
   exclusions:
     presets: []
     rules:

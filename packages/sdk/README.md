@@ -4,6 +4,8 @@
 
 Из корня проекта `make sdk` обновляет OpenAPI JSON и TypeScript, `make sdk-check` сравнивает оба артефакта с результатом новой генерации и запускает ESLint и typecheck. `make check-db` использует существующую одноразовую PostgreSQL и выполняет запросы этим клиентом к настоящему HTTP API.
 
+Make передаёт генератору абсолютный путь Go из окружения разработчика до запуска npm scripts. Go выполняется с `PATH=/usr/bin:/bin`, `GOTOOLCHAIN=local` и `CGO_ENABLED=0`, чтобы npm-зависимости не подменяли toolchain и его вспомогательные команды.
+
 ```ts
 import { createPublicClient } from '@stepolonia/sdk'
 

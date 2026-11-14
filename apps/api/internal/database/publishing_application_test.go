@@ -26,9 +26,9 @@ type applicationFixture struct {
 func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB, cfg *pgx.ConnConfig) {
 	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('ru','pl','en')")
 	requireNoError(t, err)
-	editorDB := applicationDatabase(t, cfg, "sp_publisher", "publishing-editor")
+	editorDB := applicationDatabase(t, cfg, publisherTestRole, "publishing-editor")
 	runtimeCfg := cfg.Copy()
-	runtimeCfg.User = "stage12_app"
+	runtimeCfg.User = runtimeTestRole
 	runtimeCfg.Password = readDisposablePassword(t, os.Getenv("STAGE12_TEST_RUNTIME_PASSWORD_FILE"))
 	runtime := applicationDatabase(t, runtimeCfg, "", "publishing-runtime")
 	f := applicationFixture{owner, publishing.NewService(editorDB), publishing.NewPublicReader(runtime), cfg, runtime}
@@ -179,11 +179,15 @@ func (f applicationFixture) testDraft(t *testing.T, ctx context.Context) {
 }
 
 func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
-	const firstSlug = "app-first"
-	state := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug), "pl": completeTranslation("app-polish")})
+	const (
+		polishSlug = "app-polish"
+		secondSlug = "app-second"
+		firstSlug  = "app-first"
+	)
+	state := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug), "pl": completeTranslation(polishSlug)})
 	old := *state.PublishedRevisionID
 	state, err := f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{
-		"ru": completeTranslation("app-second"), "pl": {BodyMarkdown: valueField("Unfinished Polish")},
+		"ru": completeTranslation(secondSlug), "pl": {BodyMarkdown: valueField("Unfinished Polish")},
 	})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, ctx, f, state, "ru")
@@ -191,11 +195,11 @@ func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
 	requireNoError(t, err)
 	state, err = f.editor.Publish(ctx, state.ID, state.Version)
 	requireNoError(t, err)
-	_, err = f.reader.ResolveArticle(ctx, "pl", "app-polish")
+	_, err = f.reader.ResolveArticle(ctx, "pl", polishSlug)
 	assertPublishingError(t, err, publishing.NotFound)
-	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='pl'")
+	_, err = f.owner.ExecContext(ctx, enablePolishSQL)
 	requireNoError(t, err)
-	polish, err := f.reader.ResolveArticle(ctx, "pl", "app-polish")
+	polish, err := f.reader.ResolveArticle(ctx, "pl", polishSlug)
 	requireNoError(t, err)
 	if polish.Article.BodyMarkdown != "Body app-polish" {
 		t.Fatal("Russian update changed public Polish")
@@ -211,13 +215,13 @@ func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
 		t.Fatal("old immutable snapshot changed")
 	}
 	assertNoPublicationChange(t, ctx, f, state)
-	state, err = f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation("app-second")})
+	state, err = f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation(secondSlug)})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, ctx, f, state, "ru")
 	assertNoPublicationChange(t, ctx, f, state)
 	first, err := f.reader.ResolveArticle(ctx, "ru", firstSlug)
 	requireNoError(t, err)
-	if !first.Redirect || first.Article.Slug != "app-second" {
+	if !first.Redirect || first.Article.Slug != secondSlug {
 		t.Fatal("alias did not resolve to current canonical slug")
 	}
 	state, err = f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation(firstSlug)})
@@ -225,7 +229,7 @@ func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
 	state = readyApplicationDraft(t, ctx, f, state, "ru")
 	state, err = f.editor.Publish(ctx, state.ID, state.Version)
 	requireNoError(t, err)
-	second, err := f.reader.ResolveArticle(ctx, "ru", "app-second")
+	second, err := f.reader.ResolveArticle(ctx, "ru", secondSlug)
 	requireNoError(t, err)
 	if !second.Redirect || second.Article.Slug != firstSlug {
 		t.Fatal("return to own old slug failed")
@@ -268,12 +272,14 @@ func (f applicationFixture) testRollback(t *testing.T, ctx context.Context) {
 	if applicationSnapshot(t, ctx, f, state.ID) != before {
 		t.Fatal("disabled ready translation caused partial publication")
 	}
-	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='pl'")
+	_, err = f.owner.ExecContext(ctx, enablePolishSQL)
 	requireNoError(t, err)
 }
 
 func (f applicationFixture) testUnpublish(t *testing.T, ctx context.Context) {
-	patch := map[string]publishing.TranslationPatch{"ru": completeTranslation("app-unpub-ru"), "pl": completeTranslation("app-unpub-pl")}
+	const polishSlug = "app-unpub-pl"
+
+	patch := map[string]publishing.TranslationPatch{"ru": completeTranslation("app-unpub-ru"), "pl": completeTranslation(polishSlug)}
 	state := publishApplicationDraft(t, ctx, f, patch)
 	state, err := f.editor.SaveDraft(ctx, state.ID, state.Version, patch)
 	requireNoError(t, err)
@@ -290,7 +296,7 @@ func (f applicationFixture) testUnpublish(t *testing.T, ctx context.Context) {
 			t.Fatal("unpublish retained ready flag")
 		}
 	}
-	_, err = f.reader.ResolveArticle(ctx, "pl", "app-unpub-pl")
+	_, err = f.reader.ResolveArticle(ctx, "pl", polishSlug)
 	assertPublishingError(t, err, publishing.NotFound)
 	again, err := f.editor.UnpublishArticle(ctx, state.ID, state.Version)
 	requireNoError(t, err)
@@ -305,16 +311,16 @@ func (f applicationFixture) testUnpublish(t *testing.T, ctx context.Context) {
 	}
 	_, err = f.reader.ResolveArticle(ctx, "ru", "app-unpub-ru")
 	requireNoError(t, err)
-	_, err = f.reader.ResolveArticle(ctx, "pl", "app-unpub-pl")
+	_, err = f.reader.ResolveArticle(ctx, "pl", polishSlug)
 	assertPublishingError(t, err, publishing.NotFound)
 }
 
 // Один backend на actor позволяет наблюдать настоящие ожидания без production test hooks.
 func startApplicationOperation(t *testing.T, ctx context.Context, f applicationFixture, name string, call func(*publishing.Service) (publishing.ArticleState, error)) (int, <-chan error, *publishing.ArticleState) {
 	t.Helper()
-	db := applicationDatabase(t, f.cfg, "sp_publisher", name)
+	db := applicationDatabase(t, f.cfg, publisherTestRole, name)
 	var pid int
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid))
+	requireNoError(t, db.QueryRowContext(ctx, backendPIDSQL).Scan(&pid))
 	state := new(publishing.ArticleState)
 	done := make(chan error, 1)
 	go func() { var err error; *state, err = call(publishing.NewService(db)); done <- err }()
@@ -355,11 +361,13 @@ func reservationBarrier(t *testing.T, ctx context.Context, f applicationFixture,
 }
 
 func (f applicationFixture) testRoutes(t *testing.T, ctx context.Context) {
-	patch := map[string]publishing.TranslationPatch{"ru": completeTranslation("app-race-url")}
+	const reservedSlug = "app-race-url"
+
+	patch := map[string]publishing.TranslationPatch{"ru": completeTranslation(reservedSlug)}
 	a := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, patch), "ru")
 	b := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, patch), "ru")
 	beforeA, beforeB := applicationSnapshot(t, ctx, f, a.ID), applicationSnapshot(t, ctx, f, b.ID)
-	barrier := reservationBarrier(t, ctx, f, "app-race-url")
+	barrier := reservationBarrier(t, ctx, f, reservedSlug)
 	defer func() { _ = barrier.Rollback() }()
 	firstPID, first, one := startApplicationOperation(t, ctx, f, "publishing-url-first", func(s *publishing.Service) (publishing.ArticleState, error) { return s.Publish(ctx, a.ID, a.Version) })
 	waitForLock(t, ctx, f.owner, firstPID, first)
@@ -378,7 +386,7 @@ func (f applicationFixture) testRoutes(t *testing.T, ctx context.Context) {
 	if applicationSnapshot(t, ctx, f, loser.ID) != before {
 		t.Fatal("losing URL publisher retained side effects")
 	}
-	resolved, err := f.reader.ResolveArticle(ctx, "ru", "app-race-url")
+	resolved, err := f.reader.ResolveArticle(ctx, "ru", reservedSlug)
 	requireNoError(t, err)
 	if resolved.Article.ArticleID != winner.ID {
 		t.Fatal("unique URL did not belong to the only committed publisher")
@@ -395,7 +403,7 @@ func (f applicationFixture) disableWins(t *testing.T, ctx context.Context) {
 	before := applicationSnapshot(t, ctx, f, state.ID)
 	barrier := beginRoleTx(t, ctx, f.owner, "")
 	defer func() { _ = barrier.Rollback() }()
-	execSQL(t, ctx, barrier, "UPDATE public.languages SET is_enabled=false WHERE code='ru'")
+	execSQL(t, ctx, barrier, disableRussianSQL)
 	pid, done, _ := startApplicationOperation(t, ctx, f, "publishing-disable-first", func(s *publishing.Service) (publishing.ArticleState, error) {
 		return s.Publish(ctx, state.ID, state.Version)
 	})
@@ -405,13 +413,15 @@ func (f applicationFixture) disableWins(t *testing.T, ctx context.Context) {
 	if applicationSnapshot(t, ctx, f, state.ID) != before {
 		t.Fatal("publication used stale enabled state after waiting")
 	}
-	_, err := f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
+	_, err := f.owner.ExecContext(ctx, enableRussianSQL)
 	requireNoError(t, err)
 }
 
 func (f applicationFixture) publicationWins(t *testing.T, ctx context.Context) {
-	state := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"ru": completeTranslation("app-publish-before-disable")}), "ru")
-	barrier := reservationBarrier(t, ctx, f, "app-publish-before-disable")
+	const slug = "app-publish-before-disable"
+
+	state := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"ru": completeTranslation(slug)}), "ru")
+	barrier := reservationBarrier(t, ctx, f, slug)
 	defer func() { _ = barrier.Rollback() }()
 	pid, done, published := startApplicationOperation(t, ctx, f, "publishing-before-disable", func(s *publishing.Service) (publishing.ArticleState, error) {
 		return s.Publish(ctx, state.ID, state.Version)
@@ -419,10 +429,10 @@ func (f applicationFixture) publicationWins(t *testing.T, ctx context.Context) {
 	waitForLock(t, ctx, f.owner, pid, done)
 	disabler := applicationDatabase(t, f.cfg, "", "publishing-disabler")
 	var disablerPID int
-	requireNoError(t, disabler.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&disablerPID))
+	requireNoError(t, disabler.QueryRowContext(ctx, backendPIDSQL).Scan(&disablerPID))
 	disabled := make(chan error, 1)
 	go func() {
-		_, err := disabler.ExecContext(ctx, "UPDATE public.languages SET is_enabled=false WHERE code='ru'")
+		_, err := disabler.ExecContext(ctx, disableRussianSQL)
 		disabled <- err
 	}()
 	waitForLock(t, ctx, f.owner, disablerPID, disabled)
@@ -432,9 +442,9 @@ func (f applicationFixture) publicationWins(t *testing.T, ctx context.Context) {
 	if published.PublishedRevisionID == nil {
 		t.Fatal("publication did not commit before disable")
 	}
-	_, err := f.reader.ResolveArticle(ctx, "ru", "app-publish-before-disable")
+	_, err := f.reader.ResolveArticle(ctx, "ru", slug)
 	assertPublishingError(t, err, publishing.NotFound)
-	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
+	_, err = f.owner.ExecContext(ctx, enableRussianSQL)
 	requireNoError(t, err)
 }
 
@@ -447,7 +457,7 @@ func seedListSnapshot(t *testing.T, ctx context.Context, tx *sql.Tx, article, re
  SELECT $1,$2,COALESCE(max(revision_no),0)+1,$3::timestamptz FROM public.article_revisions WHERE article_id=$2`, revision, article, at)
 	execSQL(t, ctx, tx, `INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)
  VALUES($1,$2,$3,$4,$4,$4)`, article, revision, language, slug)
-	execSQL(t, ctx, tx, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", revision)
+	execSQL(t, ctx, tx, sealRevisionSQL, revision)
 	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=$2 WHERE id=$1", article, revision)
 }
 

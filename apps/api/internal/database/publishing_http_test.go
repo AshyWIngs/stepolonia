@@ -19,6 +19,8 @@ import (
 	"stepolonia/apps/api/internal/publishing"
 )
 
+const firstHTTPSlug = "http-first"
+
 type httpTestDatabase struct{ *sql.DB }
 
 func (db httpTestDatabase) Ping(ctx context.Context) error { return db.PingContext(ctx) }
@@ -77,7 +79,7 @@ func (f applicationFixture) testPublicHTTP(t *testing.T, ctx context.Context) {
 	}
 	empty, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/articles?lang=kk", http.StatusOK)
 	assertHTTPArticles(t, empty)
-	first := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation("http-first")})
+	first := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation(firstHTTPSlug)})
 	second := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation("http-second")})
 	_ = createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"kk": completeTranslation("http-private")})
 	list, _ := publicRequest(t, ctx, client, server.URL+"/api/v1/articles?lang=kk", http.StatusOK)
@@ -98,7 +100,7 @@ func (f applicationFixture) testHTTPAliases(t *testing.T, ctx context.Context, c
 		state, err = f.editor.Publish(ctx, next.ID, next.Version)
 		requireNoError(t, err)
 	}
-	for _, old := range []string{"http-first", middleSlug} {
+	for _, old := range []string{firstHTTPSlug, middleSlug} {
 		body, headers := publicRequest(t, ctx, client, base+"/api/v1/articles/"+old+"?lang=KK", http.StatusMovedPermanently)
 		if strings.TrimSpace(string(body)) != "null" || !strings.HasPrefix(headers.Get("Content-Type"), "application/json") {
 			t.Fatal("redirect body differs from its OpenAPI contract")
@@ -117,7 +119,7 @@ func (f applicationFixture) testHTTPAliases(t *testing.T, ctx context.Context, c
 	testLiveSDK(t, ctx, base)
 	_, err := f.editor.UnpublishArticle(ctx, state.ID, state.Version)
 	requireNoError(t, err)
-	for _, slug := range []string{"http-first", middleSlug, finalSlug} {
+	for _, slug := range []string{firstHTTPSlug, middleSlug, finalSlug} {
 		publicRequest(t, ctx, client, base+"/api/v1/articles/"+slug+"?lang=kk", http.StatusNotFound)
 	}
 }
@@ -174,7 +176,7 @@ func assertSafeProblem(t *testing.T, body []byte, headers http.Header, status in
 	if problem.Status != status || !strings.HasPrefix(headers.Get("Content-Type"), "application/problem+json") {
 		t.Fatalf("invalid problem response %s", body)
 	}
-	for _, private := range []string{"SELECT ", "stage12_", "postgres://", "sql:", "sp_publisher", "database is closed"} {
+	for _, private := range []string{"SELECT ", "stage12_", "postgres://", "sql:", publisherTestRole, "database is closed"} {
 		if strings.Contains(string(body), private) {
 			t.Fatalf("private dependency details leaked: %s", body)
 		}
