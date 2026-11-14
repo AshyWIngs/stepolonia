@@ -30,7 +30,7 @@ func check() error {
 	query := "SELECT NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole " +
 		"AND NOT has_schema_privilege(current_user, 'public', 'CREATE') " +
 		"FROM pg_roles WHERE rolname=current_user"
-	cmd := exec.CommandContext(ctx, "/usr/lib/postgresql/18/bin/psql",
+	cmd := exec.CommandContext(ctx, "/usr/libexec/postgresql18/psql",
 		"-X", "--no-password", "--host=127.0.0.1", "--username="+user,
 		"--dbname="+database, "--set=ON_ERROR_STOP=1", "--tuples-only", "--no-align", "--command="+query)
 	// Пароль не попадает в argv, вывод healthcheck или конфигурацию контейнера.

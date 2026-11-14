@@ -18,9 +18,13 @@ RUN go mod download && go mod verify
 WORKDIR /src
 COPY apps/api ./apps/api
 COPY infrastructure/postgres/healthcheck ./infrastructure/postgres/healthcheck
+COPY infrastructure/caddy/healthcheck ./infrastructure/caddy/healthcheck
 WORKDIR /src/apps/api
 RUN golangci-lint run
 WORKDIR /src/infrastructure/postgres/healthcheck
+RUN golangci-lint run
+
+WORKDIR /src/infrastructure/caddy/healthcheck
 RUN golangci-lint run
 
 FROM ghcr.io/astral-sh/ruff:0.17.5 AS python-lint
@@ -29,24 +33,22 @@ COPY ruff.toml ./
 COPY scripts ./scripts
 RUN ["/ruff", "check", "--no-cache", "scripts"]
 
-FROM node:26.13.1-trixie-slim AS duplicates-build
+FROM dhi.io/node:26.13.1-alpine3.24-dev AS duplicates-build
 ENV NUXT_TELEMETRY_DISABLED=1
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade zlib1g \
-    && rm -rf /var/lib/apt/lists/* \
-    && npm install --global --ignore-scripts --no-fund --no-audit npm@11.21.2
+RUN test "$(npm --version)" = "11.21.2"
 USER node
 WORKDIR /home/node
 COPY --chown=node:node infrastructure/quality/package.json infrastructure/quality/package-lock.json ./
 RUN npm ci --ignore-scripts --no-fund --no-audit
 # CPD исполняется в non-root distroless, npm остаётся в builder.
-FROM gcr.io/distroless/nodejs26-debian13:nonroot AS duplicates
+FROM dhi.io/node:26.13.1-alpine3.24 AS duplicates
 WORKDIR /tools
-COPY --from=duplicates-build --chown=nonroot:nonroot /home/node/node_modules ./node_modules
-USER nonroot:nonroot
+COPY --from=duplicates-build --chown=1000:1000 /home/node/node_modules ./node_modules
+USER 1000:1000
 WORKDIR /src
 COPY .jscpd.json ./
 COPY apps ./apps
 COPY scripts ./scripts
 COPY infrastructure/postgres/healthcheck ./infrastructure/postgres/healthcheck
-RUN ["/nodejs/bin/node", "/tools/node_modules/jscpd/run-jscpd.js", "--config", ".jscpd.json", "apps", "scripts", "infrastructure"]
+COPY infrastructure/caddy/healthcheck ./infrastructure/caddy/healthcheck
+RUN ["/usr/bin/node", "/tools/node_modules/jscpd/run-jscpd.js", "--config", ".jscpd.json", "apps", "scripts", "infrastructure"]

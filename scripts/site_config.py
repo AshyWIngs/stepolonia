@@ -51,7 +51,7 @@ def postgres_sql_args(config, query, *, runtime_role=False, database_name=None):
     """Local administration through psql directly; the runtime has no shell."""
     database = config["services"]["postgres"]["environment"]
     user = database["DB_USER" if runtime_role else "POSTGRES_USER"]
-    return ["exec", "-T", "postgres", "/usr/lib/postgresql/18/bin/psql",
+    return ["exec", "-T", "postgres", "/usr/libexec/postgresql18/psql",
             "-X", "--no-password", "--username=" + user,
             "--dbname=" + (database_name or database["POSTGRES_DB"]), "--set=ON_ERROR_STOP=1",
             "--tuples-only", "--no-align", "--command=" + query]

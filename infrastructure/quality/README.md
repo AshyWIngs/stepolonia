@@ -2,7 +2,7 @@
 
 `make lint` проверяет исходники без БД. `make duplicates` запускает только CPD.
 `make SITE=example.test verify` выполняет `lint`, `config`, `test`, `build`,
-`db-test`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
+`db-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
 собственным disposable harness, постоянные volumes не очищаются.
 
 Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.4+
@@ -64,11 +64,16 @@ PASS не означает cloud PASS. Benchmarks и сетевой npm audit о
 часть verify, её результат зависит от актуальной базы advisories.
 
 Образы Go/Python/web/CPD и npm builder анализаторов, runtime API/web/PostgreSQL,
-db-tools, initializer PostgreSQL и точный Caddy image из Compose передаются как Docker archives без Docker socket и секретов.
+db-tools, initializer PostgreSQL и runtime Caddy передаются как Docker archives без Docker socket и секретов.
 Сохраняются image ID, платформа, JSON findings и версия/возраст базы в
 `reports/images/`; архив удаляется при выходе. Фиксированный volume
 `sp-grype-cache` содержит только публичную базу сканера.
-API, web, PostgreSQL, db-tools и исполнение CPD используют non-root distroless.
+API, web, PostgreSQL, Caddy, db-tools и исполнение CPD используют non-root runtime
+без shell. Web/CPD собираются и работают на одной ветке Alpine 3.24 с Node
+26.13.1; DHI builder уже содержит npm 11.21.2, версия проверяется при сборке.
+Caddy 2.11.9 берётся из исправленной DHI-сборки; отдельный Go probe проверяет
+реальный HTTP listener без wget/shell. Исходники probe проходят штатный Go lint
+и fmt/vet/race checks.
 golangci-lint 2.15.0 пересобирается `go install` на Go 1.27.4 по точному upstream commit v2.15.0 и его go.mod/go.sum:
 готовый upstream binary собран старым Go и содержит исправленные stdlib CVE.
 Go compiler и npm install остаются в отдельных builder stages: они требуют

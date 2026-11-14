@@ -74,9 +74,23 @@ SITE ?= another.test
 попадают в игнорируемый каталог `reports/`. `down --volumes` удаляет управляемые
 volumes с данными.
 
-PostgreSQL работает в distroless; подготовка кластера выполняется одноразовым
-контейнером `postgres-init`. API, frontend и PostgreSQL не публикуют порты хоста;
+PostgreSQL 18.7 работает в минимальном runtime без shell; bootstrap
+выполняет одноразовый `postgres-init`. API, web и Caddy также запускаются
+non-root без shell. API, frontend и PostgreSQL не публикуют порты хоста;
 HTTP обслуживает Caddy. Генерация SDK пока не реализована.
+
+Образы PostgreSQL используют Alpine/musl и предназначены для новых кластеров.
+Сохраняются UID/GID 999 и путь `/var/lib/postgresql/18/docker`. Готовый кластер
+Debian/glibc нельзя автоматически подключать к новой сборке: сначала нужна
+отдельно согласованная проверка locale/collation и перенос через dump/restore.
+Исходные SQL-миграции и схема от этого изменения не меняются.
+
+PostgreSQL поставляется пакетами Alpine 18.7-r0: vendor advisory feed
+проверяет версию сервера и его библиотек. Сохранены PL/pgSQL, ICU, XML, LDAP,
+LLVM JIT и contrib; для аутентификации используется SCRAM-SHA-256. Kerberos/GSS
+в выбранную сборку не входит.
+Опциональные PL/Perl, PL/Python и PL/Tcl с их transform-расширениями в runtime
+не входят. Для их добавления нужны явное требование и проверка зависимостей.
 
 ## Схема БД и языки
 

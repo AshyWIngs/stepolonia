@@ -62,7 +62,7 @@ linters:
       - path: ^infrastructure/postgres/healthcheck/main\.go$
         linters: [gosec]
         text: '^G(204|702):'
-        source: 'cmd := exec\.CommandContext\(ctx, "/usr/lib/postgresql/18/bin/psql",'
+        source: 'cmd := exec\.CommandContext\(ctx, "/usr/libexec/postgresql18/psql",'
 issues:
   uniq-by-line: false
   max-issues-per-linter: 0
