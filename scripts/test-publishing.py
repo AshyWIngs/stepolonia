@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Verify schema and tools on an owned, disposable PostgreSQL installation."""
+import argparse
+from contextlib import redirect_stdout
 import json
 import os
 import secrets
@@ -7,6 +9,7 @@ import shutil
 import subprocess
 
 from db_tools import DISPOSABLE_MARKER, run_tool
+import smoke
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
 
 
@@ -57,7 +60,7 @@ def verify_owned(project, token, log, *, volume=None):
             verify_resource_owner(item, resource, project, token)
 
 
-def prepare_installation(site, project, database, token):
+def prepare_installation(site, project, database, token, *, runtime=False):
     """Создаём новую одноразовую конфигурацию с маркерами владельца ресурсов."""
     directory = site_directory(site)
     directory.mkdir(mode=0o700, exist_ok=False)
@@ -71,6 +74,7 @@ def prepare_installation(site, project, database, token):
         "POSTGRES_DB": database, "POSTGRES_USER": "stage12_owner", "DB_USER": "stage12_app",
         "DB_VOLUME_NAME": f"{project}-data", "DB_VOLUME_EXTERNAL": "false",
         "NUXT_PUBLIC_SITE_NAME": "Schema integration", "NUXT_PUBLIC_SITE_LOCALE": "ru",
+        "HTTP_BIND": "127.0.0.1", "HTTP_PORT": "0",
     }
     env_file = directory / ".env"
     descriptor = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -86,8 +90,12 @@ def prepare_installation(site, project, database, token):
                      "ports": [{"target": 5432, "published": "0", "host_ip": "127.0.0.1"}]},
         "db-tools": {"image": f"{project}-tools:check", "labels": labels},
     }
+    if runtime:
+        for service in ("api", "web", "caddy"):
+            services[service] = {"image": f"{project}-{service}:check", "labels": labels}
     override.write_text(json.dumps({"services": services,
-                                   "networks": {"data": {"internal": False, "labels": labels}},
+                                   "networks": {"data": {"internal": False, "labels": labels},
+                                                "app": {"labels": labels}},
                                    "volumes": {"postgres_data": {"name": values["DB_VOLUME_NAME"],
                                                                   "external": False, "labels": labels}}}))
     return directory, override, log_path, values["DB_VOLUME_NAME"]
@@ -126,7 +134,41 @@ def check_cli(site, directory, override, compose, config, log):
     run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
 
 
-def main():
+def published_port(compose, service, target, token, log):
+    containers = command([*compose, "ps", "-q", service], log, capture=True).split()
+    inspected = json.loads(command(["docker", "inspect", *containers], log, capture=True))
+    if len(inspected) != 1 or inspected[0]["Config"]["Labels"].get(LABEL) != token:
+        raise RuntimeError(f"Не совпадает идентичность контейнера {service}")
+    bindings = inspected[0]["NetworkSettings"]["Ports"].get(f"{target}/tcp") or []
+    if (len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1"
+            or not bindings[0]["HostPort"].isdecimal()):
+        raise RuntimeError("Тестовый порт должен быть доступен только на loopback")
+    return int(bindings[0]["HostPort"])
+
+
+def check_runtime(site, directory, override, compose, environment, project, token, log):
+    """Принимаем контейнерный Publishing без повторения ранее принятых SQL-сценариев."""
+    run_tool(site, ["prepare-roles"], override=override, log=log)
+    run_tool(site, ["migrate", "up"], override=override, log=log)
+    run_tool(site, ["seed"], override=override, log=log)
+    csv = directory / "languages.csv"
+    csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
+    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+    command([*compose, "build", "api", "web", "caddy"], log)
+    command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
+    port = published_port(compose, "caddy", 8080, token, log)
+    base = f"http://127.0.0.1:{port}"
+    command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingRuntimeIntegration$",
+             "./internal/database"], log, env={**environment, "STAGE15_API_URL": base}, cwd=ROOT / "apps/api")
+    smoke.COMPOSE = compose
+    with redirect_stdout(log):
+        smoke.check_publishing(base)
+        # Перед реальной остановкой БД повторно подтверждаем владельца всех ресурсов.
+        verify_owned(project, token, log)
+        smoke.check_publishing_recovery(base)
+
+
+def main(runtime=False):
     if shutil.which("go") is None:
         raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
     node = shutil.which("node")
@@ -136,7 +178,7 @@ def main():
     site = f"stage12-{token}.test"
     project = f"sp-stage12-{token}"
     database = f"stage12_{token}"
-    directory, override, log_path, volume = prepare_installation(site, project, database, token)
+    directory, override, log_path, volume = prepare_installation(site, project, database, token, runtime=runtime)
     compose = [*compose_command(site), "-f", str(override), "--project-name", project]
     success = False
     resources_owned = False
@@ -153,20 +195,11 @@ def main():
             resources_owned = True
             command([*compose, "build", "postgres-init", "postgres", "db-tools"], log)
             command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
-            container = command([*compose, "ps", "-q", "postgres"], log, capture=True).split()
-            inspected = json.loads(command(["docker", "inspect", *container], log, capture=True))
-            if len(inspected) != 1 or inspected[0]["Config"]["Labels"].get(LABEL) != token:
-                raise RuntimeError("Не совпадает идентичность контейнера PostgreSQL")
-            bindings = inspected[0]["NetworkSettings"]["Ports"].get("5432/tcp") or []
-            log.write("Порты тестовой PostgreSQL: " + json.dumps(bindings) + "\n")
-            if not bindings or any(b["HostIp"] != "127.0.0.1" or not b["HostPort"].isdecimal() for b in bindings):
-                raise RuntimeError("Тестовый порт PostgreSQL должен быть доступен только на loopback")
-            port = bindings[0]["HostPort"]
+            port = published_port(compose, "postgres", 5432, token, log)
             # Метку БД создаёт только владелец новой тестовой установки после проверки ресурсов.
             verify_owned(project, token, log, volume=volume)
             query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
             command([*compose, *postgres_sql_args(config, query)], log)
-            check_cli(site, directory, override, compose, config, log)
             environment = {
                 **os.environ,
                 "DB_DISPOSABLE_TOKEN": token,
@@ -175,9 +208,13 @@ def main():
                 "STAGE12_TEST_PASSWORD_FILE": str(directory / ".secrets/db_owner_password"),
                 "STAGE12_TEST_RUNTIME_PASSWORD_FILE": str(directory / ".secrets/db_app_password"),
             }
-            # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
-            command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
-                     "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
+            if runtime:
+                check_runtime(site, directory, override, compose, environment, project, token, log)
+            else:
+                check_cli(site, directory, override, compose, config, log)
+                # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
+                command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
+                         "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
             success = True
     finally:
         if resources_owned:
@@ -191,4 +228,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runtime", action="store_true", help="Приёмка Publishing через Compose/Caddy")
+    main(parser.parse_args().runtime)

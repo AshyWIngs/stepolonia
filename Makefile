@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -48,7 +48,7 @@ duplicates:
 	docker build --progress=plain -f infrastructure/quality/Dockerfile --target duplicates -t sp-quality-duplicates:verify . > reports/duplicates.log 2>&1 || { cat reports/duplicates.log; exit 1; }
 
 # Каждый prerequisite исполняется один раз, включая lint -> duplicates.
-verify: lint config test build db-test image-audit
+verify: lint config test build db-test publishing-test image-audit
 
 # Сканируем содержимое собранных образов; daemon socket и секреты сканеру не передаются.
 # Ошибка загрузки CVE DB также блокирует проверку. High/Critical без ignore-unfixed.
@@ -115,6 +115,9 @@ migrate seed import-languages:
 
 db-test: sdk-check
 	python3 scripts/test-publishing.py
+
+publishing-test: sdk-check
+	python3 scripts/test-publishing.py --runtime
 
 sdk:
 	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run generate

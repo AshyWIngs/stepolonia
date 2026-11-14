@@ -61,7 +61,7 @@ SITE ?= another.test
 | `make duplicates` | Проверить copy-paste через jscpd, включая тесты |
 | `make sdk` | Обновить OpenAPI и типы SDK из зарегистрированных Huma-операций |
 | `make sdk-check` | Проверить актуальность SDK, ESLint и TypeScript |
-| `make verify` | Lint, config, test, build, disposable db-test и High/Critical CVE gate |
+| `make verify` | Lint, config, test, build, PostgreSQL/Publishing integration и High/Critical CVE gate |
 | `make image-audit` | Проверить собранные образы: Grype, включая уязвимости без исправлений |
 | `make test` | Проверить Dockerfile, Go и TypeScript |
 | `make build` | Собрать образы |
@@ -71,6 +71,7 @@ SITE ?= another.test
 | `make lifecycle` | Проверить остановку и восстановление локального стека |
 | `make isolation` | Проверить отдельную временную установку и PostgreSQL dump/restore |
 | `make db-test` | Создать временную PostgreSQL, проверить схему и инструменты, удалить тестовые ресурсы |
+| `make publishing-test` | Проверить SDK через Compose/Caddy/API и восстановление после остановки одноразовой БД |
 
 Все команды принимают `SITE=...`. `lifecycle` временно останавливает выбранный
 стек; `isolation` удаляет только созданные им тестовые ресурсы. Логи проверок

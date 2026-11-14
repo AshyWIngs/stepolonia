@@ -22,6 +22,12 @@ linters:
   exclusions:
     presets: []
     rules:
+      # G704 не распознаёт loopback-only URL: env host отбрасывается после проверки
+      # порта, клиент запрещает redirects. Пересмотреть при изменении guard/callers/transport.
+      - path: ^apps/api/internal/database/publishing_http_test\.go$
+        linters: [gosec]
+        text: G704
+        source: '^\s*(request, err := http\.NewRequestWithContext\(ctx, http\.MethodGet, target, nil\)|response, err := client\.Do\(request\))$'
       # Проверенные cleanup: результат чтения/Commit/rows.Err проверяется отдельно.
       # Пересматривать при изменении файловой операции или границы транзакции.
       - path: ^apps/api/cmd/db/main\.go$
