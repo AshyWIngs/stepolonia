@@ -41,6 +41,7 @@ func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB,
 	t.Run("application publication and language disable", func(t *testing.T) { f.testDisable(t, ctx) })
 	t.Run("application public listing order and pagination", func(t *testing.T) { f.testListOrder(t, ctx) })
 	t.Run("application publication time after lock wait", func(t *testing.T) { f.testPublicationTime(t, ctx) })
+	t.Run("public HTTP publishing lifecycle", func(t *testing.T) { f.testPublicHTTP(t, ctx) })
 }
 
 func applicationDatabase(t *testing.T, cfg *pgx.ConnConfig, role, name string) *sql.DB {

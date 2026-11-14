@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/platform"
+	"stepolonia/apps/api/internal/publishing"
 )
 
 func main() {
@@ -48,8 +50,10 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("initialize database pool: %w", err)
 	}
 	defer pool.Close()
+	runtimeDB := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = runtimeDB.Close() }()
 	server := &http.Server{
-		Addr: ":8080", Handler: platform.Handler(pool, logger),
+		Addr: ":8080", Handler: platform.Handler(pool, publishing.NewPublicReader(runtimeDB), logger),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 		MaxHeaderBytes: 16 << 10,
