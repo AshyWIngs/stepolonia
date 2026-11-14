@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"stepolonia/apps/api/internal/publishing"
@@ -38,6 +39,8 @@ func testPublishingApplication(t *testing.T, ctx context.Context, owner *sql.DB,
 	t.Run("application concurrent expected versions", func(t *testing.T) { f.testVersions(t, ctx) })
 	t.Run("application concurrent URL reservation", func(t *testing.T) { f.testRoutes(t, ctx) })
 	t.Run("application publication and language disable", func(t *testing.T) { f.testDisable(t, ctx) })
+	t.Run("application public listing order and pagination", func(t *testing.T) { f.testListOrder(t, ctx) })
+	t.Run("application publication time after lock wait", func(t *testing.T) { f.testPublicationTime(t, ctx) })
 }
 
 func applicationDatabase(t *testing.T, cfg *pgx.ConnConfig, role, name string) *sql.DB {
@@ -432,4 +435,100 @@ func (f applicationFixture) publicationWins(t *testing.T, ctx context.Context) {
 	assertPublishingError(t, err, publishing.NotFound)
 	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='ru'")
 	requireNoError(t, err)
+}
+
+// Фиксируем даты при INSERT: закрытые снимки остаются неизменяемыми и в фикстуре.
+func seedListSnapshot(t *testing.T, ctx context.Context, tx *sql.Tx, article, revision, language, at string) {
+	t.Helper()
+	slug := "listed-" + revision
+	execSQL(t, ctx, tx, "INSERT INTO public.public_routes(language_code,slug,article_id) VALUES($1,$2,$3)", language, slug, article)
+	execSQL(t, ctx, tx, `INSERT INTO public.article_revisions(id,article_id,revision_no,created_at)
+ SELECT $1,$2,COALESCE(max(revision_no),0)+1,$3::timestamptz FROM public.article_revisions WHERE article_id=$2`, revision, article, at)
+	execSQL(t, ctx, tx, `INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)
+ VALUES($1,$2,$3,$4,$4,$4)`, article, revision, language, slug)
+	execSQL(t, ctx, tx, "UPDATE public.article_revisions SET sealed=true WHERE id=$1", revision)
+	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=$2 WHERE id=$1", article, revision)
+}
+
+func (f applicationFixture) testListOrder(t *testing.T, ctx context.Context) {
+	const prefix = "f0000000-0000-4000-8000-00000000000"
+	tx := beginRoleTx(t, ctx, f.owner, "")
+	defer func() { _ = tx.Rollback() }()
+	for _, n := range []string{"1", "2", "3", "4", "5", "6"} {
+		execSQL(t, ctx, tx, "INSERT INTO public.articles(id) VALUES($1)", prefix+n)
+	}
+	seedListSnapshot(t, ctx, tx, prefix+"2", "e0000000-0000-4000-8000-000000000000", "en", "2020-01-01T00:00:00Z")
+	for _, row := range []struct{ id, language, at string }{
+		{"1", "en", "2020-01-03T00:00:00Z"},
+		{"2", "en", "2020-01-02T00:00:00Z"},
+		{"3", "en", "2020-01-02T00:00:00Z"},
+		{"4", "pl", "2020-01-04T00:00:00Z"},
+		{"5", "en", "2020-01-05T00:00:00Z"},
+	} {
+		seedListSnapshot(t, ctx, tx, prefix+row.id, "e0000000-0000-4000-8000-00000000000"+row.id, row.language, row.at)
+	}
+	execSQL(t, ctx, tx, "UPDATE public.articles SET published_revision_id=NULL WHERE id=$1", prefix+"5")
+	execSQL(t, ctx, tx, "INSERT INTO public.article_draft_translations(article_id,language_code,title) VALUES($1,'en','Private draft')", prefix+"6")
+	requireNoError(t, tx.Commit())
+	for _, page := range []struct {
+		limit, offset int
+		ids           []string
+	}{
+		{10, 0, []string{prefix + "1", prefix + "3", prefix + "2"}},
+		{2, 0, []string{prefix + "1", prefix + "3"}},
+		{2, 2, []string{prefix + "2"}},
+		{2, 3, []string{}},
+	} {
+		articles, err := f.reader.ListArticles(ctx, "en", publishing.Page{Limit: page.limit, Offset: page.offset})
+		requireNoError(t, err)
+		ids := make([]string, 0, len(articles))
+		for _, article := range articles {
+			ids = append(ids, article.ArticleID)
+			if article.LanguageCode != "en" || article.RevisionID == "e0000000-0000-4000-8000-000000000000" {
+				t.Fatal("listing disclosed another language or historical revision")
+			}
+		}
+		if !slices.Equal(ids, page.ids) {
+			t.Fatalf("listing limit=%d offset=%d: got %v, want %v", page.limit, page.offset, ids, page.ids)
+		}
+	}
+}
+
+func (f applicationFixture) testPublicationTime(t *testing.T, ctx context.Context) {
+	first := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"en": completeTranslation("time-first")}), "en")
+	second := readyApplicationDraft(t, ctx, f, createApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"en": completeTranslation("time-second")}), "en")
+	barrier := beginRoleTx(t, ctx, f.owner, "")
+	defer func() { _ = barrier.Rollback() }()
+	var locked string
+	err := barrier.QueryRowContext(ctx, "SELECT id::text FROM public.articles WHERE id=$1 FOR UPDATE", first.ID).Scan(&locked)
+	requireNoError(t, err)
+	pid, done, published := startApplicationOperation(t, ctx, f, "publication-time-wait", func(s *publishing.Service) (publishing.ArticleState, error) {
+		return s.Publish(ctx, first.ID, first.Version)
+	})
+	waitForLock(t, ctx, f.owner, pid, done)
+	second, err = f.editor.Publish(ctx, second.ID, second.Version)
+	requireNoError(t, err)
+	requireNoError(t, barrier.Commit())
+	requireNoError(t, <-done)
+	var firstAt, secondAt time.Time
+	err = f.runtime.QueryRowContext(ctx, "SELECT published_at FROM public.public_article_translations WHERE article_id=$1 AND language_code='en'", published.ID).Scan(&firstAt)
+	requireNoError(t, err)
+	err = f.runtime.QueryRowContext(ctx, "SELECT published_at FROM public.public_article_translations WHERE article_id=$1 AND language_code='en'", second.ID).Scan(&secondAt)
+	requireNoError(t, err)
+	articles, err := f.reader.ListArticles(ctx, "en", publishing.Page{Limit: 2})
+	requireNoError(t, err)
+	if !firstAt.After(secondAt) || len(articles) != 2 || articles[0].ArticleID != first.ID || articles[1].ArticleID != second.ID {
+		t.Fatalf("publication order used transaction start instead of snapshot time: %v / %v; articles=%v", firstAt, secondAt, articles)
+	}
+	// Повторная публикация старой статьи поднимает её по времени нового снимка.
+	second, err = f.editor.SaveDraft(ctx, second.ID, second.Version, map[string]publishing.TranslationPatch{"en": completeTranslation("time-second-new")})
+	requireNoError(t, err)
+	second = readyApplicationDraft(t, ctx, f, second, "en")
+	second, err = f.editor.Publish(ctx, second.ID, second.Version)
+	requireNoError(t, err)
+	articles, err = f.reader.ListArticles(ctx, "en", publishing.Page{Limit: 2})
+	requireNoError(t, err)
+	if len(articles) != 2 || articles[0].ArticleID != second.ID || articles[0].RevisionID != *second.PublishedRevisionID || articles[0].Slug != "time-second-new" || articles[1].ArticleID != first.ID {
+		t.Fatal("republishing did not move the current snapshot to the top")
+	}
 }

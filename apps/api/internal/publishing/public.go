@@ -88,7 +88,7 @@ func (r *PublicReader) ListArticles(ctx context.Context, languageCode string, pa
 		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT article_id,revision_id,language_code,title,slug,body_markdown
- FROM public.public_article_translations WHERE language_code=$1 ORDER BY article_id LIMIT $2 OFFSET $3`, code, page.Limit, page.Offset)
+ FROM public.public_article_translations WHERE language_code=$1 ORDER BY published_at DESC,article_id DESC LIMIT $2 OFFSET $3`, code, page.Limit, page.Offset)
 	if err != nil {
 		return nil, databaseError(err)
 	}
