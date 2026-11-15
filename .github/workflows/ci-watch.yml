@@ -85,7 +85,7 @@ jobs:
                     '`. Проверьте результаты в GitHub; автоматический запуск Codex отключён.',
                 })
               } catch (error) {
-                if (error.status !== 403) throw error
+                if (error.status !== 403 || !String(error.message).includes('Resource not accessible by integration')) throw error
                 // GitHub может запрещать запись комментариев даже при issues:write.
                 // Не скрываем сбой доставки и не запрашиваем дополнительные токены.
                 const url = 'https://github.com/' + owner + '/' + repo + '/pull/' + pr.number
