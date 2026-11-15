@@ -177,9 +177,12 @@ GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`
 Монитор [PR CI Watch](.github/workflows/ci-watch.yml) проверяет четыре
 обязательных GitHub Gate примерно раз в 10 минут и оставляет комментарий при
 сбое или длительном ожидании. GitHub может задерживать либо пропускать
-запуски по расписанию. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
-отмечает принятый squash merge. **Ни один workflow не вызывает Codex, OpenAI API
-или платную модель; дополнительные ключи и подписки не нужны.**
+запуски по расписанию. При запрете публикации комментария (HTTP 403)
+монитор выводит предупреждение и запись в GitHub Actions Job Summary, не
+запрашивая дополнительных прав. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
+фиксирует squash merge **в Actions Job Summary**, без записи комментариев в PR:
+событие и результат merge также видны в самом GitHub. **Ни один workflow не
+вызывает Codex, OpenAI API или платную модель; дополнительные ключи не нужны.**
 
 При работе Codex в интерактивной сессии проверки можно ждать **одним**
 вызовом GitHub CLI (если позволяет ограничение времени инструментов):
