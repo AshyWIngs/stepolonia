@@ -7,12 +7,18 @@ const REQUIRED = [
   'Codacy Static Code Analysis',
   'GitGuardian Security Checks',
 ]
+const APP_IDS = {
+  verify: 15368,
+  'SonarCloud Code Analysis': 12526,
+  'Codacy Static Code Analysis': 56611,
+  'GitGuardian Security Checks': 46505,
+}
 const OK = new Set(['success', 'neutral', 'skipped'])
 
 function latestChecks(runs) {
   const byName = new Map()
   for (const run of runs) {
-    if (!REQUIRED.includes(run.name)) continue
+    if (!REQUIRED.includes(run.name) || run.app?.id !== APP_IDS[run.name]) continue
     const previous = byName.get(run.name)
     if (!previous || new Date(run.started_at || run.created_at) > new Date(previous.started_at || previous.created_at)) {
       byName.set(run.name, run)
@@ -95,4 +101,4 @@ async function scan({ github, core, context, enabled }) {
   core.info(selected ? 'Запрос Codex на PR #' + selected.number : 'Новых автоматических исправлений не требуется')
 }
 
-module.exports = { scan, latestChecks, REQUIRED, OK }
+module.exports = { scan, latestChecks, REQUIRED, APP_IDS, OK }
