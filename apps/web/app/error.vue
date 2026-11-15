@@ -10,10 +10,12 @@ const props = defineProps<{ error: NuxtError }>()
 const { publication } = usePublicSite()
 const { t, uiLanguage } = usePublicUi()
 useResponseHeader('Cache-Control').value = 'no-store'
-// При сериализации Nuxt теряет getter status; statusCode сохраняет исходный HTTP-код.
-const status = props.error.status ?? props.error.statusCode ?? 500
+// При сериализации Nuxt теряет getter status; HTTP-код остаётся в контракте NuxtErrorJSON.
+const serializedError: Partial<ReturnType<NuxtError['toJSON']>> = props.error
+const status = props.error.status ?? serializedError.statusCode ?? 500
+const errorKey = [400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other'
 // Без опубликованного каталога ответ содержит только числовой статус, без запасного языка и ENV-текстов.
-const title = computed(() => publication.value ? t([400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other') : String(status))
+const title = computed(() => publication.value ? t(errorKey) : String(status))
 useHead(() => ({ title: title.value, htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction } }))
 </script>
 
