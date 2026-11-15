@@ -2,7 +2,6 @@
 """Verify two installations on identical images; remove only the generated test site."""
 import argparse
 from datetime import datetime, timezone
-from html import escape
 import hashlib
 import json
 import secrets
@@ -11,7 +10,7 @@ import socket
 import subprocess
 
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
-from smoke import public_entry
+from smoke import check_site_branding
 
 RESULTS = []
 
@@ -90,7 +89,7 @@ def main(primary):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         subprocess.run(["python3", str(ROOT / "scripts/setup-local.py"), "--site", test_site,
-                        "--port", str(port), "--name", "Stepolonia isolation check"], check=True)
+                        "--port", str(port)], check=True)
         secondary = load_config(test_site)
         verify("distinct deployment names", original["name"] != secondary["name"])
         verify("distinct PostgreSQL volumes", original["volumes"]["postgres_data"]["name"]
@@ -112,12 +111,7 @@ def main(primary):
         verify_postgres_runtime(test_site, secondary)
         for site, config in ((primary, original), (test_site, secondary)):
             published = config["services"]["caddy"]["ports"][0]["published"]
-            status, _, body = public_entry(f"http://127.0.0.1:{published}")
-            name = escape(config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"], quote=False)
-            # Новая установка ещё без publishing-схемы и enabled-языков сообщает 503.
-            expected = 503 if site == test_site else 200
-            verify(f"{site}: own branding in SSR", status == expected
-                   and (f'>{name}</a>' in body or f'>{name}</p>' in body))
+            check_site_branding(f"http://127.0.0.1:{published}")
             active = compose(site, *postgres_sql_args(config,
                              "SELECT DISTINCT datname || ':' || usename FROM pg_stat_activity "
                              "WHERE application_name='sp-api'"))

@@ -6,7 +6,6 @@ export default defineNuxtConfig({
   i18n: {
     strategy: 'no_prefix',
     detectBrowserLanguage: false,
-    locales: ['ru', 'pl', 'kk', 'en'],
     vueI18n: './i18n.config.ts',
   },
   typescript: { strict: true },
@@ -16,13 +15,6 @@ export default defineNuxtConfig({
     apiOrigin: '',
     public: {
       site: {
-        name: 'Stepolonia',
-        tagline: '',
-        description: '',
-        notice: '',
-        locale: '',
-        uiFallback: '',
-        accent: '#a52837',
         origin: '',
       },
     },

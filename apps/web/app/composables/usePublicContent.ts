@@ -1,49 +1,16 @@
-import { createPublicClient, type components } from '@stepolonia/sdk'
-import { useRequestHeader, useRuntimeConfig } from '#imports'
+import { usePublicApi } from './usePublicApi'
+import { usePublicSite } from './usePublicSite'
 import { articleRedirect, articlesPath, publicError } from '~/utils/public-content'
-import { uiFallback } from '~/utils/language'
-
-type Language = components['schemas']['LanguageDTO']
 
 export function usePublicContent() {
-  const config = useRuntimeConfig()
-  const requestId = useRequestHeader('x-request-id')?.trim() || (import.meta.server ? crypto.randomUUID() : undefined)
-  const baseUrl = import.meta.server ? config.apiOrigin : window.location.origin
-  // SDK-контекст привязан к текущему запросу и явно заданным параметрам fetch.
-  const client = createPublicClient({
-    baseUrl,
-    fetch: (input, init) => globalThis.fetch(input, {
-      ...init, credentials: 'omit', cache: 'no-store',
-      // Пять секунд учитывают трёхсекундный API timeout, сеть и сериализацию.
-      signal: AbortSignal.any([...(input instanceof Request ? [input.signal] : []), AbortSignal.timeout(5000)]),
-    }),
-  })
+  const { client, request } = usePublicApi()
+  const { publication } = usePublicSite()
 
-  async function request<T extends { response: Response }>(operation: () => Promise<T>): Promise<T> {
-    try {
-      const result = await operation()
-      if (result.response.status >= 500) diagnostic('api_unavailable', `http_${result.response.status}`)
-      return result
-    }
-    catch (error) {
-      diagnostic('api_connection_failed', failureCode(error))
-      // Безопасная публичная ошибка защищает внутренние адреса из исключений fetch.
-      throw publicError(503)
-    }
-  }
-
-  function diagnostic(code: string, cause?: string) {
-    if (import.meta.server) console.warn(JSON.stringify({ event: 'public_content_unavailable', status: 503, code, request_id: requestId, cause }))
-  }
-
-  async function listLanguages(): Promise<Language[]> {
+  async function listLanguages() {
+    if (!publication.value) throw publicError(503)
     const { data, response } = await request(() => client.listLanguages())
     if (!data) throw publicError(response.status)
-    // Даже успешное browser matching не должно скрывать ошибку настроек установки.
-    if (!data.length || !data.some(item => item.code === config.public.site.locale) || !uiFallback(config.public.site)) {
-      diagnostic('site_language_configuration_invalid')
-      throw publicError(503)
-    }
+    if (!data.some(item => item.code === publication.value?.settings.default_language)) throw publicError(503)
     return data
   }
 
@@ -77,13 +44,4 @@ export function usePublicContent() {
   }
 
   return { list, article, listLanguages }
-}
-
-function failureCode(error: unknown): string {
-  if (!(error instanceof Error)) return 'unknown'
-  const cause = error.cause
-  if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') {
-    return cause.code
-  }
-  return error.name
 }

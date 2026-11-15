@@ -72,6 +72,21 @@ def public_entry(base):
     return status, headers, body
 
 
+def check_site_branding(base):
+    """Брендинг сверяем с публикацией API; пустая установка не получает ENV-подмену."""
+    publication_status, _, publication_body = request(base + "/api/v1/site")
+    status, headers, body = public_entry(base)
+    if publication_status == 200:
+        title = json.loads(publication_body)["settings"]["title"]
+        verify("Nuxt SSR uses published site branding", status == 200
+               and f'>{escape(title, quote=False)}</a>' in body)
+    else:
+        verify("unconfigured site has a numeric 503 without branding",
+               publication_status == 503 and status == 503 and ">503<" in body
+               and 'data-testid="site-brand"' not in body and '<header' not in body)
+    return status, headers, body
+
+
 def wait_ready():
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
@@ -177,10 +192,7 @@ def main(site, lifecycle):
     verify("data network is internal", network["Internal"])
     verify("PostgreSQL only joins data network", len(containers["postgres"]["NetworkSettings"]["Networks"]) == 1)
     verify("web does not join data network", network_name not in containers["web"]["NetworkSettings"]["Networks"])
-    status, headers, body = public_entry(base)
-    site_name = config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"]
-    verify("Nuxt production SSR uses selected site branding", status == 200
-           and f'>{escape(site_name, quote=False)}</a>' in body)
+    status, headers, body = check_site_branding(base)
     verify("proxy security header", headers.get("X-Content-Type-Options") == "nosniff")
     status, headers, body = request(base + "/api/v1/unknown")
     verify("Caddy routes API requests to Go", status == 404 and json.loads(body)["status"] == 404
@@ -234,7 +246,7 @@ def check_lifecycle(config, base, containers):
     verify("Go completed graceful shutdown", '"msg":"shutdown_complete"' in logs)
     compose("up", "-d", "--force-recreate", "--wait", "--wait-timeout", "120")
     verify("database survives container replacement", compose(*identifier_cmd).stdout.strip() == identifier)
-    verify("stack serves SSR after replacement", public_entry(base)[0] == 200)
+    check_site_branding(base)
 
 
 if __name__ == "__main__":

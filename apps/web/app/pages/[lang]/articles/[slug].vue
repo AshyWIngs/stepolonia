@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { navigateTo, useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
+import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
 import { markdownDescription } from '~/utils/markdown'
 import { articlesPath, canonicalUrl, publicError, routeSegment } from '~/utils/public-content'
@@ -19,13 +21,14 @@ if (error.value) throw publicError(error.value.status ?? 503)
 if (data.value?.kind === 'redirect') {
   await navigateTo(data.value.path, { redirectCode: 301, external: import.meta.client })
 }
-const { site } = useRuntimeConfig().public
+const { publication } = usePublicSite()
+const site = computed(() => publication.value?.settings)
 useHead(() => {
   if (data.value?.kind !== 'article') return {}
   const { article } = data.value
-  const canonical = canonicalUrl(site.origin, articlesPath(article.language_code, article.slug))
+  const canonical = canonicalUrl(useRuntimeConfig().public.site.origin, articlesPath(article.language_code, article.slug))
   return {
-    title: `${article.title} | ${site.name}`,
+    title: `${article.title} | ${site.value?.title}`,
     meta: [{ name: 'description', content: markdownDescription(article.body_markdown) }],
     link: canonical ? [{ rel: 'canonical', href: canonical }] : [],
   }

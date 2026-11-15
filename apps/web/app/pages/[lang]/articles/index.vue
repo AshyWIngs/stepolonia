@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
+import { computed } from 'vue'
+import { useAsyncData, useHead, useRoute } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
+import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
 import { articlesPath, publicError, routeSegment } from '~/utils/public-content'
 
@@ -17,10 +19,11 @@ const { data, error } = await useAsyncData(`articles:${language}:${page}`, () =>
   getCachedData: (key, app) => app.isHydrating ? app.payload.data[key] : undefined,
 })
 if (error.value) throw publicError(error.value.status ?? 503)
-const { site } = useRuntimeConfig().public
+const { publication } = usePublicSite()
+const site = computed(() => publication.value?.settings)
 useHead(() => ({
-  title: `${t('articles')} | ${site.name}`,
-  meta: [{ name: 'description', content: site.description }],
+  title: `${t('articles')} | ${site.value?.title}`,
+  meta: [{ name: 'description', content: site.value?.description }],
 }))
 </script>
 

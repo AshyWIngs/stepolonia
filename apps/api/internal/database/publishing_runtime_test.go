@@ -54,6 +54,7 @@ func TestPublishingRuntimeIntegration(t *testing.T) {
 	client := publicHTTPClient(t)
 	f.testHTTPPublishing(t, ctx, client, base)
 	f.prepareImportedLanguageHTTP(t, ctx, client, base)
+	writeSiteRuntimeFixture(t, ctx, cfg, runtimePrimary)
 }
 
 func runtimeLoopbackURL(target *url.URL) bool {

@@ -58,7 +58,7 @@ async function checkSSR() {
   for (const missing of missingPages) assert.ok(!missing.html.includes('Title http-private'))
   await documentResponse('/fr/articles/invalid_slug', 400)
   const empty = await documentResponse('/en/articles', 200)
-  assert.ok(empty.html.includes('There are no published articles in this language yet.'))
+  assert.ok(empty.html.includes('Fixture en empty'))
   const links = html.match(/data-language="[^"]+"/gu) ?? []
   assert.deepEqual(links.sort(), ['data-language="fr"', 'data-language="ru"'])
   assert.ok(html.includes('/ru/articles/stage22-ru-current'))
@@ -261,12 +261,34 @@ if (mode === '--localization') {
   await checkOtherInstallation()
   console.log('PASS: language negotiation, published translations, persistent choice, SSR/hydration and installation isolation')
 }
+else if (['--site-republished', '--site-draft'].includes(mode)) {
+  const { html } = await documentResponse('/en/articles', 200)
+  assert.ok(html.includes('Fixture updated'))
+  assert.ok(html.includes('Fixture updated en articles'))
+  assert.ok(html.includes('Fixture updated en empty @ | &lt;b&gt;literal&lt;/b&gt;'))
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.goto(`${base}/en/articles`)
+    await page.getByText('Fixture updated en empty @ | <b>literal</b>', { exact: true }).waitFor()
+    assert.equal(await page.locator('section p b').count(), 0)
+  }
+  finally { await browser.close() }
+  assert.ok(!html.includes('Private draft'))
+  const dynamic = await documentResponse('/fr/articles', 200)
+  assert.match(dynamic.html, /<html\b[^>]*\blang="fr"/u)
+  assert.ok(dynamic.html.includes('Fixture updated fr articles'))
+  await entryRedirect(base, { 'Accept-Language': 'zz' }, 'en')
+  console.log('PASS: published settings and messages update without frontend restart; drafts stay private')
+}
 else if (mode === '--site-default') {
   await entryRedirect(base, { 'Accept-Language': 'zz' }, process.env.STAGE22_DEFAULT)
   console.log('PASS: runtime installation default')
 }
 else if (mode === '--config-unavailable') {
-  await documentResponse('/', 503)
+  const { html } = await documentResponse('/', 503)
+  assert.ok(html.includes('>503<'))
+  assert.ok(!html.includes('<header'))
   console.log('PASS: invalid language configuration is a safe 503')
 }
 else if (mode === '--unavailable' || mode === '--api-unavailable') {

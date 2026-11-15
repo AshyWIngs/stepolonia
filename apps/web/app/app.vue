@@ -1,26 +1,30 @@
 <script setup lang="ts">
-import { useHead, useRequestHeader, useResponseHeader, useRuntimeConfig, useState } from '#imports'
+import { useHead, useRequestHeader, useResponseHeader, useRoute, useState } from '#imports'
+import { computed } from 'vue'
+import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
 
-const { site } = useRuntimeConfig().public
+const { publication, load } = usePublicSite()
+await load(useRoute().fullPath)
+const site = computed(() => publication.value?.settings)
 // Сохраняем header и на прямом контентном URL для последующего перехода на главную без перезагрузки.
 useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 const { uiLanguage } = usePublicUi()
 useHead(() => ({
-  title: site.name,
-  htmlAttrs: { lang: uiLanguage.value },
-  meta: [{ name: 'description', content: site.description }],
+  title: site.value?.title,
+  htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction },
+  meta: [{ name: 'description', content: site.value?.description }],
 }))
 useResponseHeader('Cache-Control').value = 'no-store'
 </script>
 
 <template>
-  <main :style="{ '--site-accent': site.accent }">
-    <header :lang="site.locale" class="site-header">
-      <p v-if="site.tagline" class="eyebrow">{{ site.tagline }}</p>
-      <NuxtLink to="/" class="site-name">{{ site.name }}</NuxtLink>
-      <p v-if="site.description" class="site-description">{{ site.description }}</p>
-      <p v-if="site.notice" class="note">{{ site.notice }}</p>
+  <main :style="{ '--site-accent': site?.accent }">
+    <header :lang="site?.default_language" class="site-header">
+      <p v-if="site?.tagline" class="eyebrow">{{ site?.tagline }}</p>
+      <NuxtLink to="/" class="site-name">{{ site?.title }}</NuxtLink>
+      <p v-if="site?.description" class="site-description">{{ site?.description }}</p>
+      <p v-if="site?.notice" class="note">{{ site?.notice }}</p>
     </header>
     <NuxtPage :page-key="route => route.fullPath" />
   </main>

@@ -1,16 +1,3 @@
-export const uiLocales = ['ru', 'pl', 'kk', 'en'] as const
-export type UiLocale = typeof uiLocales[number]
-
-export function isUiLocale(code: string): code is UiLocale {
-  const supported: readonly string[] = uiLocales
-  return supported.includes(code)
-}
-
-export function uiFallback(site: { locale: string, uiFallback: string }): UiLocale | undefined {
-  const code = site.uiFallback || site.locale
-  return isUiLocale(code) ? code : undefined
-}
-
 type Preference = { range: string, quality: number }
 
 function validLanguageRange(range: string): boolean {

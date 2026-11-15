@@ -72,7 +72,6 @@ def prepare_installation(site, project, database, token, *, runtime=False):
         "SITE_ID": site, "COMPOSE_PROJECT_NAME": project,
         "POSTGRES_DB": database, "POSTGRES_USER": "stage12_owner", "DB_USER": "stage12_app",
         "DB_VOLUME_NAME": f"{project}-data", "DB_VOLUME_EXTERNAL": "false",
-        "NUXT_PUBLIC_SITE_NAME": "Schema integration", "NUXT_PUBLIC_SITE_LOCALE": "ru",
         "HTTP_BIND": "127.0.0.1", "HTTP_PORT": "0",
     }
     env_file = directory / ".env"
@@ -184,13 +183,10 @@ def check_localization(base, images_project, log):
     token = secrets.token_hex(6)
     site = f"stage22-{token}.test"
     project = f"sp-stage22-{token}"
-    database = f"stage22_{token}"
+    database = f"stage12_{token}"
     directory, override, unused_log, volume = prepare_installation(
         site, project, database, token, runtime=True)
     configuration = installation_override(project, token, volume, runtime=True, images_project=images_project)
-    configuration["services"]["web"]["environment"] = {
-        "NUXT_PUBLIC_SITE_LOCALE": "pl", "NUXT_PUBLIC_SITE_UI_FALLBACK": "en",
-    }
     override.write_text(json.dumps(configuration))
     compose = [*compose_command(site), "-f", str(override), "--project-name", project]
     resources_owned = False
@@ -212,11 +208,21 @@ def check_localization(base, images_project, log):
                  override=override, log=log)
         command([*compose, *postgres_sql_args(config,
                  "UPDATE public.languages SET is_enabled=(code IN ('pl','en','fr'))")], log)
+        database_port = published_port(compose, "postgres", 5432, token, log)
+        environment = {
+            **os.environ,
+            "DB_DISPOSABLE_TOKEN": token,
+            "STAGE12_TEST_DATABASE_URL": (
+                f"postgres://stage12_owner@127.0.0.1:{database_port}/{database}?sslmode=disable"),
+            "STAGE12_TEST_PASSWORD_FILE": str(directory / ".secrets/db_owner_password"),
+            "STAGE12_TEST_RUNTIME_PASSWORD_FILE": str(directory / ".secrets/db_app_password"),
+        }
+        publish_site_fixture(environment, "secondary", log)
         command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
         port = published_port(compose, "caddy", 8080, token, log)
         second_base = f"http://127.0.0.1:{port}"
         localization_browser(base, "--localization", log, STAGE22_SECOND_URL=second_base)
-        check_language_configuration(second_base, compose, config, configuration, override, log)
+        check_language_configuration(second_base, compose, config, environment, log)
     finally:
         if resources_owned:
             verify_owned(project, token, log, volume=volume)
@@ -226,27 +232,30 @@ def check_localization(base, images_project, log):
         unused_log.unlink(missing_ok=True)
 
 
-def check_language_configuration(base, compose, config, configuration, override, log):
-    """Ошибка default и пустой каталог не подменяются произвольным языком."""
+def publish_site_fixture(environment, mode, log):
+    """Go service публикует только в БД с проверенным disposable-маркером."""
+    command(["go", "test", "-count=1", "-run", "^TestSiteRuntimeFixture$", "./internal/database"],
+            log, env={**environment, "STAGE22_SITE_FIXTURE": mode}, cwd=ROOT / "apps/api")
+
+
+def check_language_configuration(base, compose, config, environment, log):
+    """DB-default и публикации меняются без пересоздания web; сломанные ссылки дают 503."""
     for query in ("UPDATE public.languages SET is_enabled=false WHERE code='pl'",
                   "UPDATE public.languages SET is_enabled=false"):
         command([*compose, *postgres_sql_args(config, query)], log)
         localization_browser(base, "--config-unavailable", log)
     command([*compose, *postgres_sql_args(config,
              "UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','en','fr')")], log)
-    web_environment = configuration["services"]["web"]["environment"]
-    web_environment["NUXT_PUBLIC_SITE_LOCALE"] = "en"
-    recreate_localization_web(compose, configuration, override, log)
+    publish_site_fixture(environment, "updated", log)
     localization_browser(base, "--site-default", log, STAGE22_DEFAULT="en")
-    web_environment["NUXT_PUBLIC_SITE_UI_FALLBACK"] = "invalid_locale"
-    recreate_localization_web(compose, configuration, override, log)
+    localization_browser(base, "--site-republished", log)
+    publish_site_fixture(environment, "draft", log)
+    localization_browser(base, "--site-draft", log)
+    publish_site_fixture(environment, "secondary", log)
+    # Default pl остаётся enabled: отдельно ломаем именно опубликованный fallback en.
+    command([*compose, *postgres_sql_args(config,
+             "UPDATE public.languages SET is_enabled=false WHERE code='en'")], log)
     localization_browser(base, "--config-unavailable", log)
-
-
-def recreate_localization_web(compose, configuration, override, log):
-    override.write_text(json.dumps(configuration))
-    command([*compose, "up", "-d", "--no-deps", "--force-recreate", "--wait",
-             "--wait-timeout", "120", "web"], log)
 
 
 def main(runtime=False):
