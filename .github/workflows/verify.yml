@@ -61,6 +61,9 @@ jobs:
       - name: Pinned SDK package manager
         if: steps.scope.outputs.full == 'true'
         run: npm install --global npm@11.21.2 --ignore-scripts
+      - name: CI watcher logic tests
+        if: steps.scope.outputs.full == 'true'
+        run: node --test .github/scripts/ci-watch.test.cjs
       - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test verify
