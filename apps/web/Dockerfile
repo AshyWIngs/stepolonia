@@ -1,3 +1,9 @@
+FROM golang:1.27.4-alpine3.24 AS esbuild-tool
+# Commit соответствует esbuild v0.28.2; сохраняем build metadata исправленного Go.
+RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
+    github.com/evanw/esbuild/cmd/esbuild@609683d892977362a0f99026cb74b96263d728a9 \
+    && go version -m /out/esbuild
+
 FROM dhi.io/node:26.13.1-alpine3.24-dev AS source
 WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
@@ -5,6 +11,20 @@ RUN test "$(npm --version)" = "11.21.2"
 COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
 COPY packages/sdk /workspace/packages/sdk
 RUN npm ci --ignore-scripts
+COPY --from=esbuild-tool /out/esbuild /tmp/esbuild
+# Заменяем upstream-бинарник, сохраняя штатное разрешение платформенного npm-пакета.
+RUN node --input-type=commonjs <<'JS'
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
+const version = require('esbuild/package.json').version;
+assert.equal(version, '0.28.2');
+assert.equal(execFileSync('/tmp/esbuild', ['--version'], { encoding: 'utf8' }).trim(), version);
+const binaryPath = require.resolve('@esbuild/linux-' + process.arch + '/bin/esbuild');
+fs.copyFileSync('/tmp/esbuild', binaryPath);
+fs.unlinkSync('/tmp/esbuild');
+assert.equal(execFileSync('node_modules/.bin/esbuild', ['--version'], { encoding: 'utf8' }).trim(), version);
+JS
 COPY apps/web .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare
