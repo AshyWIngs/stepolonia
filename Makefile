@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -20,7 +20,7 @@ config: setup
 build: setup
 	$(COMPOSE) build
 
-lint: lint-go lint-python lint-web duplicates sdk-check
+lint: lint-go lint-python lint-web lint-sql duplicates sdk-check
 
 # Во время разработки запускаем только нужную подсистему; перед merge полный verify.
 check-go: lint-go api-checks
@@ -30,6 +30,12 @@ check-python: lint-python python-tests
 check-web: lint-web web-checks
 
 check-db: db-test
+
+# Только прикладные Goose-миграции. Пустой список и пропуск файла являются ошибкой.
+lint-sql:
+	@test "$$(sqlfluff --version)" = "sqlfluff, version 4.5.0"
+	@test -n "$(wildcard apps/api/internal/database/migrations/*.sql)"
+	sqlfluff lint --config .sqlfluff --disregard-sqlfluffignores --disable-noqa $(wildcard apps/api/internal/database/migrations/*.sql)
 
 lint-go:
 	mkdir -p reports

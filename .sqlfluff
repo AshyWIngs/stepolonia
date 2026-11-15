@@ -1,0 +1,27 @@
+# Миграции используют PostgreSQL и директивы Goose (-- +goose ...).
+# SQLFluff должен разбирать SQL в диалекте PostgreSQL, без шаблонизации.
+# Лимит 64 КиБ включает миграцию и сохраняет
+# защиту от слишком больших файлов и зависания парсера.
+# Пропуск файла должен приводить к ошибке, а не к ложному PASS.
+# Не исключаем миграции или правила заранее: ложные срабатывания
+# подтверждаются по конкретным строкам и отключаются точечно.
+[sqlfluff]
+dialect = postgres
+templater = raw
+large_file_skip_byte_limit = 65536
+large_file_skip_fail = True
+
+# Существующие lowercase name/version сохраняют SQL API. RF04 требует
+# отказа от keyword-имён, а RF06 снимает ненужные PostgreSQL quotes.
+# Остальные keyword identifiers продолжают проверяться RF04.
+[sqlfluff:rules:references.keywords]
+ignore_words = name,version
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower

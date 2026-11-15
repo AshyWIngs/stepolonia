@@ -61,6 +61,12 @@ jobs:
       - name: Pinned SDK package manager
         if: steps.scope.outputs.full == 'true'
         run: npm install --global npm@11.21.2 --ignore-scripts
+      - name: Pinned SQLFluff
+        if: steps.scope.outputs.full == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/sqlfluff"
+          "$RUNNER_TEMP/sqlfluff/bin/pip" install -r infrastructure/quality/sql-requirements.txt
+          echo "$RUNNER_TEMP/sqlfluff/bin" >> "$GITHUB_PATH"
       - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test verify
