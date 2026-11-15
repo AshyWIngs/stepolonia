@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { get } from 'node:http'
 import process from 'node:process'
 import { chromium } from 'playwright'
 
@@ -133,10 +134,13 @@ async function entryRedirect(origin, headers, language, signal = AbortSignal.tim
   assert.equal(target.protocol, 'http:')
   assert.equal(target.hostname, '127.0.0.1')
   assert.ok(Number.isInteger(entryPort) && entryPort > 0 && entryPort <= 65535)
-  const response = await fetch(`http://127.0.0.1:${entryPort}/`, { redirect: 'manual', headers, signal })
-  assert.ok([302, 307].includes(response.status), `Entry redirect: ${response.status}`)
-  assert.equal(new URL(response.headers.get('location'), origin).pathname, `/${language}/articles`)
-  assert.match(response.headers.get('cache-control') ?? '', /no-store/u)
+  const response = await new Promise((resolve, reject) => {
+    get({ hostname: '127.0.0.1', port: entryPort, path: '/', headers, signal }, resolve).on('error', reject)
+  })
+  response.resume()
+  assert.ok([302, 307].includes(response.statusCode), `Entry redirect: ${response.statusCode}`)
+  assert.equal(new URL(response.headers.location, origin).pathname, `/${language}/articles`)
+  assert.match(response.headers['cache-control'] ?? '', /no-store/u)
 }
 
 async function checkLanguageSelection() {

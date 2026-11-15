@@ -29,7 +29,7 @@ function parsePreference(value: string): Preference | undefined {
   const parameter = sections.at(1)?.trimStart()
   let quality = 1
   if (parameter !== undefined) {
-    if (!/^q=(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/iu.exec(parameter)) return undefined
+    if (!/^q=(?:0|1|0\.\d{0,3}|1\.0{0,3})$/iu.exec(parameter)) return undefined
     quality = Number(parameter.slice(2))
   }
   return { range, quality }
