@@ -55,11 +55,19 @@ jobs:
               })
               const missing = [...required.keys()].filter(name =>
                 latest.get(name)?.status !== 'completed')
-              const stale = missing.length > 0 &&
-                Date.now() - Date.parse(pr.updated_at) >= 60 * 60 * 1000
-              if (!failed.length && !stale) continue
+              const old = Date.now() - Date.parse(pr.updated_at) >= 60 * 60 * 1000
+              const stale = missing.length > 0 && old
+              let stalledMerge = false
+              if (!failed.length && !missing.length && old) {
+                const { data: current } = await github.rest.pulls.get({
+                  owner, repo, pull_number: pr.number,
+                })
+                stalledMerge = current.state === 'open' && Boolean(current.auto_merge)
+              }
+              if (!failed.length && !stale && !stalledMerge) continue
 
-              const marker = '<!-- ci-watch:' + (failed.length ? 'failed:' : 'stalled:') + sha + ' -->'
+              const state = failed.length ? 'failed:' : stale ? 'stalled:' : 'merge-stalled:'
+              const marker = '<!-- ci-watch:' + state + sha + ' -->'
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: pr.number, per_page: 100,
               })
@@ -68,7 +76,8 @@ jobs:
               const explanation = failed.length
                 ? 'Обязательные проверки не пройдены: ' + failed.map(name =>
                     name + ' (' + latest.get(name).conclusion + ')').join(', ')
-                : 'Более часа не завершены проверки: ' + missing.join(', ')
+                : stale ? 'Более часа не завершены проверки: ' + missing.join(', ')
+                  : 'Все четыре Gate завершились успешно, но включённый auto-merge не слил PR более часа.'
               await github.rest.issues.createComment({
                 owner, repo, issue_number: pr.number,
                 body: marker + '\n' + explanation + '\nSHA: `' + sha +
