@@ -203,3 +203,5 @@ gh pr checks 16 --repo AshyWIngs/stepolonia --required --watch --interval 300
 Для полного `verify`, как и для `db-test`, нужен Go на хосте и C compiler.
 Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
 Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).
+
+Для SQL-миграций нужен SQLFluff 4.5.0. Установите его в отдельное Python virtualenv командой `pip install -r infrastructure/quality/sql-requirements.txt` и выполните `make lint-sql`. Этот Gate также входит в `make lint` и `make verify`, проверяет только Goose-миграции и завершается ошибкой при пропуске файла.

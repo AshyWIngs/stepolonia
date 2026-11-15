@@ -131,8 +131,8 @@
     "public_languages": "security_barrier=true"
   },
   "views": {
-    "public_article_routes": " SELECT r.language_code,\n    r.slug,\n    r.article_id,\n    t.slug AS current_slug,\n    t.revision_id\n   FROM (public.public_routes r\n     JOIN public.public_article_translations t ON (((t.article_id = r.article_id) AND (t.language_code = r.language_code))));",
-    "public_article_translations": " SELECT t.article_id,\n    t.revision_id,\n    t.language_code,\n    t.title,\n    t.slug,\n    t.body_markdown,\n    r.created_at AS published_at\n   FROM (((public.article_revision_translations t\n     JOIN public.articles a ON (((a.id = t.article_id) AND (a.published_revision_id = t.revision_id))))\n     JOIN public.article_revisions r ON (((r.id = t.revision_id) AND (r.article_id = t.article_id))))\n     JOIN public.languages l ON (((l.code = t.language_code) AND l.is_enabled)));",
+    "public_article_routes": " SELECT r.language_code,\n    r.slug,\n    r.article_id,\n    t.slug AS current_slug,\n    t.revision_id\n   FROM (public.public_routes r\n     JOIN public.public_article_translations t ON (((r.article_id = t.article_id) AND (r.language_code = t.language_code))));",
+    "public_article_translations": " SELECT t.article_id,\n    t.revision_id,\n    t.language_code,\n    t.title,\n    t.slug,\n    t.body_markdown,\n    r.created_at AS published_at\n   FROM (((public.article_revision_translations t\n     JOIN public.articles a ON (((t.article_id = a.id) AND (t.revision_id = a.published_revision_id))))\n     JOIN public.article_revisions r ON (((t.revision_id = r.id) AND (t.article_id = r.article_id))))\n     JOIN public.languages l ON (((t.language_code = l.code) AND l.is_enabled)));",
     "public_languages": " SELECT code,\n    name,\n    native_name,\n    direction\n   FROM public.languages\n  WHERE is_enabled;"
   }
 }
