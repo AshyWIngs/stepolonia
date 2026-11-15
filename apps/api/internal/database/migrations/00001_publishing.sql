@@ -824,7 +824,7 @@ COMMENT ON COLUMN public.site_revision_keys.placeholders IS
 COMMENT ON TABLE public.site_revision_languages IS
 'Метаданные языков UI, включённых в конкретный снимок.';
 COMMENT ON COLUMN public.site_revision_languages.revision_id IS
-'Общая версия настроек и каталога.';
+'Версия снимка, которой принадлежат зафиксированные метаданные UI-языка.';
 COMMENT ON COLUMN public.site_revision_languages.language_code IS
 'Нормализованный код языка из динамического справочника.';
 COMMENT ON COLUMN public.site_revision_languages.name IS
@@ -837,7 +837,7 @@ COMMENT ON TABLE public.site_revision_messages IS
 'Редакторские сообщения черновика или закрытой версии UI; публичны '
 'только текущие.';
 COMMENT ON COLUMN public.site_revision_messages.revision_id IS
-'Общая версия настроек и каталога.';
+'Версия снимка, содержащего текст сообщения и его определение ключа.';
 COMMENT ON COLUMN public.site_revision_messages.language_code IS
 'Язык каталога сообщения.';
 COMMENT ON COLUMN public.site_revision_messages.message_key IS
@@ -861,7 +861,7 @@ COMMENT ON VIEW public.public_ui_languages IS
 'Включённые UI-языки текущей публикации с зафиксированными '
 'метаданными.';
 COMMENT ON COLUMN public.public_ui_languages.revision_id IS
-'Общая версия настроек и каталога.';
+'Текущая опубликованная версия метаданных доступного UI-языка.';
 COMMENT ON COLUMN public.public_ui_languages.language_code IS
 'Нормализованный код языка из динамического справочника.';
 COMMENT ON COLUMN public.public_ui_languages.name IS
@@ -873,7 +873,7 @@ COMMENT ON COLUMN public.public_ui_languages.direction IS
 COMMENT ON VIEW public.public_ui_messages IS
 'Полные сообщения только текущей публикации на включённых языках.';
 COMMENT ON COLUMN public.public_ui_messages.revision_id IS
-'Общая версия настроек и каталога.';
+'Текущая опубликованная версия каталога, из которого выдано сообщение.';
 COMMENT ON COLUMN public.public_ui_messages.language_code IS
 'Язык каталога сообщения.';
 COMMENT ON COLUMN public.public_ui_messages.message_key IS
@@ -904,19 +904,25 @@ REVOKE ALL ON FUNCTION public.guard_site_state() FROM public;
 GRANT EXECUTE ON FUNCTION public.guard_site_state() TO sp_publisher;
 COMMENT ON TRIGGER site_revisions_guard
 ON public.site_revisions IS
-'Защищает атомарность публикации и неизменяемость закрытого снимка.';
+'Запрещает создание закрытого снимка и изменения после его '
+'публикации; перед закрытием проверяет языки, полноту каталога и '
+'подстановки.';
 COMMENT ON TRIGGER site_state_guard
 ON public.site_state IS
-'Защищает атомарность публикации и неизменяемость закрытого снимка.';
+'Сохраняет единственную строку состояния, последовательность версий и'
+' ссылку публикации только на закрытый снимок.';
 COMMENT ON TRIGGER site_revision_keys_guard
 ON public.site_revision_keys IS
-'Защищает атомарность публикации и неизменяемость закрытого снимка.';
+'Блокирует снимок при изменении определений ключей и запрещает их '
+'перенос между версиями или правку после закрытия.';
 COMMENT ON TRIGGER site_revision_languages_guard
 ON public.site_revision_languages IS
-'Защищает атомарность публикации и неизменяемость закрытого снимка.';
+'Сериализует изменение метаданных UI-языков с закрытием снимка и '
+'сохраняет неизменность опубликованного набора языков.';
 COMMENT ON TRIGGER site_revision_messages_guard
 ON public.site_revision_messages IS
-'Защищает атомарность публикации и неизменяемость закрытого снимка.';
+'Защищает сообщения закрытого каталога от вставки, замены и удаления;'
+' изменение черновика блокирует строку снимка до конца транзакции.';
 REVOKE ALL ON public.ui_message_keys,
 public.site_revisions,
 public.site_state,

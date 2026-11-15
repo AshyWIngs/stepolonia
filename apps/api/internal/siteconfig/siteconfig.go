@@ -141,7 +141,7 @@ func (s *Service) SaveDraft(ctx context.Context, expected int64, input Draft) (i
 	if err != nil {
 		return 0, err
 	}
-	defer rollback(tx)
+	defer func() { _ = tx.Rollback() }()
 	id, err := identifier()
 	if err != nil {
 		return 0, err
@@ -169,7 +169,7 @@ func (s *Service) Publish(ctx context.Context, expected int64) (string, int64, e
 	if err != nil {
 		return "", 0, err
 	}
-	defer rollback(tx)
+	defer func() { _ = tx.Rollback() }()
 	if !draft.Valid {
 		return "", 0, failure(409, "site_draft_missing")
 	}
@@ -207,7 +207,7 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 	if err != nil {
 		return result, dbError(err)
 	}
-	defer rollback(tx)
+	defer func() { _ = tx.Rollback() }()
 	if err = checkPublicRole(ctx, tx); err != nil {
 		return result, err
 	}
@@ -226,8 +226,6 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 	}
 	return result, nil
 }
-
-func rollback(tx *sql.Tx) { _ = tx.Rollback() }
 
 func normalizeDraft(input Draft) (Draft, error) {
 	var err error
