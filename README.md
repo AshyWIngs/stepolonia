@@ -30,12 +30,19 @@ Markdown преобразуется в разрешённые Vue-узлы. Из
 
 ## Локальный запуск
 
-Нужны Docker с Compose/BuildKit, Python 3 и Make. Go и Node.js на хосте
+Нужны Docker с Compose/BuildKit, CPython из `.python-version` и Make. Go и Node.js на хосте
 не требуются. Первые сборки требуют доступа к интернету.
 
+На macOS можно выбрать локальный интерпретатор через pyenv (после установки
+pyenv и активации его shims в shell). Версия берётся из `.python-version`.
+
 ```sh
+pyenv install -s "$(cat .python-version)"
+make python-version-check
 make up
 ```
+
+`pyenv` выбирает версию для каталога проекта.
 
 Адрес: <http://127.0.0.1:8080>. По умолчанию используется `example.test`.
 Это локальная HTTP-конфигурация, публичный deployment требует настройки HTTPS.
@@ -212,4 +219,4 @@ gh pr checks 16 --repo AshyWIngs/stepolonia --required --watch --interval 300
 Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
 Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).
 
-Для SQL-миграций нужен SQLFluff 4.5.0. Установите его в отдельное Python virtualenv командой `pip install -r infrastructure/quality/sql-requirements.txt` и выполните `make lint-sql`. Этот Gate также входит в `make lint` и `make verify`, проверяет только Goose-миграции и завершается ошибкой при пропуске файла.
+Для SQL-миграций нужен SQLFluff 4.5.0. Проверьте интерпретатор командой `make python-version-check`, создайте отдельное окружение через `python3 -m venv /tmp/stepolonia-sqlfluff`, активируйте его и выполните `python3 -m pip install -r infrastructure/quality/sql-requirements.txt`, затем `make lint-sql`. Этот Gate также входит в `make lint` и `make verify`, проверяет только Goose-миграции и завершается ошибкой при пропуске файла.

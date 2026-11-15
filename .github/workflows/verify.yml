@@ -17,7 +17,7 @@ concurrency:
 jobs:
   verify:
     # Имя job сохраняем: существующий required status check не переименовываем.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -61,11 +61,17 @@ jobs:
       - name: Pinned SDK package manager
         if: steps.scope.outputs.full == 'true'
         run: npm install --global npm@11.21.2 --ignore-scripts
+      - uses: actions/setup-python@v7.1.0
+        if: steps.scope.outputs.full == 'true'
+        with:
+          python-version-file: .python-version
       - name: Pinned SQLFluff
         if: steps.scope.outputs.full == 'true'
         run: |
+          make python-version-check
           python3 -m venv "$RUNNER_TEMP/sqlfluff"
-          "$RUNNER_TEMP/sqlfluff/bin/pip" install -r infrastructure/quality/sql-requirements.txt
+          PATH="$RUNNER_TEMP/sqlfluff/bin:$PATH" make python-version-check
+          "$RUNNER_TEMP/sqlfluff/bin/python3" -m pip install -r infrastructure/quality/sql-requirements.txt
           echo "$RUNNER_TEMP/sqlfluff/bin" >> "$GITHUB_PATH"
       - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
         if: steps.scope.outputs.full == 'true'
