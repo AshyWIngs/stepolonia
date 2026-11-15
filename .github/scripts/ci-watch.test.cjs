@@ -2,10 +2,10 @@
 
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { scan, latestChecks, REQUIRED } = require('./ci-watch.cjs')
+const { scan, latestChecks, REQUIRED, APP_IDS } = require('./ci-watch.cjs')
 
 function run(name, conclusion, time = '2026-11-15T08:00:00Z') {
-  return { name, status: 'completed', conclusion, started_at: time, output: { title: name }, details_url: 'https://example.test/check' }
+  return { name, app: { id: APP_IDS[name] }, status: 'completed', conclusion, started_at: time, output: { title: name }, details_url: 'https://example.test/check' }
 }
 
 function fixture({ status = 'success', completed = true, enabled = false, owner = 'AshyWIngs', fork = false } = {}) {
@@ -41,6 +41,12 @@ test('берём результат самой новой попытки про�
   const old = run('verify', 'failure', '2026-11-15T08:00:00Z')
   const current = run('verify', 'success', '2026-11-15T09:00:00Z')
   assert.equal(latestChecks([old, current]).get('verify').conclusion, 'success')
+})
+
+test('проверка с совпадающим именем, но чужим GitHub App не подменяет Gate', () => {
+  const forged = run('Codacy Static Code Analysis', 'success')
+  forged.app.id = 999
+  assert.equal(latestChecks([forged]).has('Codacy Static Code Analysis'), false)
 })
 
 test('успешные проверки не создают уведомления и не запускают модель', async () => {
