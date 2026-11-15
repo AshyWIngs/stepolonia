@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    # Имя job сохраняем: существующий required status check не переименовываем.
+    # Сохраняем ID обязательного status check и единый Make-граф без повторных prerequisites.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
-      - name: Select checks for current PR
+      - name: "Определить объём проверки PR"
         id: scope
         shell: bash
         env:
@@ -45,7 +45,6 @@ jobs:
               exit 0
             fi
           fi
-          # Готовые PR с изменениями кода и ручной запуск: полный Gate.
           echo "full=true" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         if: steps.scope.outputs.full == 'true'
@@ -58,27 +57,98 @@ jobs:
           node-version: '26.13.1'
           cache: npm
           cache-dependency-path: packages/sdk/package-lock.json
-      - name: Pinned SDK package manager
+      - name: "Подготовить закреплённую версию npm"
+        id: npm_tool
         if: steps.scope.outputs.full == 'true'
         run: npm install --global npm@11.21.2 --ignore-scripts
-      - name: Pinned SQLFluff
+      - name: "Подготовить SQLFluff 4.5.0"
         if: steps.scope.outputs.full == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/sqlfluff"
           "$RUNNER_TEMP/sqlfluff/bin/pip" install -r infrastructure/quality/sql-requirements.txt
           echo "$RUNNER_TEMP/sqlfluff/bin" >> "$GITHUB_PATH"
-      - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
+      # Один runner и Docker daemon; CI вызывает только исполняемые цели.
+      # Полный эквивалент make verify, без повторного выполнения PHONY prerequisites.
+      - name: "Go: статический анализ"
         if: steps.scope.outputs.full == 'true'
-        run: make SITE=ci.test verify
-      - name: PostgreSQL failure details
+        run: make SITE=ci.test lint-go
+      - name: "Python: статический анализ"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-python
+      - name: "Nuxt: статический анализ"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-web
+      - name: "SQL: проверка миграций SQLFluff"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-sql
+      - name: "Дубликаты: проверка кода"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test duplicates
+      - name: "API: проверка контракта и TypeScript SDK"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test sdk-check
+      - name: "Установка: подготовить ci.test"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test setup
+      - name: "Compose: проверить конфигурацию"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-config
+      - name: "Dockerfile: проверить инструкции сборки"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test docker-check
+      - name: "Python: выполнить тесты"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test python-tests
+      - name: "API: тесты Go"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test api-checks
+      - name: "Nuxt: тесты и сборка"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test web-checks
+      - name: "Инфраструктура: тесты Caddy и PostgreSQL"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-service-checks
+      - name: "Docker: собрать сервисы установки"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-build
+      - name: "PostgreSQL: миграции, роли и CLI"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-db-test
+      - name: "Публикации: API, SSR и браузер"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-publishing-test
+      - name: "Безопасность: CVE-аудит 11 образов"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-image-audit
+      - name: "Диагностика: журналы PostgreSQL и браузера после сбоя"
         if: ${{ failure() && steps.scope.outputs.full == 'true' }}
+        shell: bash
         run: |
-          for log in reports/publishing-*.log; do
-            if [ -f "$log" ]; then
-              tail -n 120 "$log"
-            fi
+          shopt -s nullglob
+          logs=(reports/publishing-*.log)
+          if (( ${#logs[@]} == 0 )); then
+            echo "Журналов публикации нет: сбой произошёл до PostgreSQL/браузерных тестов или на другом этапе."
+            exit 0
+          fi
+          for log in "${logs[@]}"; do
+            echo "::group::Диагностика: $(basename "$log") (последние 120 строк)"
+            tail -n 120 "$log"
+            echo "::endgroup::"
           done
-      - name: Quality and image CVE reports
+      - name: "Зависимости Nuxt: реестр npm advisories"
+        if: ${{ always() && steps.scope.outputs.full == 'true' && steps.npm_tool.outcome == 'success' }}
+        shell: bash
+        run: |
+          # Только отчёт по lockfile. Никаких npm audit fix и изменений Gate/порогов.
+          mkdir -p reports
+          status=0
+          (cd apps/web && npm audit --json --package-lock-only) > reports/npm-audit.json 2> reports/npm-audit.stderr || status=$?
+          printf '%s\n' "$status" > reports/npm-audit.exit
+          echo "npm audit exit=$status (код 1 допустим при найденных advisory; статус разберёт итоговый отчёт)."
+      - name: "Отчёт: npm advisories и предупреждения"
+        if: ${{ always() && steps.scope.outputs.full == 'true' }}
+        run: python3 scripts/ci_verify_report.py summary
+      - name: "Артефакты: результаты проверок и CVE"
         if: ${{ always() && steps.scope.outputs.full == 'true' }}
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -91,3 +161,5 @@ jobs:
             reports/images/*.json
             reports/images/*.identity
             reports/images/*.log
+            reports/npm-audit.json
+            reports/npm-audit.exit
