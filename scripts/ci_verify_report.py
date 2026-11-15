@@ -6,13 +6,13 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 import time
 
 TIMINGS = Path("reports/ci-verify-timings.json")
 AUDIT = Path("reports/npm-audit.json")
 AUDIT_EXIT = Path("reports/npm-audit.exit")
+MAKE_EXIT = Path("reports/ci-verify.exit")
 TRACE = re.compile(r"^\S+?:\d+: update target '([^']+)' due to:")
 
 PHASES = {
@@ -46,7 +46,7 @@ def seconds(value):
     return f"{minutes} мин {rest:02d} с" if minutes else f"{rest} с"
 
 
-def run_make(command):
+def trace_make():
     TIMINGS.parent.mkdir(parents=True, exist_ok=True)
     active = None
     started = time.monotonic()
@@ -54,37 +54,27 @@ def run_make(command):
     entries = []
     plugin_timing_warnings = 0
 
-    def close_phase(status):
-        nonlocal active, phase_started
+    def close_phase():
+        nonlocal active
         if active:
-            entries.append({"phase": active, "seconds": round(time.monotonic() - phase_started, 2), "status": status})
+            entries.append({"phase": active, "seconds": round(time.monotonic() - phase_started, 2)})
             group("::endgroup::")
             active = None
 
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, errors="replace", bufsize=1)
-    try:
-        for line in proc.stdout:
-            if "[PLUGIN_TIMINGS]" in line:
-                plugin_timing_warnings += 1
-            match = TRACE.match(line)
-            if match:
-                phase = PHASES.get(match.group(1))
-                if phase and phase != active:
-                    close_phase("PASS")
-                    active = phase
-                    phase_started = time.monotonic()
-                    group(f"::group::{phase}")
-            print(line, end="", flush=True)
-        status = proc.wait()
-    except BaseException:
-        proc.terminate()
-        proc.wait()
-        close_phase("INTERRUPTED")
-        raise
-    close_phase("PASS" if status == 0 else "FAIL")
+    for line in sys.stdin:
+        if "[PLUGIN_TIMINGS]" in line:
+            plugin_timing_warnings += 1
+        match = TRACE.match(line)
+        if match:
+            phase = PHASES.get(match.group(1))
+            if phase and phase != active:
+                close_phase()
+                active = phase
+                phase_started = time.monotonic()
+                group(f"::group::{phase}")
+        print(line, end="", flush=True)
+    close_phase()
     record = {
-        "exit_code": status,
         "elapsed_seconds": round(time.monotonic() - started, 2),
         "phases": entries,
         "unrecognized_trace": not bool(entries),
@@ -92,8 +82,8 @@ def run_make(command):
     }
     TIMINGS.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if not entries:
-        group("::warning::GNU Make --trace не удалось разобрать; подробности в полном логе проверки")
-    return status
+        group("::warning::GNU Make --trace не удалось разобрать; см. полный GitHub-лог")
+    return 0
 
 
 def audit_data():
@@ -130,9 +120,13 @@ def summarize():
         try:
             result = json.loads(TIMINGS.read_text(encoding="utf-8"))
             lines += ["| Этап Make | Длительность | Результат |", "|---|---:|---|"]
-            for item in result.get("phases", []):
-                lines.append(f"| {item['phase']} | {seconds(item['seconds'])} | {item['status']} |")
-            lines.append(f"| **Итого (один вызов Make)** | **{seconds(result['elapsed_seconds'])}** | **{'PASS' if result['exit_code'] == 0 else 'FAIL'}** |")
+            exit_code = int(MAKE_EXIT.read_text(encoding="utf-8").strip())
+            phases = result.get("phases", [])
+            for index, item in enumerate(phases):
+                verdict = "FAIL" if index == len(phases) - 1 and exit_code != 0 else "PASS"
+                lines.append(f"| {item['phase']} | {seconds(item['seconds'])} | {verdict} |")
+            final_status = "PASS" if exit_code == 0 else "FAIL"
+            lines.append(f"| **Итого (один вызов Make)** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |")
             if result.get("unrecognized_trace"):
                 lines.append("\n**Внимание:** не распознаны этапы GNU Make; см. полный GitHub-лог.")
             if result.get("rolldown_plugin_timing_warnings", 0):
@@ -176,15 +170,11 @@ def summarize():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
-    runner = sub.add_parser("run", help="Группировать вывод одного вызова Make")
-    runner.add_argument("command", nargs=argparse.REMAINDER)
+    sub.add_parser("trace", help="Группировать стандартный вывод GNU Make --trace")
     sub.add_parser("summary", help="Записать итоги в GitHub Actions Job Summary")
     args = parser.parse_args()
-    if args.action == "run":
-        command = args.command[1:] if args.command and args.command[0] == "--" else args.command
-        if not command or Path(command[0]).name != "make" or "--trace" not in command:
-            parser.error("Ожидается: run -- make --trace ... verify")
-        return run_make(command)
+    if args.action == "trace":
+        return trace_make()
     return summarize()
 
 

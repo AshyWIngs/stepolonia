@@ -73,7 +73,17 @@ jobs:
         run: |
           # Один процесс Make: каждая общая prerequisite-цель выполняется один раз.
           # Python только группирует GNU Make --trace и замеряет время, не меняя Gate.
-          python3 scripts/ci_verify_report.py run -- make --no-print-directory --trace --jobs=1 SITE=ci.test verify
+          # Bash сохраняет исходный exit Make; Python читает поток, но не запускает команды.
+          set +e
+          make --no-print-directory --trace --jobs=1 SITE=ci.test verify 2>&1 | python3 scripts/ci_verify_report.py trace
+          results=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${results[0]}" > reports/ci-verify.exit
+          if (( results[1] != 0 )); then
+            echo "::error::Форматирование Make-лога завершилось ошибкой"
+            exit "${results[1]}"
+          fi
+          exit "${results[0]}"
       - name: "Диагностика: журналы PostgreSQL и браузера после сбоя"
         if: ${{ failure() && steps.scope.outputs.full == 'true' }}
         shell: bash
@@ -116,5 +126,6 @@ jobs:
             reports/images/*.identity
             reports/images/*.log
             reports/ci-verify-timings.json
+            reports/ci-verify.exit
             reports/npm-audit.json
             reports/npm-audit.exit
