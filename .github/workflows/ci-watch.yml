@@ -1,0 +1,97 @@
+name: PR CI Watch
+
+on:
+  # GitHub сам проверяет открытые PR. Codex и OpenAI API не запускаются.
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pr-ci-watch
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      checks: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            // Читаем только статусы текущего SHA; не запускаем код PR, тесты и модель.
+            const { owner, repo } = context.repo
+            const required = new Map([
+              ['verify', 15368],
+              ['SonarCloud Code Analysis', 12526],
+              ['Codacy Static Code Analysis', 56611],
+              ['GitGuardian Security Checks', 46505],
+            ])
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, base: 'main', state: 'open', per_page: 100,
+            })
+            for (const pr of prs) {
+              if (pr.draft || pr.head.repo?.full_name !== owner + '/' + repo) continue
+              const sha = pr.head.sha
+              const { data } = await github.rest.checks.listForRef({
+                owner, repo, ref: sha, per_page: 100,
+              })
+              const latest = new Map()
+              for (const run of data.check_runs) {
+                if (required.get(run.name) !== run.app?.id) continue
+                const old = latest.get(run.name)
+                if (!old || Date.parse(run.started_at || run.created_at) >
+                    Date.parse(old.started_at || old.created_at)) latest.set(run.name, run)
+              }
+              const failed = [...required.keys()].filter(name => {
+                const run = latest.get(name)
+                return run?.status === 'completed' &&
+                  !['success', 'neutral', 'skipped'].includes(run.conclusion)
+              })
+              const missing = [...required.keys()].filter(name =>
+                latest.get(name)?.status !== 'completed')
+              const old = Date.now() - Date.parse(pr.updated_at) >= 60 * 60 * 1000
+              const stale = missing.length > 0 && old
+              let stalledMerge = false
+              if (!failed.length && !missing.length && old) {
+                const { data: current } = await github.rest.pulls.get({
+                  owner, repo, pull_number: pr.number,
+                })
+                stalledMerge = current.state === 'open' && Boolean(current.auto_merge)
+              }
+              if (!failed.length && !stale && !stalledMerge) continue
+
+              const state = failed.length ? 'failed:' : stale ? 'stalled:' : 'merge-stalled:'
+              const marker = '<!-- ci-watch:' + state + sha + ' -->'
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              })
+              if (comments.some(comment => comment.body?.includes(marker))) continue
+
+              const explanation = failed.length
+                ? 'Обязательные проверки не пройдены: ' + failed.map(name =>
+                    name + ' (' + latest.get(name).conclusion + ')').join(', ')
+                : stale ? 'Более часа не завершены проверки: ' + missing.join(', ')
+                  : 'Все четыре Gate завершились успешно, но включённый auto-merge не слил PR более часа.'
+              try {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pr.number,
+                  body: marker + '\n' + explanation + '\nSHA: `' + sha +
+                    '`. Проверьте результаты в GitHub; автоматический запуск Codex отключён.',
+                })
+              } catch (error) {
+                if (error.status !== 403 || !String(error.message).includes('Resource not accessible by integration')) throw error
+                // GitHub может запрещать запись комментариев даже при issues:write.
+                // Не скрываем сбой доставки и не запрашиваем дополнительные токены.
+                const url = 'https://github.com/' + owner + '/' + repo + '/pull/' + pr.number
+                core.warning('Недостаточно прав для комментария к ' + url +
+                  '; причина: ' + explanation)
+                await core.summary.addRaw('Уведомление не опубликовано: ' + url +
+                  ' — ' + explanation + '\n').write()
+              }
+            }
