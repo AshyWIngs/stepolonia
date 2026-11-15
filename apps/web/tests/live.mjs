@@ -21,7 +21,8 @@ async function documentResponse(path, status, headers) {
   // Адрес соединения фиксирован loopback-портом harness; Location не меняет назначение запроса.
   // Accept явно выбирает SSR-документ, поскольку Nitro поддерживает также JSON-ошибки.
   const incoming = await new Promise((resolve, reject) => {
-    get({ hostname: '127.0.0.1', port, path, headers: { Accept: 'text/html', ...headers }, signal: AbortSignal.timeout(5000) }, resolve).on('error', reject)
+    // Внешний бюджет включает внутренний API timeout 5 с и последующий SSR страницы ошибки.
+    get({ hostname: '127.0.0.1', port, path, headers: { Accept: 'text/html', ...headers }, signal: AbortSignal.timeout(15000) }, resolve).on('error', reject)
   })
   const chunks = []
   for await (const chunk of incoming) chunks.push(chunk)

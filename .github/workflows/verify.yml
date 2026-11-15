@@ -158,6 +158,7 @@ jobs:
           path: |
             reports/*lint.log
             reports/duplicates.log
+            reports/publishing-*.log
             reports/images/*.json
             reports/images/*.identity
             reports/images/*.log
