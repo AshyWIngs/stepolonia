@@ -23,7 +23,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr.number,
-              body: '<!-- stepolonia-ci-watch:merged:' + pr.merge_commit_sha + ' -->\\n' +
+              body: '<!-- stepolonia-ci-watch:merged:' + pr.merge_commit_sha + ' -->\n' +
                 'Squash merge выполнен: ' + pr.merge_commit_sha +
                 '. Все обязательные GitHub Gate остаются в истории PR.',
             })
