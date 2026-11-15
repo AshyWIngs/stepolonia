@@ -117,7 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("summary", help="Записать итоги в GitHub Actions Job Summary")
-    args = parser.parse_args()
+    parser.parse_args()
     return summarize()
 
 
