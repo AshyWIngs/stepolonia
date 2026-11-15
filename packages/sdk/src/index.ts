@@ -7,6 +7,9 @@ export function createPublicClient(options: { baseUrl: string; fetch?: typeof gl
   // Отдельный экземпляр для каждого SSR-запроса; 301 нужен вызывающему коду для canonical redirect.
   const client = createClient<paths>({ ...options, redirect: 'manual' })
   return {
+    getSite(params?: operations['getSite']['parameters']) {
+      return client.GET('/api/v1/site', { params: params ?? {} })
+    },
     listLanguages() {
       return client.GET('/api/v1/languages')
     },

@@ -29,7 +29,9 @@ func (r *PublicReader) begin(ctx context.Context) (*sql.Tx, error) {
  AND NOT pg_catalog.has_database_privilege(r.oid,current_database(),'CREATE,TEMP')
  AND NOT EXISTS (SELECT 1 FROM (VALUES('public.languages'),('public.articles'),
  ('public.article_draft_translations'),('public.article_revisions'),
- ('public.article_revision_translations'),('public.public_routes')) AS private(name)
+ ('public.article_revision_translations'),('public.public_routes'),('public.ui_message_keys'),
+ ('public.site_state'),('public.site_revisions'),('public.site_revision_keys'),
+ ('public.site_revision_languages'),('public.site_revision_messages')) AS private(name)
  WHERE pg_catalog.has_table_privilege(r.oid,private.name,'SELECT')
  OR pg_catalog.has_any_column_privilege(r.oid,private.name,'SELECT'))
  FROM pg_catalog.pg_roles r WHERE rolname=current_user`).Scan(&allowed)
@@ -153,8 +155,32 @@ func (r *PublicReader) ResolveArticle(ctx context.Context, languageCode, slug st
 		return Resolution{}, databaseError(err)
 	}
 	result.Redirect = article.Slug != slug
+	// Ссылки относятся к тому же опубликованному снимку, что и текст статьи.
+	// View исключает отключённые языки; черновики и старые ревизии не читаются.
+	result.PublishedTranslations, err = publishedTranslations(ctx, tx, article.ArticleID, article.RevisionID)
+	if err != nil {
+		return Resolution{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return Resolution{}, databaseError(err)
 	}
 	return result, nil
+}
+
+func publishedTranslations(ctx context.Context, tx *sql.Tx, articleID, revisionID string) ([]PublishedTranslation, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT language_code,slug FROM public.public_article_translations
+ WHERE article_id=$1 AND revision_id=$2 ORDER BY language_code COLLATE "C"`, articleID, revisionID)
+	if err != nil {
+		return nil, databaseError(err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]PublishedTranslation, 0)
+	for rows.Next() {
+		var value PublishedTranslation
+		if err = rows.Scan(&value.LanguageCode, &value.Slug); err != nil {
+			return nil, databaseError(err)
+		}
+		result = append(result, value)
+	}
+	return result, databaseError(rows.Err())
 }

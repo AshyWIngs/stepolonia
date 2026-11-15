@@ -6,6 +6,7 @@ from html import escape
 from http.client import HTTPConnection
 import json
 import os
+import re
 import subprocess
 import time
 from urllib.parse import urlsplit
@@ -60,6 +61,32 @@ def private_api(path):
     return json.loads(output.stdout)
 
 
+def public_entry(base):
+    """Проверяем временный выбор языка перед чтением итоговой SSR-страницы."""
+    status, headers, body = request(base + "/")
+    if status in (302, 307):
+        location = headers.get("Location", "")
+        verify("entry redirects to this site's content language",
+               re.fullmatch(r"/[a-z0-9]+(?:-[a-z0-9]+)*/articles", location) is not None)
+        return request(base + location)
+    return status, headers, body
+
+
+def check_site_branding(base):
+    """Брендинг сверяем с публикацией API; пустая установка не получает ENV-подмену."""
+    publication_status, _, publication_body = request(base + "/api/v1/site")
+    status, headers, body = public_entry(base)
+    if publication_status == 200:
+        title = json.loads(publication_body)["settings"]["title"]
+        verify("Nuxt SSR uses published site branding", status == 200
+               and f'>{escape(title, quote=False)}</a>' in body)
+    else:
+        verify("unconfigured site has a numeric 503 without branding",
+               publication_status == 503 and status == 503 and ">503<" in body
+               and 'data-testid="site-brand"' not in body and '<header' not in body)
+    return status, headers, body
+
+
 def wait_ready():
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
@@ -83,12 +110,16 @@ def publishing_sdk(base, *, mode="--published"):
     # Пересмотреть при изменении executable/script/mode или источника окружения.
     result = subprocess.run(  # nosec B603 - фиксированный SDK argv, доверенное test env
         ["node", "apps/web/tests/live.mjs", mode],
-        cwd=ROOT, check=True, capture_output=True, text=True, env=environment)
+        cwd=ROOT, check=False, capture_output=True, text=True, env=environment)
     print(result.stdout, end="", flush=True)
+    # Сохраняем причину сбоя до исключения: runtime harness перенаправляет вывод в свой журнал.
+    print(result.stderr, end="", flush=True)
+    result.check_returncode()
 
 
 def check_publishing(base):
     """Проверяем Publishing через Caddy на подготовленной одноразовой установке."""
+    verify("entry serves the configured content language", public_entry(base)[0] == 200)
     publishing_sdk(base)
     status, _, body = request(base + "/api/v1/articles?lang=en")
     verify("Caddy: enabled empty language returns 200 []", status == 200 and json.loads(body) == [])
@@ -164,10 +195,7 @@ def main(site, lifecycle):
     verify("data network is internal", network["Internal"])
     verify("PostgreSQL only joins data network", len(containers["postgres"]["NetworkSettings"]["Networks"]) == 1)
     verify("web does not join data network", network_name not in containers["web"]["NetworkSettings"]["Networks"])
-    status, headers, body = request(base + "/")
-    site_name = config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"]
-    verify("Nuxt production SSR uses selected site branding", status == 200
-           and f"<h1>{escape(site_name, quote=False)}</h1>" in body)
+    status, headers, body = check_site_branding(base)
     verify("proxy security header", headers.get("X-Content-Type-Options") == "nosniff")
     status, headers, body = request(base + "/api/v1/unknown")
     verify("Caddy routes API requests to Go", status == 404 and json.loads(body)["status"] == 404
@@ -221,7 +249,7 @@ def check_lifecycle(config, base, containers):
     verify("Go completed graceful shutdown", '"msg":"shutdown_complete"' in logs)
     compose("up", "-d", "--force-recreate", "--wait", "--wait-timeout", "120")
     verify("database survives container replacement", compose(*identifier_cmd).stdout.strip() == identifier)
-    verify("stack serves SSR after replacement", request(base + "/")[0] == 200)
+    check_site_branding(base)
 
 
 if __name__ == "__main__":

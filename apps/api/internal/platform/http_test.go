@@ -79,7 +79,20 @@ func TestPublishingOpenAPI(t *testing.T) {
 	}
 	registry := spec.Components.Schemas
 	assertPublicFields(t, registry, languages.Responses["200"].Content["application/json"].Schema.Items, "code", "direction", "name", "native_name")
-	assertPublicFields(t, registry, detail.Responses["200"].Content["application/json"].Schema, "article_id", "body_markdown", "language_code", "slug", "title")
+	articleFields := []string{"article_id", "body_markdown", "language_code", "slug", "title"}
+	assertPublicFields(t, registry, articles.Responses["200"].Content["application/json"].Schema.Items, articleFields...)
+	const translationsField = "published_translations"
+	detailFields := append(slices.Clone(articleFields), translationsField)
+	slices.Sort(detailFields)
+	detailSchema := detail.Responses["200"].Content["application/json"].Schema
+	assertPublicFields(t, registry, detailSchema, detailFields...)
+	detailSchema = registry.SchemaFromRef(detailSchema.Ref)
+	if !slices.Contains(detailSchema.Required, translationsField) {
+		t.Fatal("published translations are optional in the detail contract")
+	}
+	translations := detailSchema.Properties[translationsField]
+	assertPublicArray(t, translations)
+	assertPublicFields(t, registry, translations.Items, "language_code", "slug")
 }
 
 // Экспорт не должен создавать независимый контракт или зависеть от окружения.

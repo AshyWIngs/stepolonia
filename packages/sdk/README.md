@@ -10,8 +10,11 @@ Make передаёт генератору абсолютный путь Go из
 import { createPublicClient } from '@stepolonia/sdk'
 
 const client = createPublicClient({ baseUrl: 'https://portal.example' })
+const site = await client.getSite({ query: { lang: 'pl' } })
 const articles = await client.listArticles({ query: { lang: 'pl', limit: 20 } })
 ```
+
+`getSite()` возвращает опубликованные настройки и полный UI-каталог настроенного fallback. Необязательный `lang` выбирает опубликованный каталог; если его нет, ответ содержит fallback и `requested_language`. Для согласованной публикации передайте `query.version` из предыдущего ответа: при смене публикации API вернёт 409 в `error`. Отсутствующая публикация возвращает 503.
 
 Создавайте экземпляр клиента на запрос SSR. Redirect обрабатывается с `redirect: 'manual'`, чтобы серверный caller получил 301, Location и JSON `null`. В браузере Fetch возвращает для ручного перенаправления непрозрачный `opaqueredirect`. Получение Location требует серверного вызова. Сетевая ошибка отклоняет Promise, HTTP problem доступен в `error`, статус и заголовки в `response`.
 

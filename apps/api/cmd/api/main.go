@@ -16,6 +16,7 @@ import (
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/publishing"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 func main() {
@@ -53,7 +54,7 @@ func run(logger *slog.Logger) error {
 	runtimeDB := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = runtimeDB.Close() }()
 	server := &http.Server{
-		Addr: ":8080", Handler: platform.Handler(pool, publishing.NewPublicReader(runtimeDB), logger),
+		Addr: ":8080", Handler: platform.Handler(pool, publishing.NewPublicReader(runtimeDB), logger, siteconfig.NewReader(runtimeDB)),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 		MaxHeaderBytes: 16 << 10,

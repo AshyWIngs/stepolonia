@@ -2,7 +2,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-11-10',
   devtools: { enabled: false },
   telemetry: false,
-  modules: ['@nuxt/eslint'],
+  modules: ['@nuxt/eslint', '@nuxtjs/i18n'],
+  i18n: {
+    strategy: 'no_prefix',
+    detectBrowserLanguage: false,
+    vueI18n: './i18n.config.ts',
+  },
   typescript: { strict: true },
   nitro: { preset: 'node-server' },
   build: { transpile: ['@stepolonia/sdk'] },
@@ -10,19 +15,12 @@ export default defineNuxtConfig({
     apiOrigin: '',
     public: {
       site: {
-        name: 'Stepolonia',
-        tagline: '',
-        description: '',
-        notice: '',
-        locale: 'ru',
-        accent: '#a52837',
         origin: '',
       },
     },
   },
   app: {
     head: {
-      htmlAttrs: { lang: 'ru' },
       meta: [{ name: 'robots', content: 'noindex, nofollow' }],
     },
   },

@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql python-version-check
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -15,9 +15,15 @@ down:
 	$(COMPOSE) down
 
 config: setup
+	$(MAKE) --no-print-directory ci-config
+
+ci-config:
 	$(COMPOSE) config --quiet
 
 build: setup
+	$(MAKE) --no-print-directory ci-build
+
+ci-build:
 	$(COMPOSE) build
 
 lint: lint-go lint-python lint-web lint-sql duplicates sdk-check
@@ -59,6 +65,10 @@ verify: lint config test build db-test publishing-test image-audit
 # Сканируем содержимое собранных образов; daemon socket и секреты сканеру не передаются.
 # Ошибка загрузки CVE DB также блокирует проверку. High/Critical без ignore-unfixed.
 image-audit: lint build
+	$(MAKE) --no-print-directory ci-image-audit
+
+# Используем уже собранные образы на том же runner; отдельный job не нужен.
+ci-image-audit:
 	mkdir -p reports/images
 	docker build --progress=plain -f infrastructure/quality/Dockerfile --target duplicates-build -t sp-quality-npm:verify . > reports/images/npm-build.log 2>&1 || { cat reports/images/npm-build.log; exit 1; }
 	docker build --progress=plain --target dbtools -t sp-db-tools:verify apps/api > reports/images/db-tools-build.log 2>&1 || { cat reports/images/db-tools-build.log; exit 1; }
@@ -88,6 +98,10 @@ docker-check:
 	docker build --check -f infrastructure/quality/Dockerfile . > reports/quality-docker-check.log 2>&1 || { cat reports/quality-docker-check.log; exit 1; }
 
 test: setup docker-check python-tests api-checks web-checks
+	$(MAKE) --no-print-directory ci-service-checks
+
+# Только проверки Caddy/PostgreSQL: prerequisites выполняются вызывающим Make.
+ci-service-checks:
 	mkdir -p reports
 	docker build --progress=plain --target checks -t sp-caddy-checks:stage0 infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-postgres-checks:stage0 infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
@@ -123,9 +137,15 @@ migrate seed import-languages:
 	python3 scripts/db_tools.py --site "$(SITE)" $@ $(if $(filter migrate,$@),$(or $(ACTION),up)) $(if $(filter import-languages,$@),"$(FILE)") $(if $(and $(filter migrate,$@),$(filter down,$(ACTION)),$(filter 1,$(DISPOSABLE))),--disposable)
 
 db-test: sdk-check
+	$(MAKE) --no-print-directory ci-db-test
+
+ci-db-test:
 	python3 scripts/test-publishing.py
 
 publishing-test: sdk-check
+	$(MAKE) --no-print-directory ci-publishing-test
+
+ci-publishing-test:
 	cd apps/web && npm ci --ignore-scripts && node node_modules/playwright/cli.js install --with-deps chromium
 	python3 scripts/test-publishing.py --runtime
 

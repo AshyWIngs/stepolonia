@@ -103,24 +103,24 @@ func checkPublishingDefinitions(ctx context.Context, tx *sql.Tx, expected map[st
 }
 
 const publishingMetadataQuery = `SELECT
-     (SELECT count(*)=9 AND bool_and(relowner=current_user::regrole AND
-      relkind=CASE WHEN relname IN ('public_languages','public_article_translations','public_article_routes') THEN 'v'::"char" ELSE 'r'::"char" END)
+     (SELECT count(*)=18 AND bool_and(relowner=current_user::regrole AND
+      relkind=CASE WHEN relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages') THEN 'v'::"char" ELSE 'r'::"char" END)
       FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
-      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','public_languages','public_article_translations','public_article_routes'))
+      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
       WHERE c.relnamespace='public'::regnamespace AND c.relname IN
-      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes') AND NOT t.tgisinternal AND t.tgenabled<>'O')
+      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages') AND NOT t.tgisinternal AND t.tgenabled<>'O')
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
-      ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages') AND proowner<>current_user::regrole)
+      ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND proowner<>current_user::regrole)
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
-      WHERE p.oid='public.lock_languages(text[])'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE')`
+      WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND a.grantee=0 AND a.privilege_type='EXECUTE')`
 
 const publishingDefinitionsQuery = `WITH tables AS (
  SELECT oid,relname FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
- ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes')
+ ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages')
  ), views AS (
  SELECT oid,relname,reloptions FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace
- AND relname IN ('public_languages','public_article_translations','public_article_routes')
+ AND relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages')
  )
  SELECT 'columns',c.relname||'.'||a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod)||CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE ' NULL' END
  FROM pg_catalog.pg_attribute a JOIN tables c ON c.oid=a.attrelid WHERE a.attnum>0 AND NOT a.attisdropped
@@ -130,7 +130,7 @@ const publishingDefinitionsQuery = `WITH tables AS (
  FROM pg_catalog.pg_trigger t JOIN tables c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal
  UNION ALL SELECT 'functions',p.proname,pg_catalog.pg_get_functiondef(p.oid)
  FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN
- ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages')
+ ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
  UNION ALL SELECT 'views',relname,pg_catalog.pg_get_viewdef(oid,false) FROM views
  UNION ALL SELECT 'view_options',relname,COALESCE(array_to_string(reloptions,','),'') FROM views
  UNION ALL SELECT 'defaults',c.relname||'.'||a.attname,pg_catalog.pg_get_expr(d.adbin,d.adrelid,false)
