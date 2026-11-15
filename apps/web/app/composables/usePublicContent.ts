@@ -1,6 +1,7 @@
 import { createPublicClient, type components } from '@stepolonia/sdk'
 import { useRequestHeader, useRuntimeConfig } from '#imports'
 import { articleRedirect, articlesPath, publicError } from '~/utils/public-content'
+import { uiFallback } from '~/utils/language'
 
 type Language = components['schemas']['LanguageDTO']
 
@@ -35,23 +36,33 @@ export function usePublicContent() {
     if (import.meta.server) console.warn(JSON.stringify({ event: 'public_content_unavailable', status: 503, code, request_id: requestId, cause }))
   }
 
-  async function language(code: string): Promise<Language> {
+  async function listLanguages(): Promise<Language[]> {
     const { data, response } = await request(() => client.listLanguages())
     if (!data) throw publicError(response.status)
-    const selected = data.find(item => item.code === code)
+    // Даже успешное browser matching не должно скрывать ошибку настроек установки.
+    if (!data.length || !data.some(item => item.code === config.public.site.locale) || !uiFallback(config.public.site)) {
+      diagnostic('site_language_configuration_invalid')
+      throw publicError(503)
+    }
+    return data
+  }
+
+  async function language(code: string) {
+    const languages = await listLanguages()
+    const selected = languages.find(item => item.code === code)
     if (!selected) throw publicError(404)
-    return selected
+    return { selected, languages }
   }
 
   async function list(code: string, offset: number) {
-    const selected = await language(code)
+    const { selected, languages } = await language(code)
     const { data, response } = await request(() => client.listArticles({ query: { lang: selected.code, limit: 20, offset } }))
     if (!data) throw publicError(response.status)
-    return { articles: data, language: selected }
+    return { articles: data, language: selected, languages }
   }
 
   async function article(code: string, slug: string) {
-    const selected = await language(code)
+    const { selected, languages } = await language(code)
     const result = await request(() => client.getArticle({ path: { slug }, query: { lang: selected.code } }))
     const source = articlesPath(selected.code, slug)
     // Браузер скрывает Location при manual redirect. Полный переход возвращает обработку 301 серверу.
@@ -62,10 +73,10 @@ export function usePublicContent() {
       return { kind: 'redirect' as const, path: articleRedirect(result.response.headers.get('location'), selected.code, source) }
     }
     if (!result.data) throw publicError(result.response.status)
-    return { kind: 'article' as const, article: result.data, language: selected }
+    return { kind: 'article' as const, article: result.data, language: selected, languages }
   }
 
-  return { list, article }
+  return { list, article, listLanguages }
 }
 
 function failureCode(error: unknown): string {

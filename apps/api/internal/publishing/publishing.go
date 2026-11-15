@@ -64,9 +64,11 @@ type EditorialArticle struct {
 type Page struct{ Limit, Offset int }
 type Language struct{ Code, Name, NativeName, Direction string }
 type PublicArticle struct{ ArticleID, RevisionID, LanguageCode, Title, Slug, BodyMarkdown string }
+type PublishedTranslation struct{ LanguageCode, Slug string }
 type Resolution struct {
-	Article  PublicArticle
-	Redirect bool
+	Article               PublicArticle
+	PublishedTranslations []PublishedTranslation
+	Redirect              bool
 }
 
 func problem(kind Kind, code string) error { return &Error{Kind: kind, Code: code} }

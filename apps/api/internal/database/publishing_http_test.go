@@ -58,6 +58,24 @@ func assertHTTPArticles(t *testing.T, body []byte, ids ...string) {
 	}
 }
 
+func assertHTTPPublishedTranslations(t *testing.T, body []byte, expected ...string) {
+	t.Helper()
+	var article struct {
+		PublishedTranslations []struct {
+			LanguageCode string `json:"language_code"`
+			Slug         string `json:"slug"`
+		} `json:"published_translations"`
+	}
+	requireNoError(t, json.Unmarshal(body, &article))
+	actual := make([]string, 0, len(article.PublishedTranslations))
+	for _, translation := range article.PublishedTranslations {
+		actual = append(actual, translation.LanguageCode+":"+translation.Slug)
+	}
+	if article.PublishedTranslations == nil || !slices.Equal(actual, expected) {
+		t.Fatalf("published translations got %s, want %v", body, expected)
+	}
+}
+
 func (f applicationFixture) testPublicHTTP(t *testing.T, ctx context.Context) {
 	server := httptest.NewServer(platform.Handler(httpTestDatabase{f.runtime}, f.reader, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer server.Close()
@@ -123,9 +141,10 @@ func (f applicationFixture) testHTTPAliases(t *testing.T, ctx context.Context, c
 	body, _ := publicRequest(t, ctx, client, base+"/api/v1/articles/http-final?lang=kk", http.StatusOK)
 	var article map[string]any
 	requireNoError(t, json.Unmarshal(body, &article))
-	if article["article_id"] != state.ID || article["slug"] != finalSlug || article["language_code"] != "kk" || len(article) != 5 {
+	if article["article_id"] != state.ID || article["slug"] != finalSlug || article["language_code"] != "kk" || len(article) != 6 {
 		t.Fatalf("unexpected public article payload %s", body)
 	}
+	assertHTTPPublishedTranslations(t, body, "kk:"+finalSlug)
 	publicRequest(t, ctx, client, base+"/api/v1/articles/http-final?lang=en", http.StatusNotFound)
 	testLiveSDK(t, ctx, base)
 	_, err := f.editor.UnpublishArticle(ctx, state.ID, state.Version)

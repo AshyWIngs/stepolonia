@@ -30,6 +30,43 @@
         ],
         "type": "object"
       },
+      "ArticleDetailDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "body_markdown": {
+            "type": "string"
+          },
+          "language_code": {
+            "type": "string"
+          },
+          "published_translations": {
+            "description": "Published translations of this article in enabled content languages, ordered by language code. Each slug is canonical for its language.",
+            "items": {
+              "$ref": "#/components/schemas/PublishedTranslationDTO"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "language_code",
+          "title",
+          "slug",
+          "body_markdown",
+          "published_translations"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -174,6 +211,22 @@
           "code"
         ],
         "type": "object"
+      },
+      "PublishedTranslationDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "language_code": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "language_code",
+          "slug"
+        ],
+        "type": "object"
       }
     }
   },
@@ -301,7 +354,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArticleDTO"
+                  "$ref": "#/components/schemas/ArticleDetailDTO"
                 }
               }
             },

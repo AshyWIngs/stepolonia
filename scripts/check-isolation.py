@@ -9,9 +9,9 @@ import secrets
 import shutil
 import socket
 import subprocess
-from urllib.request import urlopen
 
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
+from smoke import public_entry
 
 RESULTS = []
 
@@ -112,11 +112,12 @@ def main(primary):
         verify_postgres_runtime(test_site, secondary)
         for site, config in ((primary, original), (test_site, secondary)):
             published = config["services"]["caddy"]["ports"][0]["published"]
-            with urlopen(f"http://127.0.0.1:{published}/", timeout=5) as response:
-                body = response.read().decode()
-                name = config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"]
-                verify(f"{site}: own branding in SSR", response.status == 200
-                       and f"<h1>{escape(name, quote=False)}</h1>" in body)
+            status, _, body = public_entry(f"http://127.0.0.1:{published}")
+            name = escape(config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"], quote=False)
+            # Новая установка ещё без publishing-схемы и enabled-языков сообщает 503.
+            expected = 503 if site == test_site else 200
+            verify(f"{site}: own branding in SSR", status == expected
+                   and (f'>{name}</a>' in body or f'>{name}</p>' in body))
             active = compose(site, *postgres_sql_args(config,
                              "SELECT DISTINCT datname || ':' || usename FROM pg_stat_activity "
                              "WHERE application_name='sp-api'"))

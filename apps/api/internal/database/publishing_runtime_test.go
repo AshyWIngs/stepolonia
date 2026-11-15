@@ -69,15 +69,34 @@ func runtimeLoopbackURL(target *url.URL) bool {
 func (f applicationFixture) prepareImportedLanguageHTTP(t *testing.T, ctx context.Context, client *http.Client, base string) {
 	empty, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=fr", http.StatusOK)
 	assertHTTPArticles(t, empty)
-	state := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"fr": completeTranslation("stage15-fr-first")})
+	_, err := f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code='pl'")
+	requireNoError(t, err)
+	state := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{
+		"fr": completeTranslation("stage15-fr-first"),
+		"ru": completeTranslation("stage22-ru-first"),
+		"pl": completeTranslation("stage22-pl-hidden"),
+	})
+	_, err = f.owner.ExecContext(ctx, disablePolishSQL)
+	requireNoError(t, err)
 	patch := completeTranslation("stage15-fr-current")
 	patch.Title = valueField("Bonjour de Stepolonia")
 	patch.BodyMarkdown = valueField(runtimeArticleMarkdown)
-	state, err := f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"fr": patch})
+	state, err = f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{
+		"fr": patch, "ru": completeTranslation("stage22-ru-current"), "kk": completeTranslation("stage22-kk-private"),
+	})
 	requireNoError(t, err)
-	state = readyApplicationDraft(t, ctx, f, state, "fr")
-	_, err = f.editor.Publish(ctx, state.ID, state.Version)
+	state = readyApplicationDraft(t, ctx, f, state, "fr", "ru")
+	state, err = f.editor.Publish(ctx, state.ID, state.Version)
+	requireNoError(t, err)
+	_, err = f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"ru": completeTranslation("stage22-ru-draft")})
 	requireNoError(t, err)
 	list, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=fr", http.StatusOK)
 	assertHTTPArticles(t, list, state.ID)
+	for _, address := range []struct{ language, slug string }{{"fr", "stage15-fr-current"}, {"ru", "stage22-ru-current"}} {
+		body, _ := publicRequest(t, ctx, client, base+"/api/v1/articles/"+address.slug+"?lang="+address.language, http.StatusOK)
+		assertHTTPPublishedTranslations(t, body, "fr:stage15-fr-current", "ru:stage22-ru-current")
+	}
+	for _, address := range []struct{ language, slug string }{{"pl", "stage22-pl-hidden"}, {"kk", "stage22-kk-private"}, {"ru", "stage22-ru-draft"}} {
+		publicRequest(t, ctx, client, base+"/api/v1/articles/"+address.slug+"?lang="+address.language, http.StatusNotFound)
+	}
 }

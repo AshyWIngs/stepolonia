@@ -1,0 +1,18 @@
+{
+  "articles": "Artykuły",
+  "empty": "W tym języku nie ma jeszcze opublikowanych artykułów.",
+  "pagination": "Strony listy",
+  "previous": "Poprzednia strona",
+  "next": "Następna strona",
+  "navigation": "Nawigacja po artykułach",
+  "all": "Wszystkie artykuły",
+  "languages": "Język treści",
+  "errors": {
+    "400": "Nieprawidłowy adres",
+    "404": "Nie znaleziono strony",
+    "503": "Treści są tymczasowo niedostępne",
+    "other": "Nie udało się otworzyć strony",
+    "retry": "Spróbuj otworzyć stronę później.",
+    "home": "Strona główna"
+  }
+}

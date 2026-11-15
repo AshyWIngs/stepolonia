@@ -1,25 +1,31 @@
 <script setup lang="ts">
-import { clearError, useHead, useRuntimeConfig } from '#imports'
+import { clearError, useHead, useI18n, useResponseHeader, useRoute, useRuntimeConfig } from '#imports'
 import type { NuxtError } from '#app'
+import { isUiLocale, uiFallback } from '~/utils/language'
 
 defineOptions({ name: 'PublicErrorPage' })
 
 const props = defineProps<{ error: NuxtError }>()
 const { site } = useRuntimeConfig().public
-const messages: Partial<Record<number, string>> = {
-  400: 'Некорректный адрес',
-  404: 'Страница не найдена',
-  503: 'Материалы временно недоступны',
-}
-const title = messages[props.error.status ?? 500] ?? 'Не удалось открыть страницу'
-useHead({ title: `${title} | ${site.name}`, htmlAttrs: { lang: 'ru' } })
+useResponseHeader('Cache-Control').value = 'no-store'
+const { t, locale, fallbackLocale } = useI18n()
+const fallback = uiFallback(site)
+if (fallback) fallbackLocale.value = fallback
+const routeCode = useRoute().params.lang
+const code = typeof routeCode === 'string' ? routeCode.toLowerCase() : ''
+const language = fallback && isUiLocale(code) ? code : fallback
+if (language) locale.value = language
+const status = props.error.status ?? 500
+// При ошибке UI fallback не подставляем скрытый язык: безопасный ответ содержит только код статуса.
+const title = language ? t([400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other') : String(status)
+useHead({ title: `${title} | ${site.name}`, htmlAttrs: { lang: language } })
 </script>
 
 <template>
-  <main lang="ru" :style="{ '--site-accent': site.accent }">
-    <p>{{ site.name }}</p>
+  <main :lang="language" :style="{ '--site-accent': site.accent }">
+    <p :lang="site.locale">{{ site.name }}</p>
     <h1>{{ title }}</h1>
-    <p v-if="error.status === 503">Попробуйте открыть страницу позднее.</p>
-    <a href="/" @click.prevent="clearError({ redirect: '/' })">На главную</a>
+    <p v-if="language && status === 503">{{ t('errors.retry') }}</p>
+    <a v-if="language" href="/" @click.prevent="clearError({ redirect: '/' })">{{ t('errors.home') }}</a>
   </main>
 </template>

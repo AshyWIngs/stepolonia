@@ -41,6 +41,20 @@ type articleDTO struct {
 	BodyMarkdown string `json:"body_markdown"`
 }
 
+type publishedTranslationDTO struct {
+	LanguageCode string `json:"language_code"`
+	Slug         string `json:"slug"`
+}
+
+type articleDetailDTO struct {
+	ArticleID             string                    `json:"article_id" format:"uuid"`
+	LanguageCode          string                    `json:"language_code"`
+	Title                 string                    `json:"title"`
+	Slug                  string                    `json:"slug"`
+	BodyMarkdown          string                    `json:"body_markdown"`
+	PublishedTranslations []publishedTranslationDTO `json:"published_translations" nullable:"false" doc:"Published translations of this article in enabled content languages, ordered by language code. Each slug is canonical for its language."`
+}
+
 type articleListInput struct {
 	Language string `query:"lang" required:"true" doc:"Content language (BCP 47)."`
 	Limit    int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
@@ -62,8 +76,8 @@ type articlesOutput struct {
 
 type articleOutput struct {
 	Status   int
-	Location string      `header:"Location"`
-	Body     *articleDTO `nullable:"false"`
+	Location string            `header:"Location"`
+	Body     *articleDetailDTO `nullable:"false"`
 }
 
 type publicProblem struct {
@@ -155,7 +169,11 @@ func registerPublishing(api huma.API, reader *publishing.PublicReader, logger *s
 		if resolved.Redirect {
 			return &articleOutput{Status: http.StatusMovedPermanently, Location: "/api/v1/articles/" + url.PathEscape(resolved.Article.Slug) + "?" + url.Values{languageQueryKey: {resolved.Article.LanguageCode}}.Encode()}, nil
 		}
-		article := publicArticle(resolved.Article)
+		value := resolved.Article
+		article := articleDetailDTO{ArticleID: value.ArticleID, LanguageCode: value.LanguageCode, Title: value.Title, Slug: value.Slug, BodyMarkdown: value.BodyMarkdown, PublishedTranslations: make([]publishedTranslationDTO, 0, len(resolved.PublishedTranslations))}
+		for _, value := range resolved.PublishedTranslations {
+			article.PublishedTranslations = append(article.PublishedTranslations, publishedTranslationDTO{LanguageCode: value.LanguageCode, Slug: value.Slug})
+		}
 		return &articleOutput{Status: http.StatusOK, Body: &article}, nil
 	})
 }

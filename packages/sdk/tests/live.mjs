@@ -31,6 +31,15 @@ if (process.argv.includes('--unavailable')) {
   assert.equal(current.response.status, 200)
   assert.equal(current.data.article_id, listed.data[0].article_id)
   assert.equal(current.data.language_code, lang)
+  assert.ok(Array.isArray(current.data.published_translations))
+  assert.ok(current.data.published_translations.some(translation => translation.language_code === lang && translation.slug === slug))
+  for (const translation of current.data.published_translations) {
+    const translated = await client.getArticle({ path: { slug: translation.slug }, query: { lang: translation.language_code } })
+    assert.equal(translated.response.status, 200)
+    assert.equal(translated.data.article_id, current.data.article_id)
+    assert.equal(translated.data.slug, translation.slug)
+    assert.deepEqual(translated.data.published_translations, current.data.published_translations)
+  }
   const redirect = await client.getArticle({ path: { slug: oldSlug }, query: { lang } })
   assert.equal(redirect.response.status, 301)
   assert.equal(redirect.response.headers.get('Location'), `/api/v1/articles/${slug}?lang=${lang}`)

@@ -6,6 +6,7 @@ from html import escape
 from http.client import HTTPConnection
 import json
 import os
+import re
 import subprocess
 import time
 from urllib.parse import urlsplit
@@ -60,6 +61,17 @@ def private_api(path):
     return json.loads(output.stdout)
 
 
+def public_entry(base):
+    """Проверяем временный выбор языка перед чтением итоговой SSR-страницы."""
+    status, headers, body = request(base + "/")
+    if status in (302, 307):
+        location = headers.get("Location", "")
+        verify("entry redirects to this site's content language",
+               re.fullmatch(r"/[a-z0-9]+(?:-[a-z0-9]+)*/articles", location) is not None)
+        return request(base + location)
+    return status, headers, body
+
+
 def wait_ready():
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
@@ -89,6 +101,7 @@ def publishing_sdk(base, *, mode="--published"):
 
 def check_publishing(base):
     """Проверяем Publishing через Caddy на подготовленной одноразовой установке."""
+    verify("entry serves the configured content language", public_entry(base)[0] == 200)
     publishing_sdk(base)
     status, _, body = request(base + "/api/v1/articles?lang=en")
     verify("Caddy: enabled empty language returns 200 []", status == 200 and json.loads(body) == [])
@@ -164,10 +177,10 @@ def main(site, lifecycle):
     verify("data network is internal", network["Internal"])
     verify("PostgreSQL only joins data network", len(containers["postgres"]["NetworkSettings"]["Networks"]) == 1)
     verify("web does not join data network", network_name not in containers["web"]["NetworkSettings"]["Networks"])
-    status, headers, body = request(base + "/")
+    status, headers, body = public_entry(base)
     site_name = config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"]
     verify("Nuxt production SSR uses selected site branding", status == 200
-           and f"<h1>{escape(site_name, quote=False)}</h1>" in body)
+           and f'>{escape(site_name, quote=False)}</a>' in body)
     verify("proxy security header", headers.get("X-Content-Type-Options") == "nosniff")
     status, headers, body = request(base + "/api/v1/unknown")
     verify("Caddy routes API requests to Go", status == 404 and json.loads(body)["status"] == 404
@@ -221,7 +234,7 @@ def check_lifecycle(config, base, containers):
     verify("Go completed graceful shutdown", '"msg":"shutdown_complete"' in logs)
     compose("up", "-d", "--force-recreate", "--wait", "--wait-timeout", "120")
     verify("database survives container replacement", compose(*identifier_cmd).stdout.strip() == identifier)
-    verify("stack serves SSR after replacement", request(base + "/")[0] == 200)
+    verify("stack serves SSR after replacement", public_entry(base)[0] == 200)
 
 
 if __name__ == "__main__":

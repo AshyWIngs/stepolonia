@@ -166,6 +166,86 @@ def check_runtime(site, directory, override, compose, environment, project, toke
         # Перед реальной остановкой БД повторно подтверждаем владельца всех ресурсов.
         verify_owned(project, token, log)
         smoke.check_publishing_recovery(base)
+    check_localization(base, project, log)
+
+
+def localization_browser(base, mode, log, **environment):
+    """Один browser harness проверяет реальные установки через Caddy."""
+    command(["node", "apps/web/tests/live.mjs", mode], log,
+            env={**os.environ, "STAGE14_API_URL": base, **environment})
+
+
+def check_localization(base, images_project, log):
+    """Вторая изолированная БД исключает смешивание материалов и предпочтений."""
+    token = secrets.token_hex(6)
+    site = f"stage22-{token}.test"
+    project = f"sp-stage22-{token}"
+    database = f"stage22_{token}"
+    directory, override, unused_log, volume = prepare_installation(
+        site, project, database, token, runtime=True)
+    configuration = json.loads(override.read_text())
+    for name, service in configuration["services"].items():
+        suffix = {"postgres-init": "init", "db-tools": "tools"}.get(name, name)
+        service["image"] = f"{images_project}-{suffix}:check"
+    configuration["services"]["web"]["environment"] = {
+        "NUXT_PUBLIC_SITE_LOCALE": "pl", "NUXT_PUBLIC_SITE_UI_FALLBACK": "en",
+    }
+    override.write_text(json.dumps(configuration))
+    compose = [*compose_command(site), "-f", str(override), "--project-name", project]
+    resources_owned = False
+    try:
+        command(["python3", "scripts/setup-local.py", "--site", site], log)
+        config = load_config(site, override=override)
+        if config["name"] != project or config["volumes"]["postgres_data"]["name"] != volume:
+            raise RuntimeError("Не совпадает идентичность второй временной установки")
+        verify_owned(project, token, log, volume=volume)
+        resources_owned = True
+        command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
+        query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
+        command([*compose, *postgres_sql_args(config, query)], log)
+        for arguments in (["prepare-roles"], ["migrate", "up"], ["seed"]):
+            run_tool(site, arguments, override=override, log=log)
+        languages = directory / "languages.csv"
+        languages.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
+        run_tool(site, ["import-languages", "/input/languages.csv"], input_file=languages,
+                 override=override, log=log)
+        command([*compose, *postgres_sql_args(config,
+                 "UPDATE public.languages SET is_enabled=(code IN ('pl','en','fr'))")], log)
+        command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
+        port = published_port(compose, "caddy", 8080, token, log)
+        second_base = f"http://127.0.0.1:{port}"
+        localization_browser(base, "--localization", log, STAGE22_SECOND_URL=second_base)
+        check_language_configuration(second_base, compose, config, configuration, override, log)
+    finally:
+        if resources_owned:
+            verify_owned(project, token, log, volume=volume)
+            command([*compose, "down", "--volumes", "--remove-orphans"], log)
+        shutil.rmtree(directory)
+        override.unlink()
+        unused_log.unlink(missing_ok=True)
+
+
+def check_language_configuration(base, compose, config, configuration, override, log):
+    """Ошибка default и пустой каталог не подменяются произвольным языком."""
+    for query in ("UPDATE public.languages SET is_enabled=false WHERE code='pl'",
+                  "UPDATE public.languages SET is_enabled=false"):
+        command([*compose, *postgres_sql_args(config, query)], log)
+        localization_browser(base, "--config-unavailable", log)
+    command([*compose, *postgres_sql_args(config,
+             "UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','en','fr')")], log)
+    web_environment = configuration["services"]["web"]["environment"]
+    web_environment["NUXT_PUBLIC_SITE_LOCALE"] = "en"
+    recreate_localization_web(compose, configuration, override, log)
+    localization_browser(base, "--site-default", log, STAGE22_DEFAULT="en")
+    web_environment["NUXT_PUBLIC_SITE_UI_FALLBACK"] = "invalid_locale"
+    recreate_localization_web(compose, configuration, override, log)
+    localization_browser(base, "--config-unavailable", log)
+
+
+def recreate_localization_web(compose, configuration, override, log):
+    override.write_text(json.dumps(configuration))
+    command([*compose, "up", "-d", "--no-deps", "--force-recreate", "--wait",
+             "--wait-timeout", "120", "web"], log)
 
 
 def main(runtime=False):

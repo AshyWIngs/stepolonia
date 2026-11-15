@@ -105,6 +105,16 @@ export interface components {
             slug: string;
             title: string;
         };
+        ArticleDetailDTO: {
+            /** Format: uuid */
+            article_id: string;
+            body_markdown: string;
+            language_code: string;
+            /** @description Published translations of this article in enabled content languages, ordered by language code. Each slug is canonical for its language. */
+            published_translations: components["schemas"]["PublishedTranslationDTO"][];
+            slug: string;
+            title: string;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -164,6 +174,10 @@ export interface components {
             status: number;
             title: string;
             type: string;
+        };
+        PublishedTranslationDTO: {
+            language_code: string;
+            slug: string;
         };
     };
     responses: never;
@@ -247,7 +261,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArticleDTO"];
+                    "application/json": components["schemas"]["ArticleDetailDTO"];
                 };
             };
             /** @description Historical slug; Location points directly to the current address in the same content language. */

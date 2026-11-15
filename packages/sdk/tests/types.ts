@@ -27,11 +27,12 @@ export function checkResponseTypes(redirect: Redirect, article: Article, problem
   const location: string = redirect.headers.Location
   const emptyBody: null = redirect.content['application/json']
   const id: string = article.article_id
+  const translations: { language_code: string; slug: string }[] = article.published_translations
   const status: number = problem.status
   const catalog: Languages = languages
   // @ts-expect-error Внутренняя ревизия не входит в публичный DTO.
   const internalRevision: string = article.revision_id
   // @ts-expect-error Успешный каталог является массивом.
   const nullCatalog: Languages = null
-  return [location, emptyBody, id, status, catalog, internalRevision, nullCatalog]
+  return [location, emptyBody, id, translations, status, catalog, internalRevision, nullCatalog]
 }

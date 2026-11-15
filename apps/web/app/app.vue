@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { useHead, useResponseHeader, useRuntimeConfig } from '#imports'
+import { useHead, useRequestHeader, useResponseHeader, useRuntimeConfig, useState } from '#imports'
+import { usePublicUi } from '~/composables/usePublicUi'
 
 const { site } = useRuntimeConfig().public
-useHead({
+// Сохраняем header и на прямом контентном URL для последующего перехода на главную без перезагрузки.
+useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
+const { uiLanguage } = usePublicUi()
+useHead(() => ({
   title: site.name,
-  htmlAttrs: { lang: site.locale },
+  htmlAttrs: { lang: uiLanguage.value },
   meta: [{ name: 'description', content: site.description }],
-})
+}))
 useResponseHeader('Cache-Control').value = 'no-store'
 </script>
 
@@ -39,6 +43,8 @@ a:focus-visible { outline: 0.15rem solid var(--site-accent); outline-offset: 0.2
 .article-list li { padding: 1rem 0; border-bottom: 1px solid #d5d7cf; }
 .article-list h2 { margin: 0; font-size: 1.6rem; }
 .pagination { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 2rem; }
+.language-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1.5rem; }
+.language-nav [aria-current="page"] { font-weight: 700; }
 .article-body { overflow-wrap: anywhere; }
 .article-body pre { overflow-x: auto; padding: 1rem; background: #eae8e1; direction: ltr; }
 .article-body code { font-size: 0.9em; }

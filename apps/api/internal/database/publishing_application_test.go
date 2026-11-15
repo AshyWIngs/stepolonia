@@ -15,6 +15,8 @@ import (
 	"stepolonia/apps/api/internal/publishing"
 )
 
+const disablePolishSQL = "UPDATE public.languages SET is_enabled=false WHERE code='pl'"
+
 type applicationFixture struct {
 	owner   *sql.DB
 	editor  *publishing.Service
@@ -196,19 +198,11 @@ func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
 	})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, ctx, f, state, "ru")
-	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=false WHERE code='pl'")
+	_, err = f.owner.ExecContext(ctx, disablePolishSQL)
 	requireNoError(t, err)
 	state, err = f.editor.Publish(ctx, state.ID, state.Version)
 	requireNoError(t, err)
-	_, err = f.reader.ResolveArticle(ctx, "pl", polishSlug)
-	assertPublishingError(t, err, publishing.NotFound)
-	_, err = f.owner.ExecContext(ctx, enablePolishSQL)
-	requireNoError(t, err)
-	polish, err := f.reader.ResolveArticle(ctx, "pl", polishSlug)
-	requireNoError(t, err)
-	if polish.Article.BodyMarkdown != "Body app-polish" {
-		t.Fatal("Russian update changed public Polish")
-	}
+	f.assertPublishedTranslationVisibility(t, ctx, polishSlug, secondSlug)
 	detail, err := f.editor.GetEditorialDetail(ctx, state.ID)
 	requireNoError(t, err)
 	if len(detail.Drafts) != 1 || detail.Drafts[0].LanguageCode != "pl" || *detail.Drafts[0].BodyMarkdown != "Unfinished Polish" {
@@ -247,6 +241,27 @@ func (f applicationFixture) testPublication(t *testing.T, ctx context.Context) {
 	}
 }
 
+func (f applicationFixture) assertPublishedTranslationVisibility(t *testing.T, ctx context.Context, polishSlug, russianSlug string) {
+	t.Helper()
+	_, err := f.reader.ResolveArticle(ctx, "pl", polishSlug)
+	assertPublishingError(t, err, publishing.NotFound)
+	russian, err := f.reader.ResolveArticle(ctx, "ru", russianSlug)
+	requireNoError(t, err)
+	if !slices.Equal(russian.PublishedTranslations, []publishing.PublishedTranslation{{LanguageCode: "ru", Slug: russianSlug}}) {
+		t.Fatal("published translation links exposed a disabled language or stale slug")
+	}
+	_, err = f.owner.ExecContext(ctx, enablePolishSQL)
+	requireNoError(t, err)
+	polish, err := f.reader.ResolveArticle(ctx, "pl", polishSlug)
+	requireNoError(t, err)
+	if polish.Article.BodyMarkdown != "Body "+polishSlug {
+		t.Fatal("Russian update changed public Polish")
+	}
+	if !slices.Equal(polish.PublishedTranslations, []publishing.PublishedTranslation{{LanguageCode: "pl", Slug: polishSlug}, {LanguageCode: "ru", Slug: russianSlug}}) {
+		t.Fatal("published translation links lost the current snapshot or exposed an unfinished draft")
+	}
+}
+
 // Одинаковый snapshot и отсутствие ready имеют общий запрет фиктивной публикации.
 func assertNoPublicationChange(t *testing.T, ctx context.Context, f applicationFixture, state publishing.ArticleState) {
 	t.Helper()
@@ -270,7 +285,7 @@ func (f applicationFixture) testRollback(t *testing.T, ctx context.Context) {
 	if applicationSnapshot(t, ctx, f, state.ID) != before {
 		t.Fatal("URL collision left partial publication or reserved another language")
 	}
-	_, err = f.owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=false WHERE code='pl'")
+	_, err = f.owner.ExecContext(ctx, disablePolishSQL)
 	requireNoError(t, err)
 	_, err = f.editor.Publish(ctx, state.ID, state.Version)
 	assertPublishingError(t, err, publishing.Validation)
