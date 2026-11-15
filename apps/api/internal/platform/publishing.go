@@ -95,6 +95,8 @@ func (p *publicProblem) ContentType(string) string { return problemJSONMediaType
 func newProblem(status int, code string) *publicProblem {
 	detail := "The request parameters are invalid."
 	switch status {
+	case http.StatusConflict:
+		detail = "The published version has changed."
 	case http.StatusNotFound:
 		detail = "The requested resource was not found."
 	case http.StatusServiceUnavailable:
@@ -245,5 +247,5 @@ func logDependency(ctx context.Context, logger *slog.Logger, err error) {
 	if errors.As(err, &state) {
 		sqlState = state.SQLState()
 	}
-	logger.WarnContext(ctx, "dependency_unavailable", "request_id", ctx.Value(requestIDKey{}), "code", code, "sql_state", sqlState)
+	logger.WarnContext(ctx, "dependency_unavailable", requestIDField, ctx.Value(requestIDKey{}), "code", code, "sql_state", sqlState)
 }

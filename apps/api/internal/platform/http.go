@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"stepolonia/apps/api/internal/publishing"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 type Pinger interface {
@@ -30,10 +31,12 @@ func healthy() *healthOutput {
 	return out
 }
 
+const requestIDField = "request_id"
+
 type requestIDKey struct{}
 
-func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) http.Handler {
-	mux, _ := newAPI(db, reader, logger)
+func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) http.Handler {
+	mux, _ := newAPI(db, reader, logger, site...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := rand.Text()
@@ -42,13 +45,13 @@ func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) ht
 		response := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID))
 		mux.ServeHTTP(response, r)
-		logger.Info("http_request", "request_id", requestID, "method", r.Method,
+		logger.Info("http_request", requestIDField, requestID, "method", r.Method,
 			"path", r.URL.Path, "status", response.status,
 			"duration_ms", time.Since(start).Milliseconds())
 	})
 }
 
-func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) (*http.ServeMux, huma.API) {
+func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) (*http.ServeMux, huma.API) {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
 	// Контракт генерируется из операций вне HTTP; служебные маршруты закрыты.
@@ -73,6 +76,11 @@ func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger) (*h
 		return healthy(), nil
 	})
 	registerPublishing(api, reader, logger)
+	var siteReader *siteconfig.Reader
+	if len(site) > 0 {
+		siteReader = site[0]
+	}
+	registerSite(api, siteReader, logger)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(contentTypeHeader, problemJSONMediaType)
 		w.WriteHeader(http.StatusNotFound)

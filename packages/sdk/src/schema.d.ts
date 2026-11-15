@@ -61,6 +61,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/site": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read published site settings and one complete UI catalog
+         * @description One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private.
+         */
+        get: operations["getSite"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -160,6 +180,13 @@ export interface components {
             service: string;
             status: string;
         };
+        Language: {
+            code: string;
+            /** @enum {string} */
+            direction: "ltr" | "rtl";
+            name: string;
+            native_name: string;
+        };
         LanguageDTO: {
             code: string;
             /** @enum {string} */
@@ -175,9 +202,30 @@ export interface components {
             title: string;
             type: string;
         };
+        Publication: {
+            language: components["schemas"]["Language"];
+            languages: components["schemas"]["Language"][];
+            messages: {
+                [key: string]: string;
+            };
+            /** @description Normalized requested UI language; empty when omitted. */
+            requested_language: string;
+            settings: components["schemas"]["Settings"];
+            /** Format: uuid */
+            version: string;
+        };
         PublishedTranslationDTO: {
             language_code: string;
             slug: string;
+        };
+        Settings: {
+            accent: string;
+            default_language: string;
+            description: string;
+            fallback_language: string;
+            notice: string;
+            tagline: string;
+            title: string;
         };
     };
     responses: never;
@@ -323,6 +371,58 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicProblem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicProblem"];
+                };
+            };
+        };
+    };
+    getSite: {
+        parameters: {
+            query?: {
+                /** @description Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback. */
+                lang?: string;
+                /** @description Optional opaque UUID from a previous response; a different current publication returns 409. */
+                version?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Publication"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicProblem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

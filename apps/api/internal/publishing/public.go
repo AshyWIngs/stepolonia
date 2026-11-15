@@ -29,7 +29,9 @@ func (r *PublicReader) begin(ctx context.Context) (*sql.Tx, error) {
  AND NOT pg_catalog.has_database_privilege(r.oid,current_database(),'CREATE,TEMP')
  AND NOT EXISTS (SELECT 1 FROM (VALUES('public.languages'),('public.articles'),
  ('public.article_draft_translations'),('public.article_revisions'),
- ('public.article_revision_translations'),('public.public_routes')) AS private(name)
+ ('public.article_revision_translations'),('public.public_routes'),('public.ui_message_keys'),
+ ('public.site_state'),('public.site_revisions'),('public.site_revision_keys'),
+ ('public.site_revision_languages'),('public.site_revision_messages')) AS private(name)
  WHERE pg_catalog.has_table_privilege(r.oid,private.name,'SELECT')
  OR pg_catalog.has_any_column_privilege(r.oid,private.name,'SELECT'))
  FROM pg_catalog.pg_roles r WHERE rolname=current_user`).Scan(&allowed)
