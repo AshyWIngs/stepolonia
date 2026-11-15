@@ -12,7 +12,7 @@ function assertProblem(result, status, code) {
   assert.ok(result.error)
   assert.equal(result.error.status, status)
   assert.equal(result.error.code, code)
-  assert.deepEqual(Object.keys(result.error).sort(), ['code', 'detail', 'status', 'title', 'type'])
+  assert.deepEqual(new Set(Object.keys(result.error)), new Set(['code', 'detail', 'status', 'title', 'type']))
   const body = JSON.stringify(result.error)
   for (const privateDetail of ['SELECT ', 'postgres://', 'stage12_', 'sp_publisher', 'sql:', 'site_revisions']) {
     assert.ok(!body.includes(privateDetail), 'Private dependency details leaked')
@@ -30,14 +30,15 @@ function assertPublication(result, version, language, requestedLanguage) {
   assert.equal(site.settings.default_language, 'pl')
   assert.equal(site.settings.fallback_language, 'en')
   assert.equal(site.settings.title, 'Fixture title')
-  assert.deepEqual(Object.keys(site).sort(), ['language', 'languages', 'messages', 'requested_language', 'settings', 'version'])
-  assert.deepEqual(Object.keys(site.settings).sort(), ['accent', 'default_language', 'description', 'fallback_language', 'notice', 'tagline', 'title'])
-  assert.deepEqual(site.languages.map(item => item.code).sort(), ['en', 'pl'])
+  assert.deepEqual(new Set(Object.keys(site)), new Set(['language', 'languages', 'messages', 'requested_language', 'settings', 'version']))
+  assert.deepEqual(new Set(Object.keys(site.settings)), new Set(['accent', 'default_language', 'description', 'fallback_language', 'notice', 'tagline', 'title']))
+  assert.equal(site.languages.length, 2)
+  assert.deepEqual(new Set(site.languages.map(item => item.code)), new Set(['en', 'pl']))
   for (const item of [site.language, ...site.languages]) {
-    assert.deepEqual(Object.keys(item).sort(), ['code', 'direction', 'name', 'native_name'])
+    assert.deepEqual(new Set(Object.keys(item)), new Set(['code', 'direction', 'name', 'native_name']))
   }
   const keys = ['articles', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home']
-  assert.deepEqual(Object.keys(site.messages).sort(), keys.sort())
+  assert.deepEqual(new Set(Object.keys(site.messages)), new Set(keys))
   for (const key of keys) {
     assert.equal(site.messages[key], `Fixture ${language} ${key}`)
   }
