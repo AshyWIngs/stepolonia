@@ -174,18 +174,27 @@ Runtime читает только `public_languages`, `public_article_translatio
 дополнительно проверяются командой `python3 -m unittest discover -s scripts/tests -v`.
 GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`.
 
-Монитор [PR CI Watch](.github/workflows/ci-watch.yml) раз в 10 минут проверяет
-четыре обязательных GitHub Gate (расписание GitHub не гарантирует точный интервал),
-комментирует окончательный FAIL и длительный PENDING. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
-сообщает о принятом squash merge. Эти операции **не вызывают Codex**.
-Автоматическая однократная попытка Codex включается только после установки
-двух GitHub Actions repository secrets: `OPENAI_API_KEY` (ключ OpenAI API с
-отдельным тарифицированием) и `CI_AUTOFIX_PUSH_TOKEN` (fine-grained токен
-для данного репозитория с `Contents: Read and write`). Токен нужен, чтобы
-после исправления в исходной PR-ветке GitHub действительно запустил новые
-обязательные Gate. Без обоих секретов модель не вызывается. Исправление ограничено
-проверенными исходными файлами; неудачное исправление или повторный FAIL требует
-ручного продолжения. Не помещайте значения токенов в репозиторий, PR или логи.
+Монитор [PR CI Watch](.github/workflows/ci-watch.yml) проверяет четыре
+обязательных GitHub Gate примерно раз в 10 минут и оставляет комментарий при
+сбое или длительном ожидании. GitHub может задерживать либо пропускать
+запуски по расписанию. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
+отмечает принятый squash merge. **Ни один workflow не вызывает Codex, OpenAI API
+или платную модель; дополнительные ключи и подписки не нужны.**
+
+При работе Codex в интерактивной сессии проверки можно ждать **одним**
+вызовом GitHub CLI (если позволяет ограничение времени инструментов):
+
+```sh
+gh pr checks 16 --repo AshyWIngs/stepolonia --required --watch --interval 300
+```
+
+Здесь 16 - пример номера PR. Во время ожидания запросы выполняет GitHub CLI,
+а не языковая модель. После завершения Codex должен проверить актуальный SHA:
+при FAIL прочитать только нужные ошибки и адресно исправить код; при PASS
+проверить, завершился ли squash auto-merge. Если активная сессия или вызов
+инструмента завершились раньше, watcher в GitHub продолжит уведомлять, но
+**не сможет сам возобновить закрытую сессию Codex или исправить код**.
+
 Для полного `verify`, как и для `db-test`, нужен Go на хосте и C compiler.
 Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
 Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).
