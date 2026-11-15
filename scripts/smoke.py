@@ -72,15 +72,17 @@ def wait_ready():
     raise AssertionError("API did not recover within 60 seconds")
 
 
-def publishing_sdk(base, *, unavailable=False):
-    """Используем тот же SDK и статью, которую публикует Go runtime fixture."""
+def publishing_sdk(base, *, mode="--published"):
+    """Проверяем SDK и SSR на статье существующего Go runtime fixture."""
+    if mode not in ("--published", "--unavailable", "--api-unavailable", "--restored"):
+        raise ValueError("Неизвестный режим Publishing-проверки")
     environment = {**os.environ, "STAGE14_API_URL": base, "STAGE14_ARTICLE_LANG": "fr",
                    "STAGE14_ARTICLE_SLUG": "stage15-fr-current", "STAGE14_REDIRECT_SLUG": "stage15-fr-first"}
     # B603 требует аудита даже фиксированного argv. Программа и script постоянны,
-    # режим имеет два литеральных значения, env принадлежит disposable harness.
+    # режим ограничен проверенным набором, env принадлежит disposable harness.
     # Пересмотреть при изменении executable/script/mode или источника окружения.
     result = subprocess.run(  # nosec B603 - фиксированный SDK argv, доверенное test env
-        ["node", "packages/sdk/tests/live.mjs", "--unavailable" if unavailable else "--published"],
+        ["node", "apps/web/tests/live.mjs", mode],
         cwd=ROOT, check=True, capture_output=True, text=True, env=environment)
     print(result.stdout, end="", flush=True)
 
@@ -111,17 +113,32 @@ def check_publishing_recovery(base):
         compose("stop", "postgres")
         verify("Publishing outage: private liveness stays healthy", private_api(LIVE_PATH)["status"] == 200)
         verify("Publishing outage: private readiness reports 503", private_api(READY_PATH)["status"] == 503)
-        publishing_sdk(base, unavailable=True)
+        publishing_sdk(base, mode="--unavailable")
     finally:
         compose("start", "postgres")
         wait_ready()
-    publishing_sdk(base)
+    publishing_sdk(base, mode="--restored")
     verify("Publishing recovers with the same public snapshot", request(target)[2] == before[2])
     current = json.loads(run(["docker", "inspect", identifier]).stdout)[0]
     verify("API recovered without container or process restart",
            compose("ps", "-q", "api").stdout.strip() == identifier
            and current["RestartCount"] == previous["RestartCount"]
            and current["State"]["StartedAt"] == previous["State"]["StartedAt"])
+    check_ssr_api_recovery(base)
+
+
+def check_ssr_api_recovery(base):
+    """SSR должен различать отсутствие материала и недоступность контейнера API."""
+    target = base + "/api/v1/articles/stage15-fr-current?lang=fr"
+    snapshot = request(target)[2]
+    try:
+        compose("stop", "api")
+        publishing_sdk(base, mode="--api-unavailable")
+    finally:
+        compose("start", "api")
+        wait_ready()
+    publishing_sdk(base, mode="--restored")
+    verify("Публикация сохранена после восстановления API", request(target)[2] == snapshot)
 
 
 def main(site, lifecycle):

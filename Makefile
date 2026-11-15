@@ -41,7 +41,7 @@ lint-python:
 
 lint-web:
 	mkdir -p reports
-	docker build --progress=plain --target lint -t sp-quality-web:verify apps/web > reports/web-lint.log 2>&1 || { cat reports/web-lint.log; exit 1; }
+	docker build --progress=plain -f apps/web/Dockerfile --target lint -t sp-quality-web:verify . > reports/web-lint.log 2>&1 || { cat reports/web-lint.log; exit 1; }
 
 duplicates:
 	mkdir -p reports
@@ -76,7 +76,7 @@ image-audit: lint build
 docker-check:
 	mkdir -p reports
 	docker build --check apps/api > reports/api-docker-check.log 2>&1 || { cat reports/api-docker-check.log; exit 1; }
-	docker build --check apps/web > reports/web-docker-check.log 2>&1 || { cat reports/web-docker-check.log; exit 1; }
+	docker build --check -f apps/web/Dockerfile . > reports/web-docker-check.log 2>&1 || { cat reports/web-docker-check.log; exit 1; }
 	docker build --check infrastructure/caddy > reports/caddy-docker-check.log 2>&1 || { cat reports/caddy-docker-check.log; exit 1; }
 	docker build --check infrastructure/postgres > reports/postgres-docker-check.log 2>&1 || { cat reports/postgres-docker-check.log; exit 1; }
 	docker build --check -f infrastructure/quality/Dockerfile . > reports/quality-docker-check.log 2>&1 || { cat reports/quality-docker-check.log; exit 1; }
@@ -96,7 +96,7 @@ api-checks:
 
 web-checks:
 	mkdir -p reports
-	docker build --progress=plain --target checks -t sp-web-checks:stage0 apps/web > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
+	docker build --progress=plain -f apps/web/Dockerfile --target checks -t sp-web-checks:stage0 . > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
 
 smoke: setup
 	python3 scripts/smoke.py --site "$(SITE)"
@@ -117,6 +117,7 @@ db-test: sdk-check
 	python3 scripts/test-publishing.py
 
 publishing-test: sdk-check
+	cd apps/web && npm ci --ignore-scripts && node node_modules/playwright/cli.js install --with-deps chromium
 	python3 scripts/test-publishing.py --runtime
 
 sdk:

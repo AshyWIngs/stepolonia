@@ -39,15 +39,17 @@ services:
 
   web:
     image: sp-web:stage0
-    build: { context: ../apps/web }
+    build: { context: .., dockerfile: apps/web/Dockerfile }
     environment:
       NODE_OPTIONS: --max-old-space-size=384
+      NUXT_API_ORIGIN: http://api:8080
       NUXT_PUBLIC_SITE_NAME: ${NUXT_PUBLIC_SITE_NAME:?}
       NUXT_PUBLIC_SITE_TAGLINE: ${NUXT_PUBLIC_SITE_TAGLINE:-}
       NUXT_PUBLIC_SITE_DESCRIPTION: ${NUXT_PUBLIC_SITE_DESCRIPTION:-}
       NUXT_PUBLIC_SITE_NOTICE: ${NUXT_PUBLIC_SITE_NOTICE:-}
       NUXT_PUBLIC_SITE_LOCALE: ${NUXT_PUBLIC_SITE_LOCALE:-ru}
       NUXT_PUBLIC_SITE_ACCENT: ${NUXT_PUBLIC_SITE_ACCENT:-#a52837}
+      NUXT_PUBLIC_SITE_ORIGIN: ${NUXT_PUBLIC_SITE_ORIGIN:-}
     networks: [app]
     read_only: true
     tmpfs: [/tmp]
