@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -84,6 +86,7 @@ func runSiteTests(t *testing.T, ctx context.Context, f *siteTestFixture) {
 
 func (f *siteTestFixture) testAccess(t *testing.T, ctx context.Context) {
 	publicRequest(t, ctx, f.server.Client(), f.base, 503)
+	f.testSDK(t, ctx, true)
 	for _, q := range []string{"?lang=", "?lang=pl&lang=en", "?x=y", "?version=bad", "?version=00000000x0000x0000x0000x000000000000", "?lang=bad_locale", "?version=", "?lang=%ZZ"} {
 		publicRequest(t, ctx, f.server.Client(), f.base+q, 400)
 	}
@@ -122,6 +125,22 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	rejectSQL(t, ctx, f.owner, publisherTestRole, "UPDATE public.site_revision_languages SET direction='rtl' WHERE revision_id=$1", "23514", f.publication)
 	_, _, err = f.editor.Publish(ctx, f.version)
 	siteError(t, err, 409)
+	f.testSDK(t, ctx, false)
+}
+
+// Проверяем экспортируемый SDK через настоящий HTTP и runtime-подключение к PostgreSQL.
+func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable bool) {
+	t.Helper()
+	command := exec.CommandContext(ctx, "node", "../../../../packages/sdk/tests/site-live.mjs")
+	if unavailable {
+		command.Args = append(command.Args, "--unavailable")
+	}
+	command.Env = append(os.Environ(), "STAGE22_API_URL="+f.server.URL, "STAGE22_VERSION="+f.publication)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("site SDK failed: %v\n%s", err, output)
+	}
+	t.Log(strings.TrimSpace(string(output)))
 }
 
 func (f *siteTestFixture) testInvalid(t *testing.T, ctx context.Context) {
