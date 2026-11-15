@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [closed]
 
+# На pull_request GITHUB_TOKEN может не иметь права создавать комментарии.
+# Сам факт merge уже сохраняется GitHub; здесь фиксируем его без API-записи.
 permissions: {}
 
 jobs:
@@ -11,19 +13,14 @@ jobs:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      issues: write
     steps:
-      - uses: actions/github-script@v8
-        with:
-          script: |
-            // Не исполняем и не загружаем код PR; сообщаем только факт GitHub merge.
-            const pr = context.payload.pull_request
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr.number,
-              body: '<!-- stepolonia-ci-watch:merged:' + pr.merge_commit_sha + ' -->\n' +
-                'Squash merge выполнен: ' + pr.merge_commit_sha +
-                '. Все обязательные GitHub Gate остаются в истории PR.',
-            })
+      - name: Зафиксировать merge в журнале Actions
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          printf 'PR #%s принят в main: %s\n' "$PR_NUMBER" "$MERGE_SHA"
+          {
+            printf '## PR #%s слит в main\n\n' "$PR_NUMBER"
+            printf 'Squash merge: `%s`\n' "$MERGE_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
