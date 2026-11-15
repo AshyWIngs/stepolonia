@@ -67,23 +67,20 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/sqlfluff"
           "$RUNNER_TEMP/sqlfluff/bin/pip" install -r infrastructure/quality/sql-requirements.txt
           echo "$RUNNER_TEMP/sqlfluff/bin" >> "$GITHUB_PATH"
-      - name: "Проверить код, SDK, PostgreSQL, браузер и CVE"
+      - name: "Проверить код, БД, браузер и образы (Make Verify)"
         if: steps.scope.outputs.full == 'true'
         shell: bash
         run: |
-          # Один процесс Make: каждая общая prerequisite-цель выполняется один раз.
-          # Python только группирует GNU Make --trace и замеряет время, не меняя Gate.
-          # Bash сохраняет исходный exit Make; Python читает поток, но не запускает команды.
-          set +e
-          make --no-print-directory --trace --jobs=1 SITE=ci.test verify 2>&1 | python3 scripts/ci_verify_report.py trace
-          results=("${PIPESTATUS[@]}")
-          set -e
-          printf '%s\n' "${results[0]}" > reports/ci-verify.exit
-          if (( results[1] != 0 )); then
-            echo "::error::Форматирование Make-лога завершилось ошибкой"
-            exit "${results[1]}"
-          fi
-          exit "${results[0]}"
+          # Make пишет напрямую в GitHub-лог: нет риска удержания pipe дочерними процессами.
+          # В одном вызове Make общие prerequisites исполняются только один раз.
+          started=$SECONDS
+          status=0
+          make --no-print-directory --trace SITE=ci.test verify || status=$?
+          elapsed=$((SECONDS - started))
+          mkdir -p reports
+          printf '%s\n' "$status" > reports/ci-verify.exit
+          printf '{"elapsed_seconds":%s,"exit_code":%s}\n' "$elapsed" "$status" > reports/ci-verify-timings.json
+          exit "$status"
       - name: "Диагностика: журналы PostgreSQL и браузера после сбоя"
         if: ${{ failure() && steps.scope.outputs.full == 'true' }}
         shell: bash
