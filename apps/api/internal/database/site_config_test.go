@@ -16,7 +16,10 @@ import (
 	"stepolonia/apps/api/internal/siteconfig"
 )
 
-const siteArticlesKey = "articles"
+const (
+	siteArticlesKey = "articles"
+	siteEmptyKey    = "empty"
+)
 
 func siteError(t *testing.T, err error, status int) {
 	t.Helper()
@@ -26,7 +29,7 @@ func siteError(t *testing.T, err error, status int) {
 	}
 }
 func siteFixture() siteconfig.Draft {
-	keys := []string{siteArticlesKey, "empty", "pagination", "previous", "next", "navigation", "all", "languages", "errors.400", "errors.404", "errors.503", "errors.other", "errors.retry", "errors.home"}
+	keys := []string{siteArticlesKey, siteEmptyKey, "pagination", "previous", "next", "navigation", "all", "languages", "errors.400", "errors.404", "errors.503", "errors.other", "errors.retry", "errors.home"}
 	catalogs := map[string]map[string]string{}
 	for _, code := range []string{"pl", "en"} {
 		catalogs[code] = map[string]string{}
@@ -152,8 +155,12 @@ func (f *siteTestFixture) testPlaceholders(t *testing.T, ctx context.Context) {
 		requireNoError(t, e)
 	}()
 	d := siteFixture()
+	// Кавычки и SQL-комментарий в редакторском тексте остаются данными bind-параметра.
+	sqlLiteral := "x'); DELETE FROM public.site_state; --"
+	d.Settings.Notice = sqlLiteral
 	for _, m := range d.Catalogs {
 		m[siteArticlesKey] = "Welcome {name}"
+		m[siteEmptyKey] = sqlLiteral
 	}
 	d.Settings.Title = "Next title"
 	f.version, err = f.editor.SaveDraft(ctx, f.version, d)
@@ -167,7 +174,7 @@ func (f *siteTestFixture) testPlaceholders(t *testing.T, ctx context.Context) {
 	publicRequest(t, ctx, f.server.Client(), f.base+"?version="+f.publication, 409)
 	out, err := f.reader.Read(ctx, "en", next)
 	requireNoError(t, err)
-	if out.Settings.Title != "Next title" || out.Messages[siteArticlesKey] != "Welcome {name}" {
+	if out.Settings.Title != "Next title" || out.Messages[siteArticlesKey] != "Welcome {name}" || out.Settings.Notice != sqlLiteral || out.Messages[siteEmptyKey] != sqlLiteral {
 		t.Fatal("mixed publication")
 	}
 	f.publication = next

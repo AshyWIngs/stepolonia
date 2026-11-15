@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -95,7 +94,7 @@ func identifier() (string, error) {
 	}
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+	return (pgtype.UUID{Bytes: b, Valid: true}).String(), nil
 }
 
 type Service struct{ db *sql.DB }
