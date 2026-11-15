@@ -14,21 +14,24 @@ AUDIT = Path("reports/npm-audit.json")
 AUDIT_EXIT = Path("reports/npm-audit.exit")
 MAKE_EXIT = Path("reports/ci-verify.exit")
 TRACE = re.compile(r"^\S+?:\d+: update target '([^']+)' due to:")
+PHASE_LINT = "01 · Анализ Go, Python, Nuxt, SQL и дубликатов"
+PHASE_COMPONENTS = "03 · Конфигурация, Dockerfile и тесты компонентов"
+NOT_RUN = "NOT RUN"
 
 PHASES = {
-    "lint-go": "01 · Анализ Go, Python, Nuxt, SQL и дубликатов",
-    "lint-python": "01 · Анализ Go, Python, Nuxt, SQL и дубликатов",
-    "lint-web": "01 · Анализ Go, Python, Nuxt, SQL и дубликатов",
-    "lint-sql": "01 · Анализ Go, Python, Nuxt, SQL и дубликатов",
-    "duplicates": "01 · Анализ Go, Python, Nuxt, SQL и дубликатов",
+    "lint-go": PHASE_LINT,
+    "lint-python": PHASE_LINT,
+    "lint-web": PHASE_LINT,
+    "lint-sql": PHASE_LINT,
+    "duplicates": PHASE_LINT,
     "sdk-check": "02 · Контракт API и TypeScript SDK",
-    "setup": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "config": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "docker-check": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "python-tests": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "api-checks": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "web-checks": "03 · Конфигурация, Dockerfile и тесты компонентов",
-    "test": "03 · Конфигурация, Dockerfile и тесты компонентов",
+    "setup": PHASE_COMPONENTS,
+    "config": PHASE_COMPONENTS,
+    "docker-check": PHASE_COMPONENTS,
+    "python-tests": PHASE_COMPONENTS,
+    "api-checks": PHASE_COMPONENTS,
+    "web-checks": PHASE_COMPONENTS,
+    "test": PHASE_COMPONENTS,
     "build": "04 · Сборка Docker-образов установки",
     "db-test": "05 · PostgreSQL: схема, роли и миграции",
     "publishing-test": "06 · Публикация: API, SSR и браузер",
@@ -88,17 +91,17 @@ def trace_make():
 
 def audit_data():
     if not AUDIT.is_file():
-        return "NOT RUN", {}, [], "Отчёт npm audit отсутствует"
+        return NOT_RUN, {}, [], "Отчёт npm audit отсутствует"
     try:
         payload = json.loads(AUDIT.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        return "NOT RUN", {}, [], "npm audit вернул невалидный JSON"
+        return NOT_RUN, {}, [], "npm audit вернул невалидный JSON"
     if not isinstance(payload, dict) or payload.get("error"):
         code = (payload.get("error") or {}).get("code", "unknown") if isinstance(payload, dict) else "unknown"
-        return "NOT RUN", {}, [], f"npm audit завершился с ошибкой: {code}"
+        return NOT_RUN, {}, [], f"npm audit завершился с ошибкой: {code}"
     vulnerabilities = payload.get("vulnerabilities")
     if not isinstance(vulnerabilities, dict) or not isinstance(payload.get("metadata", {}).get("vulnerabilities"), dict):
-        return "NOT RUN", {}, [], "В JSON нет обязательной структуры npm audit"
+        return NOT_RUN, {}, [], "В JSON нет обязательной структуры npm audit"
     counts = payload["metadata"]["vulnerabilities"]
     items = []
     for pkg, detail in sorted(vulnerabilities.items()):
@@ -110,53 +113,69 @@ def audit_data():
                       "advisory_ids": advisory_ids})
     exit_status = AUDIT_EXIT.read_text(encoding="utf-8").strip() if AUDIT_EXIT.is_file() else "unknown"
     if exit_status not in ("0", "1"):
-        return "NOT RUN", {}, [], f"npm audit вернул неожиданный код завершения: {exit_status}"
+        return NOT_RUN, {}, [], f"npm audit вернул неожиданный код завершения: {exit_status}"
     return "REVIEW", counts, items, None
+
+
+def append_timings(lines):
+    """Добавить длительности Make, сохранив видимое NOT RUN при сбое отчёта."""
+    if not TIMINGS.is_file():
+        lines.append(f"Измерение Make не было выполнено: **{NOT_RUN}**.")
+        return
+    try:
+        result = json.loads(TIMINGS.read_text(encoding="utf-8"))
+        exit_code = int(MAKE_EXIT.read_text(encoding="utf-8").strip())
+        phases = result.get("phases", [])
+        lines.extend(["| Этап Make | Длительность | Результат |", "|---|---:|---|"])
+        for index, item in enumerate(phases):
+            verdict = "FAIL" if index == len(phases) - 1 and exit_code != 0 else "PASS"
+            lines.append(f"| {item['phase']} | {seconds(item['seconds'])} | {verdict} |")
+        final_status = "PASS" if exit_code == 0 else "FAIL"
+        lines.append(f"| **Итого (один вызов Make)** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |")
+        if result.get("unrecognized_trace"):
+            lines.append("\n**Внимание:** не распознаны этапы GNU Make; см. полный GitHub-лог.")
+        if result.get("rolldown_plugin_timing_warnings", 0):
+            lines.append("\n**Rolldown PLUGIN_TIMINGS:** предупреждение о времени сборочного плагина; "
+                         "не является CVE и не блокирует Gate. Профилировать при повторяемом замедлении.")
+    except (OSError, ValueError, KeyError, TypeError):
+        lines.append(f"Время Make не удалось прочитать: **{NOT_RUN}**.")
+
+
+def append_audit_findings(lines, counts, findings):
+    """Показать находки npm без автоматического принятия или исправления риска."""
+    levels = ("critical", "high", "moderate", "low", "info")
+    lines.append("Найдено пакетов с advisory по уровням: " + ", ".join(
+        f"{key}={counts.get(key, 0)}" for key in levels) + ".")
+    if not findings:
+        lines.append("Advisories не найдены в текущем lockfile.")
+        return
+    lines.extend(["", "| Пакет | Серьёзность | Advisory ID | Статус |", "|---|---|---|---|"])
+    for item in findings[:30]:
+        ids = ", ".join(item["advisory_ids"]) or "косвенная зависимость"
+        lines.append(f"| {item['name']} | {item['severity']} | {ids} | OPEN: требует разбора |")
+    if len(findings) > 30:
+        lines.append(f"\nЕщё {len(findings) - 30} пакетов: см. приложенный JSON.")
+    group(f"::warning::npm audit: {len(findings)} пакетов с открытыми advisory; см. итог проверки и npm-audit.json")
+
+
+def append_audit_summary(lines):
+    """Учитывать информационные npm advisory отдельно от Docker/Grype Gate."""
+    _state, counts, findings, error = audit_data()
+    lines.extend(["", "### npm audit: зависимости Nuxt (отчёт по lockfile)", ""])
+    if error:
+        lines.append(f"**{NOT_RUN}:** {error}. Это не результат проверки уязвимостей.")
+        group(f"::warning::{error}")
+    else:
+        append_audit_findings(lines, counts, findings)
+    lines.extend(["", "**Важно:** npm audit здесь инвентаризирует advisory и не меняет существующий порог "
+                  "обязательного Docker/Grype Gate. LOW/MODERATE не считаются автоматически принятым риском; "
+                  "HIGH/CRITICAL требуют отдельного разбора. Автоматическое исправление зависимостей не запускается."])
 
 
 def summarize():
     lines = ["## Проверка проекта: время и предупреждения", ""]
-    if TIMINGS.is_file():
-        try:
-            result = json.loads(TIMINGS.read_text(encoding="utf-8"))
-            lines += ["| Этап Make | Длительность | Результат |", "|---|---:|---|"]
-            exit_code = int(MAKE_EXIT.read_text(encoding="utf-8").strip())
-            phases = result.get("phases", [])
-            for index, item in enumerate(phases):
-                verdict = "FAIL" if index == len(phases) - 1 and exit_code != 0 else "PASS"
-                lines.append(f"| {item['phase']} | {seconds(item['seconds'])} | {verdict} |")
-            final_status = "PASS" if exit_code == 0 else "FAIL"
-            lines.append(f"| **Итого (один вызов Make)** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |")
-            if result.get("unrecognized_trace"):
-                lines.append("\n**Внимание:** не распознаны этапы GNU Make; см. полный GitHub-лог.")
-            if result.get("rolldown_plugin_timing_warnings", 0):
-                lines.append("\n**Rolldown PLUGIN_TIMINGS:** предупреждение о времени сборочного плагина; "
-                             "не является CVE и не блокирует Gate. Профилировать при повторяемом замедлении.")
-        except (OSError, ValueError, KeyError, TypeError):
-            lines.append("Время Make не удалось прочитать: **NOT RUN**.")
-    else:
-        lines.append("Измерение Make не было выполнено: **NOT RUN**.")
-    _state, counts, findings, error = audit_data()
-    lines += ["", "### npm audit: зависимости Nuxt (отчёт по lockfile)", ""]
-    if error:
-        lines.append(f"**NOT RUN:** {error}. Это не результат проверки уязвимостей.")
-        group(f"::warning::{error}")
-    else:
-        levels = ("critical", "high", "moderate", "low", "info")
-        lines.append("Найдено пакетов с advisory по уровням: " + ", ".join(f"{key}={counts.get(key, 0)}" for key in levels) + ".")
-        if findings:
-            lines += ["", "| Пакет | Серьёзность | Advisory ID | Статус |", "|---|---|---|---|"]
-            for item in findings[:30]:
-                ids = ", ".join(item["advisory_ids"]) or "косвенная зависимость"
-                lines.append(f"| {item['name']} | {item['severity']} | {ids} | OPEN: требует разбора |")
-            if len(findings) > 30:
-                lines.append(f"\nЕщё {len(findings) - 30} пакетов: см. приложенный JSON.")
-            group(f"::warning::npm audit: {len(findings)} пакетов с открытыми advisory; см. итог проверки и npm-audit.json")
-        else:
-            lines.append("Advisories не найдены в текущем lockfile.")
-    lines += ["", "**Важно:** npm audit здесь инвентаризирует advisory и не меняет существующий порог обязательного Docker/Grype Gate. "
-              "LOW/MODERATE не считаются автоматически принятым риском; HIGH/CRITICAL требуют отдельного разбора. "
-              "Автоматическое исправление зависимостей не запускается."]
+    append_timings(lines)
+    append_audit_summary(lines)
     summary = "\n".join(lines) + "\n"
     dest = os.getenv("GITHUB_STEP_SUMMARY")
     if dest:
