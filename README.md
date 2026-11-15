@@ -173,6 +173,19 @@ Runtime читает только `public_languages`, `public_article_translatio
 описаний, публичные права и защищённый откат. Локальные файловые ограничения
 дополнительно проверяются командой `python3 -m unittest discover -s scripts/tests -v`.
 GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`.
+
+Монитор [PR CI Watch](.github/workflows/ci-watch.yml) раз в 10 минут проверяет
+четыре обязательных GitHub Gate (расписание GitHub не гарантирует точный интервал),
+комментирует окончательный FAIL и длительный PENDING. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
+сообщает о принятом squash merge. Эти операции **не вызывают Codex**.
+Автоматическая однократная попытка Codex включается только после установки
+двух GitHub Actions repository secrets: `OPENAI_API_KEY` (ключ OpenAI API с
+отдельным тарифицированием) и `CI_AUTOFIX_PUSH_TOKEN` (fine-grained токен
+для данного репозитория с `Contents: Read and write`). Токен нужен, чтобы
+после исправления в исходной PR-ветке GitHub действительно запустил новые
+обязательные Gate. Без обоих секретов модель не вызывается. Исправление ограничено
+проверенными исходными файлами; неудачное исправление или повторный FAIL требует
+ручного продолжения. Не помещайте значения токенов в репозиторий, PR или логи.
 Для полного `verify`, как и для `db-test`, нужен Go на хосте и C compiler.
 Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
 Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).
