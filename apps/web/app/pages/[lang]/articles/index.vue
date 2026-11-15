@@ -3,6 +3,8 @@ import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
 import { articlesPath, publicError, routeSegment } from '~/utils/public-content'
 
+defineOptions({ name: 'PublishedArticleListPage' })
+
 const route = useRoute()
 const language = routeSegment(route.params.lang).toLowerCase()
 const rawPage = route.query.page ?? '1'

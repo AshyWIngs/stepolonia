@@ -2,9 +2,11 @@
 import { clearError, useHead, useRuntimeConfig } from '#imports'
 import type { NuxtError } from '#app'
 
+defineOptions({ name: 'PublicErrorPage' })
+
 const props = defineProps<{ error: NuxtError }>()
 const { site } = useRuntimeConfig().public
-const messages: Record<number, string> = {
+const messages: Partial<Record<number, string>> = {
   400: 'Некорректный адрес',
   404: 'Страница не найдена',
   503: 'Материалы временно недоступны',

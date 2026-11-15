@@ -51,11 +51,9 @@ async function checkSSR() {
   assert.equal(redirect.response.headers.get('location'), currentPath)
   const target = await documentResponse(redirect.response.headers.get('location'), 200)
   publishedHTML(target.html)
-  for (const path of ['/pl/articles', '/de/articles', '/zz/articles', '/en/articles/stage15-fr-current',
-    '/kk/articles/http-private', '/kk/articles/http-first', '/kk/articles/http-final']) {
-    const missing = await documentResponse(path, 404)
-    assert.ok(!missing.html.includes('Title http-private'))
-  }
+  const missingPages = await Promise.all(['/pl/articles', '/de/articles', '/zz/articles', '/en/articles/stage15-fr-current',
+    '/kk/articles/http-private', '/kk/articles/http-first', '/kk/articles/http-final'].map(path => documentResponse(path, 404)))
+  for (const missing of missingPages) assert.ok(!missing.html.includes('Title http-private'))
   await documentResponse('/fr/articles/invalid_slug', 400)
   const empty = await documentResponse('/en/articles', 200)
   assert.ok(empty.html.includes('На этом языке пока нет опубликованных статей.'))

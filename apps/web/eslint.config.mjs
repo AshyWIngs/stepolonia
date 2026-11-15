@@ -4,6 +4,8 @@ import sonarjs from 'eslint-plugin-sonarjs'
 export default withNuxt({
   plugins: { sonarjs },
   rules: {
+    'no-await-in-loop': 'error',
+    'vue/multi-word-component-names': 'error',
     complexity: ['error', 15],
     'sonarjs/cognitive-complexity': ['error', 15],
     'max-lines-per-function': ['error', { max: 80, skipBlankLines: true, skipComments: true }],

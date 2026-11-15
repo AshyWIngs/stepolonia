@@ -4,6 +4,8 @@ import { usePublicContent } from '~/composables/usePublicContent'
 import { markdownDescription } from '~/utils/markdown'
 import { articlesPath, canonicalUrl, publicError, routeSegment } from '~/utils/public-content'
 
+defineOptions({ name: 'PublishedArticlePage' })
+
 const route = useRoute()
 const language = routeSegment(route.params.lang).toLowerCase()
 const slug = routeSegment(route.params.slug)

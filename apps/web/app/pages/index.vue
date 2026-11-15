@@ -2,6 +2,8 @@
 import { useRuntimeConfig } from '#imports'
 import { articlesPath } from '~/utils/public-content'
 
+defineOptions({ name: 'PortalHomePage' })
+
 const { site } = useRuntimeConfig().public
 </script>
 
