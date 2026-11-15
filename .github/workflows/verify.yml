@@ -67,20 +67,59 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/sqlfluff"
           "$RUNNER_TEMP/sqlfluff/bin/pip" install -r infrastructure/quality/sql-requirements.txt
           echo "$RUNNER_TEMP/sqlfluff/bin" >> "$GITHUB_PATH"
-      - name: "Проверить код, БД, браузер и образы (Make Verify)"
+      # Один runner и Docker daemon; CI вызывает только исполняемые цели.
+      # Полный эквивалент make verify, без повторного выполнения PHONY prerequisites.
+      - name: "Go: статический анализ"
         if: steps.scope.outputs.full == 'true'
-        shell: bash
-        run: |
-          # Make пишет напрямую в GitHub-лог: нет риска удержания pipe дочерними процессами.
-          # В одном вызове Make общие prerequisites исполняются только один раз.
-          started=$SECONDS
-          status=0
-          make --no-print-directory --trace SITE=ci.test verify || status=$?
-          elapsed=$((SECONDS - started))
-          mkdir -p reports
-          printf '%s\n' "$status" > reports/ci-verify.exit
-          printf '{"elapsed_seconds":%s,"exit_code":%s}\n' "$elapsed" "$status" > reports/ci-verify-timings.json
-          exit "$status"
+        run: make SITE=ci.test lint-go
+      - name: "Python: статический анализ"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-python
+      - name: "Nuxt: статический анализ"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-web
+      - name: "SQL: проверка миграций SQLFluff"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test lint-sql
+      - name: "Дубликаты: проверка кода"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test duplicates
+      - name: "API: проверка контракта и TypeScript SDK"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test sdk-check
+      - name: "Установка: подготовить ci.test"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test setup
+      - name: "Compose: проверить конфигурацию"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-config
+      - name: "Dockerfile: проверить инструкции сборки"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test docker-check
+      - name: "Python: выполнить тесты"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test python-tests
+      - name: "API: тесты Go"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test api-checks
+      - name: "Nuxt: тесты и сборка"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test web-checks
+      - name: "Инфраструктура: тесты Caddy и PostgreSQL"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-service-checks
+      - name: "Docker: собрать сервисы установки"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-build
+      - name: "PostgreSQL: миграции, роли и CLI"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-db-test
+      - name: "Публикации: API, SSR и браузер"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-publishing-test
+      - name: "Безопасность: CVE-аудит 11 образов"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test ci-image-audit
       - name: "Диагностика: журналы PostgreSQL и браузера после сбоя"
         if: ${{ failure() && steps.scope.outputs.full == 'true' }}
         shell: bash
@@ -106,10 +145,10 @@ jobs:
           (cd apps/web && npm audit --json --package-lock-only) > reports/npm-audit.json 2> reports/npm-audit.stderr || status=$?
           printf '%s\n' "$status" > reports/npm-audit.exit
           echo "npm audit exit=$status (код 1 допустим при найденных advisory; статус разберёт итоговый отчёт)."
-      - name: "Итоги: длительность и неразобранные предупреждения"
+      - name: "Отчёт: npm advisories и предупреждения"
         if: ${{ always() && steps.scope.outputs.full == 'true' }}
         run: python3 scripts/ci_verify_report.py summary
-      - name: "Артефакты: линтеры, CVE и npm advisories"
+      - name: "Артефакты: результаты проверок и CVE"
         if: ${{ always() && steps.scope.outputs.full == 'true' }}
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -122,7 +161,5 @@ jobs:
             reports/images/*.json
             reports/images/*.identity
             reports/images/*.log
-            reports/ci-verify-timings.json
-            reports/ci-verify.exit
             reports/npm-audit.json
             reports/npm-audit.exit
