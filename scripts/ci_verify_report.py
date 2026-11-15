@@ -5,39 +5,13 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import sys
-import time
 
 TIMINGS = Path("reports/ci-verify-timings.json")
 AUDIT = Path("reports/npm-audit.json")
 AUDIT_EXIT = Path("reports/npm-audit.exit")
 MAKE_EXIT = Path("reports/ci-verify.exit")
-TRACE = re.compile(r"^\S+?:\d+: update target '([^']+)' due to:")
-PHASE_LINT = "01 · Анализ Go, Python, Nuxt, SQL и дубликатов"
-PHASE_COMPONENTS = "03 · Конфигурация, Dockerfile и тесты компонентов"
 NOT_RUN = "NOT RUN"
-
-PHASES = {
-    "lint-go": PHASE_LINT,
-    "lint-python": PHASE_LINT,
-    "lint-web": PHASE_LINT,
-    "lint-sql": PHASE_LINT,
-    "duplicates": PHASE_LINT,
-    "sdk-check": "02 · Контракт API и TypeScript SDK",
-    "setup": PHASE_COMPONENTS,
-    "config": PHASE_COMPONENTS,
-    "docker-check": PHASE_COMPONENTS,
-    "python-tests": PHASE_COMPONENTS,
-    "api-checks": PHASE_COMPONENTS,
-    "web-checks": PHASE_COMPONENTS,
-    "test": PHASE_COMPONENTS,
-    "build": "04 · Сборка Docker-образов установки",
-    "db-test": "05 · PostgreSQL: схема, роли и миграции",
-    "publishing-test": "06 · Публикация: API, SSR и браузер",
-    "image-audit": "07 · Безопасность: CVE всех Docker-образов",
-}
-
 
 def group(message):
     if os.environ.get("GITHUB_ACTIONS") == "true":
@@ -47,46 +21,6 @@ def group(message):
 def seconds(value):
     minutes, rest = divmod(round(value), 60)
     return f"{minutes} мин {rest:02d} с" if minutes else f"{rest} с"
-
-
-def trace_make():
-    TIMINGS.parent.mkdir(parents=True, exist_ok=True)
-    active = None
-    started = time.monotonic()
-    phase_started = started
-    entries = []
-    plugin_timing_warnings = 0
-
-    def close_phase():
-        nonlocal active
-        if active:
-            entries.append({"phase": active, "seconds": round(time.monotonic() - phase_started, 2)})
-            group("::endgroup::")
-            active = None
-
-    for line in sys.stdin:
-        if "[PLUGIN_TIMINGS]" in line:
-            plugin_timing_warnings += 1
-        match = TRACE.match(line)
-        if match:
-            phase = PHASES.get(match.group(1))
-            if phase and phase != active:
-                close_phase()
-                active = phase
-                phase_started = time.monotonic()
-                group(f"::group::{phase}")
-        print(line, end="", flush=True)
-    close_phase()
-    record = {
-        "elapsed_seconds": round(time.monotonic() - started, 2),
-        "phases": entries,
-        "unrecognized_trace": not bool(entries),
-        "rolldown_plugin_timing_warnings": plugin_timing_warnings,
-    }
-    TIMINGS.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    if not entries:
-        group("::warning::GNU Make --trace не удалось разобрать; см. полный GitHub-лог")
-    return 0
 
 
 def audit_data():
@@ -118,28 +52,21 @@ def audit_data():
 
 
 def append_timings(lines):
-    """Добавить длительности Make, сохранив видимое NOT RUN при сбое отчёта."""
+    """Показать прямой Make Verify без недостоверной поэтапной детализации."""
     if not TIMINGS.is_file():
         lines.append(f"Измерение Make не было выполнено: **{NOT_RUN}**.")
         return
     try:
         result = json.loads(TIMINGS.read_text(encoding="utf-8"))
         exit_code = int(MAKE_EXIT.read_text(encoding="utf-8").strip())
-        phases = result.get("phases", [])
-        lines.extend(["| Этап Make | Длительность | Результат |", "|---|---:|---|"])
-        for index, item in enumerate(phases):
-            verdict = "FAIL" if index == len(phases) - 1 and exit_code != 0 else "PASS"
-            lines.append(f"| {item['phase']} | {seconds(item['seconds'])} | {verdict} |")
         final_status = "PASS" if exit_code == 0 else "FAIL"
-        lines.append(f"| **Итого (один вызов Make)** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |")
-        if result.get("unrecognized_trace"):
-            lines.append("\n**Внимание:** не распознаны этапы GNU Make; см. полный GitHub-лог.")
-        if result.get("rolldown_plugin_timing_warnings", 0):
-            lines.append("\n**Rolldown PLUGIN_TIMINGS:** предупреждение о времени сборочного плагина; "
-                         "не является CVE и не блокирует Gate. Профилировать при повторяемом замедлении.")
+        lines.extend(["| Этап | Длительность | Результат |", "|---|---:|---|",
+                      f"| **Полный Make Verify** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |",
+                      "",
+                      "Внутренние цели GNU Make видны в прямом GitHub-логе. Отдельные времена фаз не измеряются, "
+                      "чтобы не пропускать вывод через потенциально блокирующий конвейер."])
     except (OSError, ValueError, KeyError, TypeError):
         lines.append(f"Время Make не удалось прочитать: **{NOT_RUN}**.")
-
 
 def append_audit_findings(lines, counts, findings):
     """Показать находки npm без автоматического принятия или исправления риска."""
@@ -189,11 +116,8 @@ def summarize():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
-    sub.add_parser("trace", help="Группировать стандартный вывод GNU Make --trace")
     sub.add_parser("summary", help="Записать итоги в GitHub Actions Job Summary")
     args = parser.parse_args()
-    if args.action == "trace":
-        return trace_make()
     return summarize()
 
 
