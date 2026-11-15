@@ -78,9 +78,20 @@ jobs:
                     name + ' (' + latest.get(name).conclusion + ')').join(', ')
                 : stale ? 'Более часа не завершены проверки: ' + missing.join(', ')
                   : 'Все четыре Gate завершились успешно, но включённый auto-merge не слил PR более часа.'
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: pr.number,
-                body: marker + '\n' + explanation + '\nSHA: `' + sha +
-                  '`. Проверьте результаты в GitHub; автоматический запуск Codex отключён.',
-              })
+              try {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pr.number,
+                  body: marker + '\n' + explanation + '\nSHA: `' + sha +
+                    '`. Проверьте результаты в GitHub; автоматический запуск Codex отключён.',
+                })
+              } catch (error) {
+                if (error.status !== 403 || !String(error.message).includes('Resource not accessible by integration')) throw error
+                // GitHub может запрещать запись комментариев даже при issues:write.
+                // Не скрываем сбой доставки и не запрашиваем дополнительные токены.
+                const url = 'https://github.com/' + owner + '/' + repo + '/pull/' + pr.number
+                core.warning('Недостаточно прав для комментария к ' + url +
+                  '; причина: ' + explanation)
+                await core.summary.addRaw('Уведомление не опубликовано: ' + url +
+                  ' — ' + explanation + '\n').write()
+              }
             }
