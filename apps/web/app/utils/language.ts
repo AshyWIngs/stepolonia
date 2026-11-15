@@ -22,22 +22,33 @@ function rangeMatches(range: string, code: string): boolean {
   return range === '*' || code === range || code.startsWith(`${range}-`)
 }
 
-function eligible(code: string, preferences: Preference[], requested: Preference): boolean {
+function effectivePreference(code: string, ranges: Map<string, Preference>): Preference | undefined {
+  let match = ranges.get('*')
+  let candidate = code
+  while (candidate) {
+    const preference = ranges.get(candidate)
+    if (preference && (!match || preference.range.length > match.range.length
+      || (preference.range.length === match.range.length && preference.quality > match.quality))) match = preference
+    candidate = candidate.replace(/(?:^|-)[^-]+$/u, '')
+  }
+  return match
+}
+
+function eligible(code: string, effective: Map<string, Preference | undefined>, requested: Preference): boolean {
   // Более точный диапазон перекрывает wildcard и общий языковой диапазон.
-  const match = preferences.filter(item => rangeMatches(item.range, code))
-    .sort((left, right) => right.range.length - left.range.length || right.quality - left.quality)[0]
+  const match = effective.get(code)
   if (!match) return true
   // Явный диапазон сохраняет свой q, wildcard не повышает его приоритет.
   if (match.range.length > requested.range.length) return false
   return match.quality > 0 || match.range.length < requested.range.length
 }
 
-function lookup(preference: Preference, codes: string[], preferences: Preference[]): string | undefined {
+function lookup(preference: Preference, codes: string[], codeSet: Set<string>, effective: Map<string, Preference | undefined>): string | undefined {
   let range = preference.range
   let candidate = range
   while (candidate) {
-    const ordered = [...codes].sort((left, right) => Number(right === candidate) - Number(left === candidate))
-    const match = ordered.find(code => rangeMatches(candidate, code) && eligible(code, preferences, preference))
+    if (codeSet.has(candidate) && eligible(candidate, effective, preference)) return candidate
+    const match = codes.find(code => rangeMatches(candidate, code) && eligible(code, effective, preference))
     if (match) return match
     // RFC 4647 lookup отбрасывает регион и одиночный extension subtag вместе с его значением.
     candidate = candidate.replace(/(?:-[a-z0-9])?-[a-z0-9]+$/u, '')
@@ -50,14 +61,22 @@ function lookup(preference: Preference, codes: string[], preferences: Preference
 export function preferredContentLanguage(codes: string[], fallback: string, saved: string | null | undefined, header: string): string {
   if (saved && codes.includes(saved)) return saved
   const preferences = header.split(',').map(parsePreference).filter((item): item is Preference => item !== undefined)
+  // Недоверенный заголовок индексируем один раз, чтобы повторяющиеся и уникальные диапазоны не давали квадратичную работу.
+  const ranges = new Map<string, Preference>()
+  for (const preference of preferences) {
+    if (preference.quality > (ranges.get(preference.range)?.quality ?? -1)) ranges.set(preference.range, preference)
+  }
+  const effective = new Map(codes.map(code => [code, effectivePreference(code, ranges)]))
+  const codeSet = new Set(codes)
+  const wildcardCodes = [fallback, ...codes]
   const ordered = preferences.filter(item => item.quality > 0).sort((left, right) => right.quality - left.quality)
   for (const preference of ordered) {
     if (preference.range === '*') {
-      const match = [fallback, ...codes].find(code => eligible(code, preferences, preference))
+      const match = wildcardCodes.find(code => eligible(code, effective, preference))
       if (match) return match
     }
     else {
-      const match = lookup(preference, codes, preferences)
+      const match = lookup(preference, codes, codeSet, effective)
       if (match) return match
     }
   }

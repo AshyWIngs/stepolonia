@@ -127,8 +127,8 @@ async function safeBrowserArticle(page) {
   assert.equal(await page.locator('article').getAttribute('lang'), 'fr')
 }
 
-async function entryRedirect(origin, headers, language) {
-  const response = await fetch(`${origin}/`, { redirect: 'manual', headers })
+async function entryRedirect(origin, headers, language, signal = AbortSignal.timeout(5000)) {
+  const response = await fetch(`${origin}/`, { redirect: 'manual', headers, signal })
   assert.ok([302, 307].includes(response.status), `Entry redirect: ${response.status}`)
   assert.equal(new URL(response.headers.get('location'), origin).pathname, `/${language}/articles`)
   assert.match(response.headers.get('cache-control') ?? '', /no-store/u)
@@ -146,6 +146,8 @@ async function checkLanguageSelection() {
     entryRedirect(base, { 'Accept-Language': 'ru;q=0.1,*;q=0.8' }, 'en'),
     entryRedirect(base, { Cookie: 'sp_content_language=pl', 'Accept-Language': 'en' }, 'en'),
     entryRedirect(base, { Cookie: 'sp_content_language=fr', 'Accept-Language': 'en' }, 'fr'),
+    // Допустимый по размеру header не должен вызывать повторные обходы всего списка предпочтений.
+    entryRedirect(base, { 'Accept-Language': `en;q=0,fr;q=0,kk;q=0,ru;q=0${',*'.repeat(7500)}` }, 'ru', AbortSignal.timeout(2000)),
   ])
   const direct = await documentResponse(currentPath, 200, {
     'Accept-Language': 'en', Cookie: 'sp_content_language=en',
@@ -171,6 +173,7 @@ async function checkLanguageBrowser() {
     await page.getByRole('heading', { name: articleTitle, exact: true }).waitFor()
     await page.locator('[data-testid="content-languages"] a[data-language="ru"]').click()
     await page.waitForURL(`${base}/ru/articles/stage22-ru-current`)
+    await page.getByRole('heading', { name: 'Title stage22-ru-current', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.__stage22Navigation), 'same-document')
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
     assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
