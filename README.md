@@ -180,8 +180,10 @@ GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`
 запуски по расписанию. При запрете публикации комментария (HTTP 403)
 монитор выводит предупреждение и запись в GitHub Actions Job Summary, не
 запрашивая дополнительных прав. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
-фиксирует squash merge **в Actions Job Summary**, без записи комментариев в PR:
-событие и результат merge также видны в самом GitHub. **Ни один workflow не
+после squash merge пытается оставить комментарий в PR из доверенного
+`pull_request_target`, не исполняя код PR и не используя дополнительные секреты.
+При отказе GitHub (HTTP 403) результат остаётся в Actions Job Summary,
+но доставка комментария не гарантирована. **Ни один workflow не
 вызывает Codex, OpenAI API или платную модель; дополнительные ключи не нужны.**
 
 При работе Codex в интерактивной сессии проверки можно ждать **одним**
