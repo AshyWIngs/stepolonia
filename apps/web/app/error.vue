@@ -17,7 +17,8 @@ const language = fallback && isUiLocale(code) ? code : fallback
 if (language) locale.value = language
 const status = props.error.status ?? 500
 // При ошибке UI fallback не подставляем скрытый язык: безопасный ответ содержит только код статуса.
-const title = language ? t([400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other') : String(status)
+const messageKey = [400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other'
+const title = language ? t(messageKey) : String(status)
 useHead({ title: `${title} | ${site.name}`, htmlAttrs: { lang: language } })
 </script>
 

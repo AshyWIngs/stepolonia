@@ -128,7 +128,12 @@ async function safeBrowserArticle(page) {
 }
 
 async function entryRedirect(origin, headers, language, signal = AbortSignal.timeout(5000)) {
-  const response = await fetch(`${origin}/`, { redirect: 'manual', headers, signal })
+  const target = new URL(origin)
+  const entryPort = Number(target.port)
+  assert.equal(target.protocol, 'http:')
+  assert.equal(target.hostname, '127.0.0.1')
+  assert.ok(Number.isInteger(entryPort) && entryPort > 0 && entryPort <= 65535)
+  const response = await fetch(`http://127.0.0.1:${entryPort}/`, { redirect: 'manual', headers, signal })
   assert.ok([302, 307].includes(response.status), `Entry redirect: ${response.status}`)
   assert.equal(new URL(response.headers.get('location'), origin).pathname, `/${language}/articles`)
   assert.match(response.headers.get('cache-control') ?? '', /no-store/u)

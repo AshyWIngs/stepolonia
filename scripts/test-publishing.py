@@ -68,7 +68,6 @@ def prepare_installation(site, project, database, token, *, runtime=False):
     reports.mkdir(exist_ok=True)
     override = reports / f"publishing-{token}.compose.json"
     log_path = reports / f"publishing-{token}.log"
-    labels = {LABEL: token}
     values = {
         "SITE_ID": site, "COMPOSE_PROJECT_NAME": project,
         "POSTGRES_DB": database, "POSTGRES_USER": "stage12_owner", "DB_USER": "stage12_app",
@@ -84,21 +83,26 @@ def prepare_installation(site, project, database, token, *, runtime=False):
     with os.fdopen(descriptor, "w") as output:
         json.dump({"token": token, "database": database, "project": project,
                    "volume": values["DB_VOLUME_NAME"]}, output)
+    override.write_text(json.dumps(installation_override(project, token, values["DB_VOLUME_NAME"], runtime=runtime)))
+    return directory, override, log_path, values["DB_VOLUME_NAME"]
+
+
+def installation_override(project, token, volume, *, runtime=False, images_project=None):
+    """Один источник конфигурации ресурсов для основной и второй одноразовых установок."""
+    images = images_project or project
+    labels = {LABEL: token}
     services = {
-        "postgres-init": {"image": f"{project}-init:check", "labels": labels},
-        "postgres": {"image": f"{project}-postgres:check", "labels": labels,
+        "postgres-init": {"image": f"{images}-init:check", "labels": labels},
+        "postgres": {"image": f"{images}-postgres:check", "labels": labels,
                      "ports": [{"target": 5432, "published": "0", "host_ip": "127.0.0.1"}]},
-        "db-tools": {"image": f"{project}-tools:check", "labels": labels},
+        "db-tools": {"image": f"{images}-tools:check", "labels": labels},
     }
     if runtime:
         for service in ("api", "web", "caddy"):
-            services[service] = {"image": f"{project}-{service}:check", "labels": labels}
-    override.write_text(json.dumps({"services": services,
-                                   "networks": {"data": {"internal": False, "labels": labels},
-                                                "app": {"labels": labels}},
-                                   "volumes": {"postgres_data": {"name": values["DB_VOLUME_NAME"],
-                                                                  "external": False, "labels": labels}}}))
-    return directory, override, log_path, values["DB_VOLUME_NAME"]
+            services[service] = {"image": f"{images}-{service}:check", "labels": labels}
+    return {"services": services,
+            "networks": {"data": {"internal": False, "labels": labels}, "app": {"labels": labels}},
+            "volumes": {"postgres_data": {"name": volume, "external": False, "labels": labels}}}
 
 
 def check_cli(site, directory, override, compose, config, log):
@@ -183,10 +187,7 @@ def check_localization(base, images_project, log):
     database = f"stage22_{token}"
     directory, override, unused_log, volume = prepare_installation(
         site, project, database, token, runtime=True)
-    configuration = json.loads(override.read_text())
-    for name, service in configuration["services"].items():
-        suffix = {"postgres-init": "init", "db-tools": "tools"}.get(name, name)
-        service["image"] = f"{images_project}-{suffix}:check"
+    configuration = installation_override(project, token, volume, runtime=True, images_project=images_project)
     configuration["services"]["web"]["environment"] = {
         "NUXT_PUBLIC_SITE_LOCALE": "pl", "NUXT_PUBLIC_SITE_UI_FALLBACK": "en",
     }

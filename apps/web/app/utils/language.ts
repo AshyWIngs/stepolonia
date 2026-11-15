@@ -2,7 +2,8 @@ export const uiLocales = ['ru', 'pl', 'kk', 'en'] as const
 export type UiLocale = typeof uiLocales[number]
 
 export function isUiLocale(code: string): code is UiLocale {
-  return uiLocales.some(locale => locale === code)
+  const supported: readonly string[] = uiLocales
+  return supported.includes(code)
 }
 
 export function uiFallback(site: { locale: string, uiFallback: string }): UiLocale | undefined {
@@ -12,10 +13,26 @@ export function uiFallback(site: { locale: string, uiFallback: string }): UiLoca
 
 type Preference = { range: string, quality: number }
 
+function validLanguageRange(range: string): boolean {
+  if (range === '*') return true
+  const subtags = range.split('-')
+  const primary = subtags.shift()
+  return primary !== undefined && /^[a-z]{1,8}$/iu.test(primary)
+    && subtags.every(subtag => /^[a-z0-9]{1,8}$/iu.test(subtag))
+}
+
 function parsePreference(value: string): Preference | undefined {
-  const match = value.trim().match(/^(\*|[a-z]{1,8}(?:-[a-z0-9]{1,8})*)(?:\s*;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/iu)
-  if (!match?.[1]) return undefined
-  return { range: match[1].toLowerCase(), quality: Number(match[2] ?? 1) }
+  const sections = value.trim().split(';')
+  if (sections.length > 2) return undefined
+  const range = sections.at(0)?.trimEnd().toLowerCase()
+  if (!range || !validLanguageRange(range)) return undefined
+  const parameter = sections.at(1)?.trimStart()
+  let quality = 1
+  if (parameter !== undefined) {
+    if (!/^q=(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/iu.exec(parameter)) return undefined
+    quality = Number(parameter.slice(2))
+  }
+  return { range, quality }
 }
 
 function rangeMatches(range: string, code: string): boolean {

@@ -13,7 +13,7 @@ const saved = useContentLanguageCookie()
 // Только сериализованный SSR header: navigator.languages мог бы изменить выбор после гидрации.
 const accepted = useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 const { data, error } = await useAsyncData('entry-languages', () => content.listLanguages(), {
-  getCachedData: (key, app) => app.isHydrating ? app.payload.data[key] : undefined,
+  getCachedData: (_key, app) => app.isHydrating ? app.payload.data['entry-languages'] : undefined,
 })
 if (error.value) throw publicError(error.value.status ?? 503)
 if (!data.value) throw publicError(503)
