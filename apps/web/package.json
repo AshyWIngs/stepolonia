@@ -14,6 +14,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@nuxtjs/i18n": "10.6.0",
     "@stepolonia/sdk": "file:../../packages/sdk",
     "markdown-it": "15.0.3",
     "nuxt": "4.6.4",
@@ -30,6 +31,9 @@
   },
   "overrides": {
     "glob": "14.0.6",
-    "minimatch": "11.0.8"
+    "minimatch": "11.0.8",
+    "@intlify/bundle-utils": {
+      "esbuild": "0.28.2"
+    }
   }
 }

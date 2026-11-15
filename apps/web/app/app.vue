@@ -1,22 +1,30 @@
 <script setup lang="ts">
-import { useHead, useResponseHeader, useRuntimeConfig } from '#imports'
+import { useHead, useRequestHeader, useResponseHeader, useRoute, useState } from '#imports'
+import { computed } from 'vue'
+import { usePublicSite } from '~/composables/usePublicSite'
+import { usePublicUi } from '~/composables/usePublicUi'
 
-const { site } = useRuntimeConfig().public
-useHead({
-  title: site.name,
-  htmlAttrs: { lang: site.locale },
-  meta: [{ name: 'description', content: site.description }],
-})
+const { publication, load } = usePublicSite()
+await load(useRoute().fullPath)
+const site = computed(() => publication.value?.settings)
+// Сохраняем header и на прямом контентном URL для последующего перехода на главную без перезагрузки.
+useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
+const { uiLanguage } = usePublicUi()
+useHead(() => ({
+  title: site.value?.title,
+  htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction },
+  meta: [{ name: 'description', content: site.value?.description }],
+}))
 useResponseHeader('Cache-Control').value = 'no-store'
 </script>
 
 <template>
-  <main :style="{ '--site-accent': site.accent }">
-    <header :lang="site.locale" class="site-header">
-      <p v-if="site.tagline" class="eyebrow">{{ site.tagline }}</p>
-      <NuxtLink to="/" class="site-name">{{ site.name }}</NuxtLink>
-      <p v-if="site.description" class="site-description">{{ site.description }}</p>
-      <p v-if="site.notice" class="note">{{ site.notice }}</p>
+  <main :style="{ '--site-accent': site?.accent }">
+    <header :lang="site?.default_language" class="site-header">
+      <p v-if="site?.tagline" class="eyebrow">{{ site?.tagline }}</p>
+      <NuxtLink to="/" class="site-name">{{ site?.title }}</NuxtLink>
+      <p v-if="site?.description" class="site-description">{{ site?.description }}</p>
+      <p v-if="site?.notice" class="note">{{ site?.notice }}</p>
     </header>
     <NuxtPage :page-key="route => route.fullPath" />
   </main>
@@ -39,6 +47,8 @@ a:focus-visible { outline: 0.15rem solid var(--site-accent); outline-offset: 0.2
 .article-list li { padding: 1rem 0; border-bottom: 1px solid #d5d7cf; }
 .article-list h2 { margin: 0; font-size: 1.6rem; }
 .pagination { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 2rem; }
+.language-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1.5rem; }
+.language-nav [aria-current="page"] { font-weight: 700; }
 .article-body { overflow-wrap: anywhere; }
 .article-body pre { overflow-x: auto; padding: 1rem; background: #eae8e1; direction: ltr; }
 .article-body code { font-size: 0.9em; }

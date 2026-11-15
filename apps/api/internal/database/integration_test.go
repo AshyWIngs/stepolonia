@@ -48,6 +48,7 @@ func TestPublishingSchemaIntegration(t *testing.T) {
 	testMigrationLifecycle(t, ctx, db)
 	testPublishingIntegrity(t, ctx, db, cfg)
 	testPublishingApplication(t, ctx, db, cfg)
+	testSiteConfiguration(t, ctx, db, cfg)
 }
 
 func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
@@ -232,14 +233,14 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	requireNoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM (
 	 SELECT pg_catalog.obj_description(c.oid,'pg_class') AS description
 	 FROM pg_catalog.pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN
-	 ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','public_languages','public_article_translations','public_article_routes')
+	 ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages')
 	 UNION ALL SELECT pg_catalog.col_description(c.oid,a.attnum)
 	 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
 	 WHERE c.relnamespace='public'::regnamespace AND c.relname IN
-	 ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','public_languages','public_article_translations','public_article_routes')
+	 ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages')
 	 UNION ALL SELECT pg_catalog.obj_description(p.oid,'pg_proc') FROM pg_catalog.pg_proc p
 	 WHERE p.pronamespace='public'::regnamespace AND p.proname IN
-	 ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages')
+	 ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
 	 UNION ALL SELECT pg_catalog.obj_description(t.oid,'pg_trigger') FROM pg_catalog.pg_trigger t
 	 JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal
 	 ) descriptions WHERE description IS NULL OR description !~ '[А-Яа-я]'`).Scan(&missing))
@@ -488,7 +489,7 @@ func testLeastPrivileges(t *testing.T, ctx context.Context, db *sql.DB, revision
 	for _, role := range []string{runtimeTestRole, publisherTestRole, languageImporterTestRole} {
 		rejectSQL(t, ctx, db, role, "CREATE TABLE public.forbidden(id int)", "42501")
 	}
-	for _, table := range []string{"languages", "articles", "article_draft_translations", "article_revisions", "article_revision_translations", "public_routes"} {
+	for _, table := range []string{"languages", siteArticlesKey, "article_draft_translations", "article_revisions", "article_revision_translations", "public_routes"} {
 		rejectSQL(t, ctx, db, runtimeTestRole, "SELECT * FROM public."+table, "42501")
 	}
 	rejectSQL(t, ctx, db, runtimeTestRole, insertArticleSQL, "42501", id())

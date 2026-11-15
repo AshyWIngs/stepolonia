@@ -1,25 +1,29 @@
 <script setup lang="ts">
-import { clearError, useHead, useRuntimeConfig } from '#imports'
+import { computed } from 'vue'
+import { clearError, useHead, useResponseHeader } from '#imports'
 import type { NuxtError } from '#app'
+import { usePublicSite } from '~/composables/usePublicSite'
+import { usePublicUi } from '~/composables/usePublicUi'
 
 defineOptions({ name: 'PublicErrorPage' })
-
 const props = defineProps<{ error: NuxtError }>()
-const { site } = useRuntimeConfig().public
-const messages: Partial<Record<number, string>> = {
-  400: 'Некорректный адрес',
-  404: 'Страница не найдена',
-  503: 'Материалы временно недоступны',
-}
-const title = messages[props.error.status ?? 500] ?? 'Не удалось открыть страницу'
-useHead({ title: `${title} | ${site.name}`, htmlAttrs: { lang: 'ru' } })
+const { publication } = usePublicSite()
+const { t, uiLanguage } = usePublicUi()
+useResponseHeader('Cache-Control').value = 'no-store'
+// При сериализации Nuxt теряет getter status; HTTP-код остаётся в контракте NuxtErrorJSON.
+const serializedError: Partial<ReturnType<NuxtError['toJSON']>> = props.error
+const status = props.error.status ?? serializedError.statusCode ?? 500
+const errorKey = [400, 404, 503].includes(status) ? `errors.${status}` : 'errors.other'
+// Без опубликованного каталога ответ содержит только числовой статус, без запасного языка и ENV-текстов.
+const title = computed(() => publication.value ? t(errorKey) : String(status))
+useHead(() => ({ title: title.value, htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction } }))
 </script>
 
 <template>
-  <main lang="ru" :style="{ '--site-accent': site.accent }">
-    <p>{{ site.name }}</p>
+  <main :lang="uiLanguage" :style="{ '--site-accent': publication?.settings.accent }">
+    <p v-if="publication" :lang="publication.settings.default_language">{{ publication.settings.title }}</p>
     <h1>{{ title }}</h1>
-    <p v-if="error.status === 503">Попробуйте открыть страницу позднее.</p>
-    <a href="/" @click.prevent="clearError({ redirect: '/' })">На главную</a>
+    <p v-if="publication && status === 503">{{ t('errors.retry') }}</p>
+    <a v-if="publication" href="/" @click.prevent="clearError({ redirect: '/' })">{{ t('errors.home') }}</a>
   </main>
 </template>

@@ -68,12 +68,10 @@ def prepare_installation(site, project, database, token, *, runtime=False):
     reports.mkdir(exist_ok=True)
     override = reports / f"publishing-{token}.compose.json"
     log_path = reports / f"publishing-{token}.log"
-    labels = {LABEL: token}
     values = {
         "SITE_ID": site, "COMPOSE_PROJECT_NAME": project,
         "POSTGRES_DB": database, "POSTGRES_USER": "stage12_owner", "DB_USER": "stage12_app",
         "DB_VOLUME_NAME": f"{project}-data", "DB_VOLUME_EXTERNAL": "false",
-        "NUXT_PUBLIC_SITE_NAME": "Schema integration", "NUXT_PUBLIC_SITE_LOCALE": "ru",
         "HTTP_BIND": "127.0.0.1", "HTTP_PORT": "0",
     }
     env_file = directory / ".env"
@@ -84,21 +82,26 @@ def prepare_installation(site, project, database, token, *, runtime=False):
     with os.fdopen(descriptor, "w") as output:
         json.dump({"token": token, "database": database, "project": project,
                    "volume": values["DB_VOLUME_NAME"]}, output)
+    override.write_text(json.dumps(installation_override(project, token, values["DB_VOLUME_NAME"], runtime=runtime)))
+    return directory, override, log_path, values["DB_VOLUME_NAME"]
+
+
+def installation_override(project, token, volume, *, runtime=False, images_project=None):
+    """Один источник конфигурации ресурсов для основной и второй одноразовых установок."""
+    images = images_project or project
+    labels = {LABEL: token}
     services = {
-        "postgres-init": {"image": f"{project}-init:check", "labels": labels},
-        "postgres": {"image": f"{project}-postgres:check", "labels": labels,
+        "postgres-init": {"image": f"{images}-init:check", "labels": labels},
+        "postgres": {"image": f"{images}-postgres:check", "labels": labels,
                      "ports": [{"target": 5432, "published": "0", "host_ip": "127.0.0.1"}]},
-        "db-tools": {"image": f"{project}-tools:check", "labels": labels},
+        "db-tools": {"image": f"{images}-tools:check", "labels": labels},
     }
     if runtime:
         for service in ("api", "web", "caddy"):
-            services[service] = {"image": f"{project}-{service}:check", "labels": labels}
-    override.write_text(json.dumps({"services": services,
-                                   "networks": {"data": {"internal": False, "labels": labels},
-                                                "app": {"labels": labels}},
-                                   "volumes": {"postgres_data": {"name": values["DB_VOLUME_NAME"],
-                                                                  "external": False, "labels": labels}}}))
-    return directory, override, log_path, values["DB_VOLUME_NAME"]
+            services[service] = {"image": f"{images}-{service}:check", "labels": labels}
+    return {"services": services,
+            "networks": {"data": {"internal": False, "labels": labels}, "app": {"labels": labels}},
+            "volumes": {"postgres_data": {"name": volume, "external": False, "labels": labels}}}
 
 
 def check_cli(site, directory, override, compose, config, log):
@@ -166,6 +169,93 @@ def check_runtime(site, directory, override, compose, environment, project, toke
         # Перед реальной остановкой БД повторно подтверждаем владельца всех ресурсов.
         verify_owned(project, token, log)
         smoke.check_publishing_recovery(base)
+    check_localization(base, project, log)
+
+
+def localization_browser(base, mode, log, **environment):
+    """Один browser harness проверяет реальные установки через Caddy."""
+    command(["node", "apps/web/tests/live.mjs", mode], log,
+            env={**os.environ, "STAGE14_API_URL": base, **environment})
+
+
+def check_localization(base, images_project, log):
+    """Вторая изолированная БД исключает смешивание материалов и предпочтений."""
+    token = secrets.token_hex(6)
+    site = f"stage22-{token}.test"
+    project = f"sp-stage22-{token}"
+    database = f"stage12_{token}"
+    directory, override, unused_log, volume = prepare_installation(
+        site, project, database, token, runtime=True)
+    configuration = installation_override(project, token, volume, runtime=True, images_project=images_project)
+    override.write_text(json.dumps(configuration))
+    compose = [*compose_command(site), "-f", str(override), "--project-name", project]
+    resources_owned = False
+    try:
+        command(["python3", "scripts/setup-local.py", "--site", site], log)
+        config = load_config(site, override=override)
+        if config["name"] != project or config["volumes"]["postgres_data"]["name"] != volume:
+            raise RuntimeError("Не совпадает идентичность второй временной установки")
+        verify_owned(project, token, log, volume=volume)
+        resources_owned = True
+        command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
+        query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
+        command([*compose, *postgres_sql_args(config, query)], log)
+        for arguments in (["prepare-roles"], ["migrate", "up"], ["seed"]):
+            run_tool(site, arguments, override=override, log=log)
+        languages = directory / "languages.csv"
+        languages.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
+        run_tool(site, ["import-languages", "/input/languages.csv"], input_file=languages,
+                 override=override, log=log)
+        command([*compose, *postgres_sql_args(config,
+                 "UPDATE public.languages SET is_enabled=(code IN ('pl','en','fr'))")], log)
+        database_port = published_port(compose, "postgres", 5432, token, log)
+        environment = {
+            **os.environ,
+            "DB_DISPOSABLE_TOKEN": token,
+            "STAGE12_TEST_DATABASE_URL": (
+                f"postgres://stage12_owner@127.0.0.1:{database_port}/{database}?sslmode=disable"),
+            "STAGE12_TEST_PASSWORD_FILE": str(directory / ".secrets/db_owner_password"),
+            "STAGE12_TEST_RUNTIME_PASSWORD_FILE": str(directory / ".secrets/db_app_password"),
+        }
+        publish_site_fixture(environment, "secondary", log)
+        command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
+        port = published_port(compose, "caddy", 8080, token, log)
+        second_base = f"http://127.0.0.1:{port}"
+        localization_browser(base, "--localization", log, STAGE22_SECOND_URL=second_base)
+        check_language_configuration(second_base, compose, config, environment, log)
+    finally:
+        if resources_owned:
+            verify_owned(project, token, log, volume=volume)
+            command([*compose, "down", "--volumes", "--remove-orphans"], log)
+        shutil.rmtree(directory)
+        override.unlink()
+        unused_log.unlink(missing_ok=True)
+
+
+def publish_site_fixture(environment, mode, log):
+    """Go service публикует только в БД с проверенным disposable-маркером."""
+    command(["go", "test", "-count=1", "-run", "^TestSiteRuntimeFixture$", "./internal/database"],
+            log, env={**environment, "STAGE22_SITE_FIXTURE": mode}, cwd=ROOT / "apps/api")
+
+
+def check_language_configuration(base, compose, config, environment, log):
+    """DB-default и публикации меняются без пересоздания web; сломанные ссылки дают 503."""
+    for query in ("UPDATE public.languages SET is_enabled=false WHERE code='pl'",
+                  "UPDATE public.languages SET is_enabled=false"):
+        command([*compose, *postgres_sql_args(config, query)], log)
+        localization_browser(base, "--config-unavailable", log)
+    command([*compose, *postgres_sql_args(config,
+             "UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','en','fr')")], log)
+    publish_site_fixture(environment, "updated", log)
+    localization_browser(base, "--site-default", log, STAGE22_DEFAULT="en")
+    localization_browser(base, "--site-republished", log)
+    publish_site_fixture(environment, "draft", log)
+    localization_browser(base, "--site-draft", log)
+    publish_site_fixture(environment, "secondary", log)
+    # Default pl остаётся enabled: отдельно ломаем именно опубликованный fallback en.
+    command([*compose, *postgres_sql_args(config,
+             "UPDATE public.languages SET is_enabled=false WHERE code='en'")], log)
+    localization_browser(base, "--config-unavailable", log)
 
 
 def main(runtime=False):

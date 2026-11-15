@@ -2,16 +2,15 @@
 """Verify two installations on identical images; remove only the generated test site."""
 import argparse
 from datetime import datetime, timezone
-from html import escape
 import hashlib
 import json
 import secrets
 import shutil
 import socket
 import subprocess
-from urllib.request import urlopen
 
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
+from smoke import check_site_branding
 
 RESULTS = []
 
@@ -90,7 +89,7 @@ def main(primary):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         subprocess.run(["python3", str(ROOT / "scripts/setup-local.py"), "--site", test_site,
-                        "--port", str(port), "--name", "Stepolonia isolation check"], check=True)
+                        "--port", str(port)], check=True)
         secondary = load_config(test_site)
         verify("distinct deployment names", original["name"] != secondary["name"])
         verify("distinct PostgreSQL volumes", original["volumes"]["postgres_data"]["name"]
@@ -112,11 +111,7 @@ def main(primary):
         verify_postgres_runtime(test_site, secondary)
         for site, config in ((primary, original), (test_site, secondary)):
             published = config["services"]["caddy"]["ports"][0]["published"]
-            with urlopen(f"http://127.0.0.1:{published}/", timeout=5) as response:
-                body = response.read().decode()
-                name = config["services"]["web"]["environment"]["NUXT_PUBLIC_SITE_NAME"]
-                verify(f"{site}: own branding in SSR", response.status == 200
-                       and f"<h1>{escape(name, quote=False)}</h1>" in body)
+            check_site_branding(f"http://127.0.0.1:{published}")
             active = compose(site, *postgres_sql_args(config,
                              "SELECT DISTINCT datname || ':' || usename FROM pg_stat_activity "
                              "WHERE application_name='sp-api'"))
