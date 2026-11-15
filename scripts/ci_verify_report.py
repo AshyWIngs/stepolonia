@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Группировка единственного Make Verify и краткая сводка для GitHub CI."""
+"""Сводка npm advisories и предупреждений в GitHub Actions."""
 
 import argparse
 import json
@@ -7,20 +7,13 @@ import os
 from pathlib import Path
 import sys
 
-TIMINGS = Path("reports/ci-verify-timings.json")
 AUDIT = Path("reports/npm-audit.json")
 AUDIT_EXIT = Path("reports/npm-audit.exit")
-MAKE_EXIT = Path("reports/ci-verify.exit")
 NOT_RUN = "NOT RUN"
 
 def group(message):
     if os.environ.get("GITHUB_ACTIONS") == "true":
         print(message, flush=True)
-
-
-def seconds(value):
-    minutes, rest = divmod(round(value), 60)
-    return f"{minutes} мин {rest:02d} с" if minutes else f"{rest} с"
 
 
 def audit_data():
@@ -50,23 +43,6 @@ def audit_data():
         return NOT_RUN, {}, [], f"npm audit вернул неожиданный код завершения: {exit_status}"
     return "REVIEW", counts, items, None
 
-
-def append_timings(lines):
-    """Показать прямой Make Verify без недостоверной поэтапной детализации."""
-    if not TIMINGS.is_file():
-        lines.append(f"Измерение Make не было выполнено: **{NOT_RUN}**.")
-        return
-    try:
-        result = json.loads(TIMINGS.read_text(encoding="utf-8"))
-        exit_code = int(MAKE_EXIT.read_text(encoding="utf-8").strip())
-        final_status = "PASS" if exit_code == 0 else "FAIL"
-        lines.extend(["| Этап | Длительность | Результат |", "|---|---:|---|",
-                      f"| **Полный Make Verify** | **{seconds(result['elapsed_seconds'])}** | **{final_status}** |",
-                      "",
-                      "Внутренние цели GNU Make видны в прямом GitHub-логе. Отдельные времена фаз не измеряются, "
-                      "чтобы не пропускать вывод через потенциально блокирующий конвейер."])
-    except (OSError, ValueError, KeyError, TypeError):
-        lines.append(f"Время Make не удалось прочитать: **{NOT_RUN}**.")
 
 def append_audit_findings(lines, counts, findings):
     """Показать находки npm без автоматического принятия или исправления риска."""
@@ -100,8 +76,7 @@ def append_audit_summary(lines):
 
 
 def summarize():
-    lines = ["## Проверка проекта: время и предупреждения", ""]
-    append_timings(lines)
+    lines = ["## Проверка проекта: npm advisories", ""]
     append_audit_summary(lines)
     summary = "\n".join(lines) + "\n"
     dest = os.getenv("GITHUB_STEP_SUMMARY")
