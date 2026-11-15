@@ -18,7 +18,8 @@ const articleTitle = 'Bonjour de Stepolonia'
 if (['--published', '--unavailable', '--restored'].includes(mode)) await import('../../../packages/sdk/tests/live.mjs')
 
 async function documentResponse(path, status, headers) {
-  const response = await fetch(new URL(path, base), { redirect: 'manual', headers })
+  // SSR-документ запрашиваем как браузер: fetch по умолчанию допускает JSON-ошибку Nitro.
+  const response = await fetch(new URL(path, base), { redirect: 'manual', headers: { Accept: 'text/html', ...headers } })
   const html = await response.text()
   assert.equal(response.status, status, `SSR ${path}: ${response.status}, expected ${status}`)
   assert.match(response.headers.get('x-robots-tag') ?? '', /noindex/u)
