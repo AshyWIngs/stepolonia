@@ -63,7 +63,7 @@ async function scan({ github, core, context, enabled }) {
     }
     // Один платный Codex-запуск на PR; новый SHA не создаёт бесконечный цикл.
     if (!selected && enabled && pr.user.login === owner && attempts.length === 0
-        && pr.head.ref !== 'main' && /^[A-Za-z0-9._/-]+$/.test(pr.head.ref)
+        && pr.head.ref !== 'main' && new RegExp('^[A-Za-z0-9._/-]+$').test(pr.head.ref)
         && !pr.head.ref.includes('..') && !pr.head.ref.includes('@{')) {
       await github.rest.issues.createComment({
         owner, repo, issue_number: pr.number,
