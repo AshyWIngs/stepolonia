@@ -66,6 +66,21 @@ test('без секретов уведомляем один раз, модель
   assert.equal(s.outputs.pr, '')
 })
 
+test('зависшие Gate дают единственное уведомление без запуска Codex', async () => {
+  const s = fixture({ status: 'action_required', completed: false, enabled: true })
+  const original = s.github.paginate
+  s.github.paginate = async (method) => {
+    const result = await original(method)
+    if (Array.isArray(result) && result[0]?.head) result[0].updated_at = '2020-01-01T00:00:00Z'
+    return result
+  }
+  await scan(s)
+  await scan(s)
+  assert.equal(s.calls.length, 1)
+  assert.match(s.calls[0], /больше часа ожидает/)
+  assert.equal(s.outputs.pr, '')
+})
+
 test('одна попытка Codex на PR и никакого повторения на том же SHA', async () => {
   const s = fixture({ status: 'failure', enabled: true })
   await scan(s)
