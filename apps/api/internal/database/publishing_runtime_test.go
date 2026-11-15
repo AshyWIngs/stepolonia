@@ -13,6 +13,19 @@ import (
 	"stepolonia/apps/api/internal/publishing"
 )
 
+// Опубликованный Markdown проверяется настоящими SSR и браузером как недоверенный текст.
+const runtimeArticleMarkdown = `## Une publication
+
+Publié **en français**, avec un [lien sûr](https://example.org).
+
+<script>globalThis.__stepoloniaXss = 1</script>
+<img src="/injected-image" onerror="globalThis.__stepoloniaXss = 2">
+[JavaScript](javascript:alert(1))
+[Encoded](jav&#x61;script:alert(1))
+[VBScript](vbscript:msgbox(1))
+[Data](data:text/html;base64,PHNjcmlwdD4=)
+`
+
 // Harness уже применил миграцию, seed и импорт. Здесь проверяется собранная
 // HTTP-цепочка; проверки миграций, доменных откатов и гонок повторно не запускаются.
 func TestPublishingRuntimeIntegration(t *testing.T) {
@@ -57,7 +70,10 @@ func (f applicationFixture) prepareImportedLanguageHTTP(t *testing.T, ctx contex
 	empty, _ := publicRequest(t, ctx, client, base+"/api/v1/articles?lang=fr", http.StatusOK)
 	assertHTTPArticles(t, empty)
 	state := publishApplicationDraft(t, ctx, f, map[string]publishing.TranslationPatch{"fr": completeTranslation("stage15-fr-first")})
-	state, err := f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"fr": completeTranslation("stage15-fr-current")})
+	patch := completeTranslation("stage15-fr-current")
+	patch.Title = valueField("Bonjour de Stepolonia")
+	patch.BodyMarkdown = valueField(runtimeArticleMarkdown)
+	state, err := f.editor.SaveDraft(ctx, state.ID, state.Version, map[string]publishing.TranslationPatch{"fr": patch})
 	requireNoError(t, err)
 	state = readyApplicationDraft(t, ctx, f, state, "fr")
 	_, err = f.editor.Publish(ctx, state.ID, state.Version)

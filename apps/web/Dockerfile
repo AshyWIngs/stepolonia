@@ -1,10 +1,11 @@
 FROM dhi.io/node:26.13.1-alpine3.24-dev AS source
-WORKDIR /app
+WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
 RUN test "$(npm --version)" = "11.21.2"
-COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
+COPY packages/sdk /workspace/packages/sdk
 RUN npm ci --ignore-scripts
-COPY . .
+COPY apps/web .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare
 
@@ -20,7 +21,7 @@ RUN npm run build
 
 FROM dhi.io/node:26.13.1-alpine3.24 AS runtime
 WORKDIR /app
-COPY --from=build --chown=1000:1000 /app/.output ./.output
+COPY --from=build --chown=1000:1000 /workspace/apps/web/.output ./.output
 USER 1000:1000
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

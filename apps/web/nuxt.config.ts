@@ -5,7 +5,9 @@ export default defineNuxtConfig({
   modules: ['@nuxt/eslint'],
   typescript: { strict: true },
   nitro: { preset: 'node-server' },
+  build: { transpile: ['@stepolonia/sdk'] },
   runtimeConfig: {
+    apiOrigin: '',
     public: {
       site: {
         name: 'Stepolonia',
@@ -14,6 +16,7 @@ export default defineNuxtConfig({
         notice: '',
         locale: 'ru',
         accent: '#a52837',
+        origin: '',
       },
     },
   },
