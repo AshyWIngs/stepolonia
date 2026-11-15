@@ -35,6 +35,21 @@ async function scan({ github, core, context, enabled }) {
     const checks = latestChecks(data.check_runs || [])
     const completed = REQUIRED.every(name => checks.get(name)?.status === 'completed')
     if (!completed) {
+      const missing = REQUIRED.filter(name => checks.get(name)?.status !== 'completed')
+      // Если provider не ответил длительное время, уведомляем без платной модели.
+      if (Date.now() - new Date(pr.updated_at).getTime() > 60 * 60 * 1000) {
+        const mark = '<!-- stepolonia-ci-watch:stalled:' + sha + ' -->'
+        const comments = await github.paginate(github.rest.issues.listComments, {
+          owner, repo, issue_number: pr.number, per_page: 100,
+        })
+        if (!comments.some(c => c.body?.includes(mark))) {
+          await github.rest.issues.createComment({
+            owner, repo, issue_number: pr.number,
+            body: mark + '\n**PR больше часа ожидает обязательные проверки** на ' + sha.slice(0, 7) +
+              ': ' + missing.join(', ') + '. Требуется проверить GitHub/провайдера; Codex не запускается.',
+          })
+        }
+      }
       core.info('PR #' + pr.number + ': обязательные проверки ещё выполняются на ' + sha.slice(0, 7))
       continue
     }
