@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit
+.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -106,7 +106,10 @@ ci-service-checks:
 	docker build --progress=plain --target checks -t sp-caddy-checks:stage0 infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
 	docker build --progress=plain --target checks -t sp-postgres-checks:stage0 infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
 
-python-tests:
+python-version-check:
+	python3 -c 'import platform, sys; from pathlib import Path; expected = Path(".python-version").read_text().strip(); actual = platform.python_version(); print(sys.executable, actual); sys.exit(0 if platform.python_implementation() == "CPython" and actual == expected else "Требуется CPython " + expected)'
+
+python-tests: python-version-check
 	mkdir -p reports
 	python3 -m unittest discover -s scripts/tests -v > reports/python-checks.log 2>&1 || { cat reports/python-checks.log; exit 1; }
 
