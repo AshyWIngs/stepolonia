@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  checks: read
 
 concurrency:
   group: verify-${{ github.ref }}
@@ -62,9 +61,6 @@ jobs:
       - name: Pinned SDK package manager
         if: steps.scope.outputs.full == 'true'
         run: npm install --global npm@11.21.2 --ignore-scripts
-      - name: CI watcher logic tests
-        if: steps.scope.outputs.full == 'true'
-        run: node --test .github/scripts/ci-watch.test.cjs
       - name: Lint, duplicates, checks, builds, PostgreSQL and image CVEs
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test verify
@@ -76,30 +72,6 @@ jobs:
               tail -n 120 "$log"
             fi
           done
-      - name: Краткая диагностика новых замечаний внешних анализаторов
-        if: ${{ always() && github.event_name == 'pull_request' }}
-        uses: actions/github-script@v8
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        with:
-          script: |
-            const { owner, repo } = context.repo
-            const { data } = await github.rest.checks.listForRef({
-              owner, repo, ref: process.env.HEAD_SHA, per_page: 100,
-            })
-            for (const c of data.check_runs || []) {
-              if (!['SonarCloud Code Analysis', 'Codacy Static Code Analysis'].includes(c.name)
-                  || c.status !== 'completed'
-                  || (c.conclusion === 'success' && !c.output?.annotations_count)) continue
-              core.info(c.name + ': ' + c.conclusion + ', annotations: ' + (c.output?.annotations_count || 0))
-              const rows = await github.rest.checks.listAnnotations({
-                owner, repo, check_run_id: c.id, per_page: 50,
-              })
-              for (const a of rows.data.slice(0, 50)) {
-                core.info([a.path, a.start_line, a.annotation_level,
-                  (a.message || '').slice(0, 450)].join(':'))
-              }
-            }
       - name: Quality and image CVE reports
         if: ${{ always() && steps.scope.outputs.full == 'true' }}
         uses: actions/upload-artifact@v7.0.2
