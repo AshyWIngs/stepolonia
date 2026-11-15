@@ -23,10 +23,11 @@ if (data.value?.kind === 'redirect') {
 }
 const { publication } = usePublicSite()
 const site = computed(() => publication.value?.settings)
+const origin = useRuntimeConfig().public.site.origin
 useHead(() => {
   if (data.value?.kind !== 'article') return {}
   const { article } = data.value
-  const canonical = canonicalUrl(useRuntimeConfig().public.site.origin, articlesPath(article.language_code, article.slug))
+  const canonical = canonicalUrl(origin, articlesPath(article.language_code, article.slug))
   return {
     title: `${article.title} | ${site.value?.title}`,
     meta: [{ name: 'description', content: markdownDescription(article.body_markdown) }],

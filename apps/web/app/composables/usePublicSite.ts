@@ -1,7 +1,7 @@
 import type { components } from '@stepolonia/sdk'
 import { useState } from '#imports'
 import { usePublicApi } from './usePublicApi'
-import { publicError } from '~/utils/public-content'
+import { publicError, routeSegment } from '~/utils/public-content'
 
 type Publication = components['schemas']['Publication']
 
@@ -17,12 +17,17 @@ export function usePublicSite() {
     loadedPath.value = null
     const segment = path.split('?')[0]?.split('/')[1]
     let language: string | undefined
-    try { language = segment ? decodeURIComponent(segment).toLowerCase() : undefined }
+    try { language = segment ? routeSegment(decodeURIComponent(segment)).toLowerCase() : undefined }
     catch { throw publicError(400) }
     const { client, request } = usePublicApi()
     // Один атомарный ответ исключает смешивание настроек и каталога разных публикаций.
     try {
-      const { data, response } = await request(() => client.getSite(language ? { query: { lang: language } } : undefined))
+      let result = await request(() => client.getSite(language ? { query: { lang: language } } : undefined))
+      if (generation.value !== currentGeneration) return
+      // Неизвестный языковой код может не пройти нормализацию UI API. Контентный маршрут
+      // проверит его по динамическому справочнику и вернёт 404 с опубликованным DB fallback.
+      if (language && result.response.status === 400) result = await request(() => client.getSite())
+      const { data, response } = result
       // Ответ или ошибка отменённой навигации не заменяют состояние нового перехода.
       if (generation.value !== currentGeneration) return
       if (!data) throw publicError(response.status)

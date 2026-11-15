@@ -110,8 +110,11 @@ def publishing_sdk(base, *, mode="--published"):
     # Пересмотреть при изменении executable/script/mode или источника окружения.
     result = subprocess.run(  # nosec B603 - фиксированный SDK argv, доверенное test env
         ["node", "apps/web/tests/live.mjs", mode],
-        cwd=ROOT, check=True, capture_output=True, text=True, env=environment)
+        cwd=ROOT, check=False, capture_output=True, text=True, env=environment)
     print(result.stdout, end="", flush=True)
+    # Сохраняем причину сбоя до исключения: runtime harness перенаправляет вывод в свой журнал.
+    print(result.stderr, end="", flush=True)
+    result.check_returncode()
 
 
 def check_publishing(base):
