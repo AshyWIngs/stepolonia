@@ -2,11 +2,14 @@
 """Verify schema and tools on an owned, disposable PostgreSQL installation."""
 import argparse
 from contextlib import redirect_stdout
+from ipaddress import IPv4Address
 import json
 import os
 import secrets
 import shutil
 import subprocess
+from tempfile import NamedTemporaryFile
+from urllib.parse import urlsplit
 
 from db_tools import DISPOSABLE_MARKER, run_tool
 import smoke
@@ -169,7 +172,7 @@ def check_runtime(site, directory, override, compose, environment, project, toke
         # Перед реальной остановкой БД повторно подтверждаем владельца всех ресурсов.
         verify_owned(project, token, log)
         smoke.check_publishing_recovery(base)
-    check_localization(base, project, log)
+    check_localization(base, project, compose, log)
 
 
 def localization_browser(base, mode, log, **environment):
@@ -178,7 +181,7 @@ def localization_browser(base, mode, log, **environment):
             env={**os.environ, "STAGE14_API_URL": base, **environment})
 
 
-def check_localization(base, images_project, log):
+def check_localization(base, images_project, primary_compose, log):
     """Вторая изолированная БД исключает смешивание материалов и предпочтений."""
     token = secrets.token_hex(6)
     site = f"stage22-{token}.test"
@@ -222,6 +225,7 @@ def check_localization(base, images_project, log):
         port = published_port(compose, "caddy", 8080, token, log)
         second_base = f"http://127.0.0.1:{port}"
         localization_browser(base, "--localization", log, STAGE22_SECOND_URL=second_base)
+        check_seo(base, second_base, primary_compose, compose, config, log)
         check_language_configuration(second_base, compose, config, environment, log)
     finally:
         if resources_owned:
@@ -230,6 +234,66 @@ def check_localization(base, images_project, log):
         shutil.rmtree(directory)
         override.unlink()
         unused_log.unlink(missing_ok=True)
+
+
+
+def seo_origin(compose, origin, log):
+    # Отдельный overlay меняет только origin, не переписывая конфигурацию владения ресурсами.
+    configuration = {"services": {"web": {"environment": {"NUXT_PUBLIC_SITE_ORIGIN": origin}}}}
+    with NamedTemporaryFile("w", prefix="seo-origin-", suffix=".compose.json", dir=ROOT / "reports") as overlay:
+        json.dump(configuration, overlay)
+        overlay.flush()
+        command([*compose, "-f", overlay.name, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "120", "web"], log)
+
+
+def check_seo(base, second, primary_compose, compose, config, log):
+    """SEO проверяется на общих образах, разных БД и только owned disposable-данных."""
+    primary_origin = "https://primary.stepolonia.kz"
+    second_origin = "https://secondary.stepolonia.kz"
+    seo_origin(primary_compose, primary_origin, log)
+    seo_origin(compose, second_origin, log)
+    localization_browser(base, "--seo", log, STAGE23_ORIGIN=primary_origin,
+                         STAGE22_SECOND_URL=second, STAGE23_SECOND_ORIGIN=second_origin)
+    # Синтетические публикации собираем штатными ограничениями, без отключения триггеров.
+    fixture = """BEGIN;
+INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
+VALUES ('qaa','Private use','Private use','ltr',true),
+       ('en-us','English US','English US','ltr',true),
+       ('zh-hans-cn','Chinese simplified','简体中文','ltr',true);
+DO $fixture$ DECLARE a uuid; r uuid; n integer; lang text;
+BEGIN
+ FOR n IN 1..21 LOOP
+  a := gen_random_uuid(); r := gen_random_uuid();
+  INSERT INTO public.articles(id) VALUES(a);
+  INSERT INTO public.article_revisions(id,article_id,revision_no) VALUES(r,a,1);
+  FOREACH lang IN ARRAY CASE WHEN n=21 THEN ARRAY['fr','qaa'] ELSE ARRAY['fr'] END LOOP
+   INSERT INTO public.public_routes(language_code,slug,article_id) VALUES(lang,'seo-fixture-'||n,a);
+   INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)
+   VALUES(a,r,lang,'SEO fixture '||n,'seo-fixture-'||n,'SEO fixture body');
+  END LOOP;
+  UPDATE public.article_revisions SET sealed=true WHERE id=r;
+  UPDATE public.articles SET published_revision_id=r WHERE id=a;
+ END LOOP;
+END $fixture$;
+COMMIT;"""
+    command([*compose, *postgres_sql_args(config, fixture)], log)
+    localization_browser(second, "--seo-unsupported", log, STAGE23_ORIGIN=second_origin)
+    logs = command([*compose, "logs", "--no-color", "web"], log, capture=True)
+    if "Набор hreflang пропущен: неподдерживаемые коды языков" not in logs or "qaa" not in logs:
+        raise RuntimeError("Нет диагностики пропущенного hreflang")
+    command([*compose, *postgres_sql_args(config,
+             "UPDATE public.languages SET is_enabled=false WHERE code='qaa'")], log)
+    localization_browser(second, "--seo-pagination", log, STAGE23_ORIGIN=second_origin)
+    insecure_origin = urlsplit("https://public.stepolonia.kz")._replace(scheme="http").geturl()
+    # TEST-NET-1 используется только как отклоняемое значение конфигурации, не адрес соединения.
+    # Все HTTP-проверки harness соединяются с отдельным фиксированным loopback-портом.
+    mapped_address = IPv4Address(bytes((192, 0, 2, 1)))
+    for origin in ("", insecure_origin, "https://user:password@public.stepolonia.kz",
+                   "https://public.stepolonia.kz/path", "https://public.stepolonia.kz?query=1",
+                   "https://public.stepolonia.kz#fragment", "https://127.0.0.1", f"https://[::ffff:{mapped_address}]", "https://private.internal"):
+        seo_origin(compose, origin, log)
+        localization_browser(second, "--seo-rejected-origin", log)
+    seo_origin(compose, second_origin, log)
 
 
 def publish_site_fixture(environment, mode, log):

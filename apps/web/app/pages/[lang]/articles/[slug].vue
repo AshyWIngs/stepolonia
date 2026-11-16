@@ -5,7 +5,7 @@ import { usePublicContent } from '~/composables/usePublicContent'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
 import { markdownDescription } from '~/utils/markdown'
-import { articlesPath, canonicalUrl, publicError, routeSegment } from '~/utils/public-content'
+import { articlesPath, contentSeoLinks, publicError, routeSegment } from '~/utils/public-content'
 
 defineOptions({ name: 'PublishedArticlePage' })
 
@@ -27,11 +27,10 @@ const origin = useRuntimeConfig().public.site.origin
 useHead(() => {
   if (data.value?.kind !== 'article') return {}
   const { article } = data.value
-  const canonical = canonicalUrl(origin, articlesPath(article.language_code, article.slug))
   return {
     title: `${article.title} | ${site.value?.title}`,
     meta: [{ name: 'description', content: markdownDescription(article.body_markdown) }],
-    link: canonical ? [{ rel: 'canonical', href: canonical }] : [],
+    link: contentSeoLinks(origin, articlesPath(article.language_code, article.slug), article.published_translations),
   }
 })
 </script>
