@@ -16,7 +16,8 @@ import (
 
 const cmsLoopbackHostname = "localhost"
 
-func TestCMSFoundationIntegration(t *testing.T) {
+func cmsDisposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
+	t.Helper()
 	dsn := os.Getenv("STAGE31_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("NOT RUN: STAGE31_TEST_DATABASE_URL is required")
@@ -28,6 +29,11 @@ func TestCMSFoundationIntegration(t *testing.T) {
 	if !strings.HasPrefix(cfg.Database, "stage31_") || (cfg.Host != "127.0.0.1" && cfg.Host != cmsLoopbackHostname) {
 		t.Fatal("refusing database outside loopback stage31_ scope")
 	}
+	return cfg
+}
+
+func TestCMSFoundationIntegration(t *testing.T) {
+	cfg := cmsDisposableDatabaseConfig(t)
 	db := Open(cfg)
 	db.SetMaxOpenConns(4)
 	defer func() { _ = db.Close() }()

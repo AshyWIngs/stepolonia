@@ -30,6 +30,9 @@ func Up(ctx context.Context, db *sql.DB, runtime string) error {
 
 // CheckSchema ограниченно проверяет publishing, не пытаясь исправлять чужую схему.
 func CheckSchema(ctx context.Context, db *sql.DB) error {
+	if err := checkCMSDefaultPrivileges(ctx, db); err != nil {
+		return err
+	}
 	var history bool
 	if err := db.QueryRowContext(ctx, "SELECT pg_catalog.to_regclass('public.goose_db_version') IS NOT NULL").Scan(&history); err != nil {
 		return err
