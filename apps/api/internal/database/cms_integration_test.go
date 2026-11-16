@@ -47,6 +47,7 @@ func TestCMSFoundationIntegration(t *testing.T) {
 	requireNoError(t, CheckSchema(ctx, db))
 
 	t.Run("strict foundation rejects unfinished security paths", func(t *testing.T) { testCMSStrictFoundationRejectsUnfinishedSecurityPaths(t, ctx, db) })
+	t.Run("concrete content field boundaries", func(t *testing.T) { testCMSGrantFieldBoundaries(t, ctx, db) })
 	t.Run("publisher cannot access dormant CMS", func(t *testing.T) { testCMSPublisherCannotAccessDormantCms(t, ctx, db) })
 	t.Run("callback error rolls back and preserves identity", func(t *testing.T) { testCMSCallbackErrorRollsBackAndPreservesIdentity(t, ctx, db) })
 	t.Run("statement guard serializes before rows", func(t *testing.T) { testCMSStatementGuardSerializesBeforeRows(t, ctx, db) })
@@ -146,5 +147,28 @@ func testCMSCatalogDriftFailsClosed(t *testing.T, ctx context.Context, db *sql.D
 			t.Fatalf("drift accepted: %s", change.apply)
 		}
 		requireNoError(t, CheckSchema(ctx, db))
+	}
+}
+
+func testCMSGrantFieldBoundaries(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	for _, invalid := range []string{
+		`INSERT INTO public.grant_fields(grant_id,type_id,field_id) VALUES ('b0000000-0000-0000-0000-000000000004','b0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000003')`,
+		`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id) VALUES ('b0000000-0000-0000-0000-000000000005','b0000000-0000-0000-0000-000000000001','content.items.read','content','b0000000-0000-0000-0000-000000000002')`,
+	} {
+		tx, err := db.BeginTx(ctx, nil)
+		requireNoError(t, err)
+		_, err = tx.ExecContext(ctx, `
+INSERT INTO public.roles(id,name_key) VALUES ('b0000000-0000-0000-0000-000000000001','field-boundary');
+INSERT INTO public.content_types(id,key) VALUES ('b0000000-0000-0000-0000-000000000002','field_boundary'),('b0000000-0000-0000-0000-000000000006','other_boundary');
+INSERT INTO public.content_fields(type_id,field_id,key) VALUES ('b0000000-0000-0000-0000-000000000006','b0000000-0000-0000-0000-000000000003','foreign_field');
+INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) VALUES ('b0000000-0000-0000-0000-000000000004','b0000000-0000-0000-0000-000000000001','content.items.read','content','b0000000-0000-0000-0000-000000000002','any');`)
+		requireNoError(t, err)
+		_, err = tx.ExecContext(ctx, invalid)
+		_ = tx.Rollback()
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "23503" && pgErr.Code != "23514") {
+			t.Fatalf("expected grant boundary rejection, got %v", err)
+		}
 	}
 }

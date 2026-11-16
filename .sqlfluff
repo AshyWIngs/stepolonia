@@ -8,7 +8,7 @@
 [sqlfluff]
 dialect = postgres
 templater = raw
-large_file_skip_byte_limit = 65536
+large_file_skip_byte_limit = 131072
 large_file_skip_fail = True
 
 # Существующие lowercase name/version сохраняют SQL API. RF04 требует

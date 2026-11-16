@@ -50,6 +50,23 @@ linters:
         linters: [gosec]
         text: '^G(304|703):'
         source: 'f, err := os\.Open\(path\)'
+      # FP: operator-owned CLI ENV selects its local key, never HTTP input.
+      # O_NOFOLLOW + fstat enforce private regular file/UID; read is capped at 33 bytes.
+      - path: ^apps/api/cmd/db/bootstrap\.go$
+        linters: [gosec]
+        text: '^G(304|703):'
+        source: 'f, err := os\.OpenFile\(path, os\.O_RDONLY\|syscall\.O_NOFOLLOW\|syscall\.O_NONBLOCK, 0\)'
+      # FP: disposable PostgreSQL fixture credential, never a shipped account.
+      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+        linters: [gosec]
+        text: '^G101:'
+        source: '^const bootstrapTestPassphrase = '
+      # FP: fixed security-table inventory in a disposable ACL negative test;
+      # pgx.Identifier quotes both schema and table before execution.
+      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+        linters: [gosec]
+        text: '^G202:'
+        source: '_, err = tx\.ExecContext\(ctx, "SELECT \* FROM "\+pgx\.Identifier\{"public", table\}\.Sanitize\(\)\)'
       # FP: путь secret задаётся Compose, файл читается non-root процессом.
       - path: ^apps/api/internal/config/config\.go$
         linters: [gosec]

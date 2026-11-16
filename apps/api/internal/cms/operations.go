@@ -1,4 +1,4 @@
-// Package cms contains dormant CMS foundations; it does not expose authentication or writers.
+// Package cms contains guarded CMS foundations and operator-only bootstrap enrollment.
 package cms
 
 import "fmt"
@@ -19,10 +19,10 @@ const (
 // Scope returns the operation's allowed grant category. Unknown operations fail closed.
 func (o Operation) Scope() (OperationScope, error) {
 	switch o {
-	case "content.items.create", "content.items.read", "content.items.update",
-		"content.items.ready", "content.items.publish", "content.items.unpublish", "content.items.assign":
+	case opContentCreate, opContentRead, opContentUpdate,
+		opContentReady, opContentPublish, "content.items.unpublish", "content.items.assign":
 		return ContentScope, nil
-	case "content_types.manage", "content_types.initialize_access", "content.permissions.delegate",
+	case "content_types.manage", "content_types.initialize_access", opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",
 		"roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable",
 		"roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage":

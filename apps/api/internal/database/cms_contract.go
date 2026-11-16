@@ -38,7 +38,7 @@ func checkCMSPrivileges(ctx context.Context, tx *sql.Tx) error {
 	err := tx.QueryRowContext(ctx, `WITH objects AS (
  SELECT oid,relowner,relacl FROM pg_catalog.pg_class
  WHERE relnamespace='public'::regnamespace AND relname IN
- ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
+ ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
  ) SELECT NOT EXISTS (
  SELECT 1 FROM objects c CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) a
  WHERE a.grantee<>c.relowner
@@ -48,7 +48,7 @@ func checkCMSPrivileges(ctx context.Context, tx *sql.Tx) error {
  ) AND NOT EXISTS (
  SELECT 1 FROM pg_catalog.pg_proc p
  CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
- WHERE p.oid='public.cms_write_mutex()'::regprocedure AND a.grantee<>p.proowner
+ WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('cms_write_mutex','guard_security_state','guard_security_audit','guard_user_activation') AND a.grantee<>p.proowner
  )`).Scan(&safe)
 	if err != nil {
 		return err

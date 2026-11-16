@@ -104,7 +104,7 @@ func GrantRuntime(ctx context.Context, db *sql.DB, name string) error {
 	role := pgx.Identifier{name}.Sanitize()
 	for _, query := range []string{
 		"GRANT USAGE ON SCHEMA public TO " + role,
-		"REVOKE ALL ON public.users, public.roles, public.user_roles, public.permission_operations, public.role_grants, public.sessions, public.content_types, public.content_fields FROM " + role,
+		"REVOKE ALL ON public.security_state, public.mfa_totp, public.recovery_codes, public.security_audit, public.grant_fields, public.users, public.roles, public.user_roles, public.permission_operations, public.role_grants, public.sessions, public.content_types, public.content_fields FROM " + role,
 		"REVOKE ALL ON public.languages, public.articles, public.article_draft_translations, public.article_revisions, public.article_revision_translations, public.public_routes, public.ui_message_keys, public.site_state, public.site_revisions, public.site_revision_keys, public.site_revision_languages, public.site_revision_messages FROM " + role,
 		"REVOKE ALL ON public.public_languages, public.public_article_translations, public.public_article_routes, public.public_site, public.public_ui_languages, public.public_ui_messages FROM " + role,
 		"GRANT SELECT ON public.public_languages, public.public_article_translations, public.public_article_routes, public.public_site, public.public_ui_languages, public.public_ui_messages TO " + role,
@@ -121,7 +121,7 @@ func GrantRuntime(ctx context.Context, db *sql.DB, name string) error {
  pg_catalog.has_database_privilege($1,current_database(),'CREATE,TEMP') OR
  EXISTS(SELECT 1 FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND pg_catalog.has_function_privilege($1,p.oid,'EXECUTE')) OR
  EXISTS (SELECT 1 FROM (VALUES
- ('public.users'),('public.roles'),('public.user_roles'),('public.permission_operations'),('public.role_grants'),('public.sessions'),('public.content_types'),('public.content_fields'),('public.languages'),('public.articles'),('public.article_draft_translations'),
+ ('public.security_state'),('public.mfa_totp'),('public.recovery_codes'),('public.security_audit'),('public.grant_fields'),('public.users'),('public.roles'),('public.user_roles'),('public.permission_operations'),('public.role_grants'),('public.sessions'),('public.content_types'),('public.content_fields'),('public.languages'),('public.articles'),('public.article_draft_translations'),
  ('public.article_revisions'),('public.article_revision_translations'),('public.public_routes'),('public.ui_message_keys'),('public.site_state'),('public.site_revisions'),('public.site_revision_keys'),('public.site_revision_languages'),('public.site_revision_messages')) AS tables(name)
  WHERE pg_catalog.has_table_privilege($1,tables.name,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
  OR pg_catalog.has_any_column_privilege($1,tables.name,'SELECT,INSERT,UPDATE,REFERENCES')) OR

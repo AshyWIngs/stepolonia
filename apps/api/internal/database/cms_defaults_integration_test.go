@@ -61,14 +61,14 @@ const (
 
 func cmsUnsafeDefaultGrants(otherRole string) []cmsDefaultGrant {
 	return []cmsDefaultGrant{
-		{cmsPublicDefaultScope, cmsDefaultSelect, cmsDefaultTables, "sp_publisher"},
-		{"", cmsDefaultSelect, cmsDefaultTables, "sp_language_importer"},
+		{cmsPublicDefaultScope, cmsDefaultSelect, cmsDefaultTables, publisherTestRole},
+		{"", cmsDefaultSelect, cmsDefaultTables, languageImporterTestRole},
 		{cmsPublicDefaultScope, "UPDATE", cmsDefaultTables, otherRole},
 		{"", cmsDefaultSelect, cmsDefaultTables, "PUBLIC"},
 		{cmsPublicDefaultScope, "USAGE", "SEQUENCES", otherRole},
-		{"", cmsDefaultSelect, "SEQUENCES", "sp_publisher"},
+		{"", cmsDefaultSelect, "SEQUENCES", publisherTestRole},
 		{cmsPublicDefaultScope, cmsDefaultExecute, cmsDefaultFunctions, otherRole},
-		{"", cmsDefaultExecute, cmsDefaultFunctions, "sp_language_importer"},
+		{"", cmsDefaultExecute, cmsDefaultFunctions, languageImporterTestRole},
 		{cmsPublicDefaultScope, cmsDefaultExecute, cmsDefaultFunctions, "PUBLIC"},
 	}
 }

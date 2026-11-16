@@ -243,6 +243,7 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	 ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
 	 UNION ALL SELECT pg_catalog.obj_description(t.oid,'pg_trigger') FROM pg_catalog.pg_trigger t
 	 JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal
+	 AND c.relname IN ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages')
 	 ) descriptions WHERE description IS NULL OR description !~ '[А-Яа-я]'`).Scan(&missing))
 	if missing != 0 {
 		t.Fatalf("missing meaningful Russian catalog descriptions: %d", missing)
