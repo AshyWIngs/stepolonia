@@ -20,10 +20,15 @@ if (error.value) throw publicError(error.value.status ?? 503)
 const { publication } = usePublicSite()
 const site = computed(() => publication.value?.settings)
 const origin = useRuntimeConfig().public.site.origin
+const listPath = page > 1 ? `${articlesPath(language)}?page=${page}` : articlesPath(language)
+const seoLinks = computed(() => {
+  if (!data.value) return []
+  const translations = page === 1 ? data.value.languages.map(item => ({ language_code: item.code })) : []
+  return contentSeoLinks(origin, listPath, translations)
+})
 useHead(() => ({
   title: `${t('articles')} | ${site.value?.title}`,
-  link: data.value ? contentSeoLinks(origin, `${articlesPath(language)}${page > 1 ? `?page=${page}` : ''}`,
-    page === 1 ? data.value.languages.map(item => ({ language_code: item.code })) : []) : [],
+  link: seoLinks.value,
   meta: [{ name: 'description', content: site.value?.description }],
 }))
 </script>

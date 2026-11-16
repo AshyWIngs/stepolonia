@@ -55,21 +55,32 @@ export function articleListPage(value: unknown): number {
   return Number(value)
 }
 
+function hreflangParts(code: string) {
+  const segments = code.split('-')
+  if (segments.some(part => !part)) return undefined
+  const [language = '', second, third, ...rest] = segments
+  if (rest.length || !/^[a-z]{2}$/u.test(language)) return undefined
+  const hasScript = second?.length === 4
+  const script = hasScript ? second : undefined
+  const region = hasScript ? third : second
+  if (!hasScript && third) return undefined
+  if (script && !/^[a-z]{4}$/u.test(script)) return undefined
+  if (region && !/^[a-z]{2}$/u.test(region)) return undefined
+  return { language, script, region }
+}
+
 function supportedHreflang(code: string): boolean {
   // Google принимает ISO 639-1 с необязательными ISO 15924 и ISO 3166-1.
   // ICU знает также служебные территории: они не являются странами ISO 3166-1.
-  const match = /^([a-z]{2})(?:-([a-z]{4}))?(?:-([a-z]{2}))?$/u.exec(code)
-  if (!match?.[1]) return false
+  const parts = hreflangParts(code)
+  if (!parts) return false
+  const { language, script, region } = parts
   const canonical = Intl.getCanonicalLocales(code)[0]?.toLowerCase()
-  // tl остаётся действующим ISO 639-1 кодом Tagalog; ICU заменяет его на трёхбуквенный fil.
-  // Разрешаем только эту замену, сохраняя исходный tl в URL и hreflang.
-  const tagalog = match[1] === 'tl' && canonical === code.replace(/^tl/u, 'fil')
-  if (canonical !== code && !tagalog) return false
-  const [language, script, region] = [match[1], match[2], match[3]]
+  if (canonical !== code) return false
   const recognized = (type: Intl.DisplayNamesOptions['type'], value: string) =>
     new Intl.DisplayNames(['en'], { type, fallback: 'none' }).of(value) !== undefined
   return recognized('language', language)
-    && (!script || recognized('script', script[0]!.toUpperCase() + script.slice(1)))
+    && (!script || recognized('script', script.charAt(0).toUpperCase() + script.slice(1)))
     && (!region || (!['ac', 'cp', 'dg', 'ea', 'eu', 'ez', 'ic', 'qo', 'ta', 'uk', 'un', 'xk', 'zz'].includes(region)
       && recognized('region', region.toUpperCase())))
 }
@@ -85,6 +96,6 @@ export function contentSeoLinks(origin: string, path: string, translations: read
   }
   return [...links, ...translations.map(item => ({
     rel: 'alternate' as const, hreflang: item.language_code,
-    href: canonicalUrl(origin, articlesPath(item.language_code, item.slug))!,
+    href: new URL(articlesPath(item.language_code, item.slug), canonical).href,
   }))]
 }

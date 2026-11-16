@@ -275,18 +275,32 @@ function articleSeo(origin) {
 }
 
 function listSeo(origin, language, languages, page = 1) {
+  const path = `${origin}/${language}/articles`
+  const canonical = page > 1 ? `${path}?page=${page}` : path
   return [
-    ['canonical', '', `${origin}/${language}/articles${page > 1 ? `?page=${page}` : ''}`],
+    ['canonical', '', canonical],
     ...(page === 1 ? languages.map(code => ['alternate', code, `${origin}/${code}/articles`]) : []),
   ]
 }
 
+function sortedSeoLinks(links) {
+  return links.toSorted((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+}
+
+function linkAttribute(tag, name) {
+  const marker = ` ${name}="`
+  const start = tag.indexOf(marker)
+  if (start === -1) return ''
+  const valueStart = start + marker.length
+  const end = tag.indexOf('"', valueStart)
+  return end === -1 ? '' : tag.slice(valueStart, end)
+}
+
 function assertSeoHTML(html, expected, robots = true) {
   const links = [...html.matchAll(/<link\b[^>]*>/gu)].map(([tag]) => {
-    const attributes = Object.fromEntries([...tag.matchAll(/([a-z]+)="([^"]*)"/gu)].map(([, key, value]) => [key, value]))
-    return [attributes.rel, attributes.hreflang ?? '', attributes.href]
+    return ['rel', 'hreflang', 'href'].map(name => linkAttribute(tag, name))
   }).filter(([rel]) => ['canonical', 'alternate'].includes(rel))
-  assert.deepEqual(links.sort(), [...expected].sort())
+  assert.deepEqual(sortedSeoLinks(links), sortedSeoLinks(expected))
   if (robots) assert.match(html, /<meta\b[^>]*name="robots"[^>]*content="noindex, nofollow"/u)
 }
 
@@ -297,7 +311,8 @@ async function browserSeo(page, expected) {
     await page.waitForFunction(expected => {
       const links = [...document.querySelectorAll('head link[rel="canonical"], head link[rel="alternate"]')]
         .map(element => [element.rel, element.hreflang ?? '', element.href])
-      return JSON.stringify(links.sort()) === JSON.stringify([...expected].sort())
+      const compare = (left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))
+      return JSON.stringify(links.toSorted(compare)) === JSON.stringify(expected.toSorted(compare))
     }, expected, { timeout: 10000 })
   }
   catch (error) {
@@ -312,7 +327,7 @@ async function browserSeo(page, expected) {
   }
   const links = await page.locator('head link[rel="canonical"], head link[rel="alternate"]').evaluateAll(elements =>
     elements.map(element => [element.rel, element.hreflang ?? '', element.href]))
-  assert.deepEqual(links.sort(), [...expected].sort())
+  assert.deepEqual(sortedSeoLinks(links), sortedSeoLinks(expected))
 }
 
 async function routeTo(page, path) {
@@ -324,7 +339,7 @@ async function routeTo(page, path) {
 async function checkSeo() {
   const languages = ['en', 'fr', 'kk', 'ru']
   await Promise.all([
-    [currentPath + '?page=2&utm=ignored', articleSeo(seoOrigin)],
+    [`${currentPath}?page=2&utm=ignored`, articleSeo(seoOrigin)],
     ['/ru/articles/stage22-ru-current', articleSeo(seoOrigin).map(link => link[0] === 'canonical' ? ['canonical', '', `${seoOrigin}/ru/articles/stage22-ru-current`] : link)],
     ['/fr/articles?page=1&utm=ignored', listSeo(seoOrigin, 'fr', languages)],
     ['/fr/articles?page=2', listSeo(seoOrigin, 'fr', languages, 2)],
@@ -399,7 +414,11 @@ async function checkSeoFixtures() {
     return
   }
   assertSeoHTML((await documentResponse('/fr/articles', 200)).html,
-    listSeo(seoOrigin, 'fr', ['en', 'en-us', 'fr', 'pl', 'tl', 'zh-hans-cn']))
+    listSeo(seoOrigin, 'fr', ['en', 'en-us', 'fr', 'pl', 'zh-hans-cn']))
+  await Promise.all(['en-us', 'zh-hans-cn'].map(async (code) => {
+    assertSeoHTML((await documentResponse(`/${code}/articles`, 200)).html,
+      listSeo(seoOrigin, code, ['en', 'en-us', 'fr', 'pl', 'zh-hans-cn']))
+  }))
   const secondPage = await documentResponse('/fr/articles?page=2&utm=x', 200)
   assert.ok(secondPage.html.includes('SEO fixture'))
   assertSeoHTML(secondPage.html, listSeo(seoOrigin, 'fr', [], 2))
