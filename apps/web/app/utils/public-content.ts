@@ -34,17 +34,57 @@ export function articleRedirect(location: string | null, language: string, origi
 }
 
 export function canonicalUrl(origin: string, path: string): string | undefined {
-  if (!origin) return undefined
+  if (!origin || /\s/u.test(origin) || !/^\/(?!\/)[^\\\p{Cc}]*$/u.test(path)) return undefined
   try {
     const url = new URL(origin)
     const hostname = url.hostname.toLowerCase().replace(/\.$/u, '')
     // Canonical использует явно заданный публичный HTTPS origin установки.
     if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/'
-      || url.search || url.hash || !hostname.includes('.') || /^[\d.]+$/u.test(hostname)
+      || url.search || url.hash || hostname.startsWith('[') || !hostname.includes('.') || /^[\d.]+$/u.test(hostname)
       || /(?:^|\.)(?:localhost|local|internal|test|invalid|example)$/u.test(hostname)) return undefined
     return new URL(path, url.origin).href
   }
   catch {
     return undefined
   }
+}
+
+export function articleListPage(value: unknown): number {
+  if (value === undefined) return 1
+  if (typeof value !== 'string' || !/^[1-9]\d{0,4}$/u.test(value)) throw publicError(400)
+  return Number(value)
+}
+
+function supportedHreflang(code: string): boolean {
+  // Google принимает ISO 639-1 с необязательными ISO 15924 и ISO 3166-1.
+  // ICU знает также служебные территории: они не являются странами ISO 3166-1.
+  const match = /^([a-z]{2})(?:-([a-z]{4}))?(?:-([a-z]{2}))?$/u.exec(code)
+  if (!match?.[1]) return false
+  const canonical = Intl.getCanonicalLocales(code)[0]?.toLowerCase()
+  // tl остаётся действующим ISO 639-1 кодом Tagalog; ICU заменяет его на трёхбуквенный fil.
+  // Разрешаем только эту замену, сохраняя исходный tl в URL и hreflang.
+  const tagalog = match[1] === 'tl' && canonical === code.replace(/^tl/u, 'fil')
+  if (canonical !== code && !tagalog) return false
+  const [language, script, region] = [match[1], match[2], match[3]]
+  const recognized = (type: Intl.DisplayNamesOptions['type'], value: string) =>
+    new Intl.DisplayNames(['en'], { type, fallback: 'none' }).of(value) !== undefined
+  return recognized('language', language)
+    && (!script || recognized('script', script[0]!.toUpperCase() + script.slice(1)))
+    && (!region || (!['ac', 'cp', 'dg', 'ea', 'eu', 'ez', 'ic', 'qo', 'ta', 'uk', 'un', 'xk', 'zz'].includes(region)
+      && recognized('region', region.toUpperCase())))
+}
+
+export function contentSeoLinks(origin: string, path: string, translations: readonly { language_code: string, slug?: string }[]) {
+  const canonical = canonicalUrl(origin, path)
+  if (!canonical) return []
+  const links = [{ rel: 'canonical' as const, href: canonical }]
+  const unsupported = translations.filter(item => !supportedHreflang(item.language_code)).map(item => item.language_code)
+  if (unsupported.length) {
+    console.warn('Набор hreflang пропущен: неподдерживаемые коды языков', unsupported)
+    return links
+  }
+  return [...links, ...translations.map(item => ({
+    rel: 'alternate' as const, hreflang: item.language_code,
+    href: canonicalUrl(origin, articlesPath(item.language_code, item.slug))!,
+  }))]
 }

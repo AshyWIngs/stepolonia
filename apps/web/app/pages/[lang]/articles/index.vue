@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useAsyncData, useHead, useRoute } from '#imports'
+import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
-import { articlesPath, publicError, routeSegment } from '~/utils/public-content'
+import { articleListPage, articlesPath, contentSeoLinks, publicError, routeSegment } from '~/utils/public-content'
 
 defineOptions({ name: 'PublishedArticleListPage' })
 
 const route = useRoute()
 const language = routeSegment(route.params.lang).toLowerCase()
-const rawPage = route.query.page ?? '1'
-if (typeof rawPage !== 'string' || !/^[1-9]\d{0,4}$/u.test(rawPage)) throw publicError(400)
-const page = Number(rawPage)
+const page = articleListPage(route.query.page)
 const content = usePublicContent()
 const { t } = usePublicUi()
 const { data, error } = await useAsyncData(`articles:${language}:${page}`, () => content.list(language, (page - 1) * 20), {
@@ -21,8 +19,11 @@ const { data, error } = await useAsyncData(`articles:${language}:${page}`, () =>
 if (error.value) throw publicError(error.value.status ?? 503)
 const { publication } = usePublicSite()
 const site = computed(() => publication.value?.settings)
+const origin = useRuntimeConfig().public.site.origin
 useHead(() => ({
   title: `${t('articles')} | ${site.value?.title}`,
+  link: data.value ? contentSeoLinks(origin, `${articlesPath(language)}${page > 1 ? `?page=${page}` : ''}`,
+    page === 1 ? data.value.languages.map(item => ({ language_code: item.code })) : []) : [],
   meta: [{ name: 'description', content: site.value?.description }],
 }))
 </script>
