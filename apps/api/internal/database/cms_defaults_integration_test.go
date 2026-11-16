@@ -51,17 +51,25 @@ func execCMSFixture(t *testing.T, ctx context.Context, db *sql.DB, query string)
 
 type cmsDefaultGrant struct{ schema, privilege, objects, recipient string }
 
+const (
+	cmsPublicDefaultScope = " IN SCHEMA public"
+	cmsDefaultSelect      = "SELECT"
+	cmsDefaultTables      = "TABLES"
+	cmsDefaultExecute     = "EXECUTE"
+	cmsDefaultFunctions   = "FUNCTIONS"
+)
+
 func cmsUnsafeDefaultGrants(otherRole string) []cmsDefaultGrant {
 	return []cmsDefaultGrant{
-		{" IN SCHEMA public", "SELECT", "TABLES", "sp_publisher"},
-		{"", "SELECT", "TABLES", "sp_language_importer"},
-		{" IN SCHEMA public", "UPDATE", "TABLES", otherRole},
-		{"", "SELECT", "TABLES", "PUBLIC"},
-		{" IN SCHEMA public", "USAGE", "SEQUENCES", otherRole},
-		{"", "SELECT", "SEQUENCES", "sp_publisher"},
-		{" IN SCHEMA public", "EXECUTE", "FUNCTIONS", otherRole},
-		{"", "EXECUTE", "FUNCTIONS", "sp_language_importer"},
-		{" IN SCHEMA public", "EXECUTE", "FUNCTIONS", "PUBLIC"},
+		{cmsPublicDefaultScope, cmsDefaultSelect, cmsDefaultTables, "sp_publisher"},
+		{"", cmsDefaultSelect, cmsDefaultTables, "sp_language_importer"},
+		{cmsPublicDefaultScope, "UPDATE", cmsDefaultTables, otherRole},
+		{"", cmsDefaultSelect, cmsDefaultTables, "PUBLIC"},
+		{cmsPublicDefaultScope, "USAGE", "SEQUENCES", otherRole},
+		{"", cmsDefaultSelect, "SEQUENCES", "sp_publisher"},
+		{cmsPublicDefaultScope, cmsDefaultExecute, cmsDefaultFunctions, otherRole},
+		{"", cmsDefaultExecute, cmsDefaultFunctions, "sp_language_importer"},
+		{cmsPublicDefaultScope, cmsDefaultExecute, cmsDefaultFunctions, "PUBLIC"},
 	}
 }
 
