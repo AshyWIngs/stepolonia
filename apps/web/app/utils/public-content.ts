@@ -58,11 +58,11 @@ export function articleListPage(value: unknown): number {
 function hreflangParts(code: string) {
   const segments = code.split('-')
   if (segments.some(part => !part)) return undefined
-  const [language = '', second, third, ...rest] = segments
+  const [language = '', second = '', third, ...rest] = segments
   if (rest.length || !/^[a-z]{2}$/u.test(language)) return undefined
-  const hasScript = second?.length === 4
+  const hasScript = second.length === 4
   const script = hasScript ? second : undefined
-  const region = hasScript ? third : second
+  const region = hasScript ? third : (second || undefined)
   if (!hasScript && third) return undefined
   if (script && !/^[a-z]{4}$/u.test(script)) return undefined
   if (region && !/^[a-z]{2}$/u.test(region)) return undefined
