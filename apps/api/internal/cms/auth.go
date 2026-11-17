@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	sessionFull     = "full"
-	sessionLogin    = "login"
-	sessionPreauth  = "preauth"
-	sessionRecovery = "recovery"
+	sessionFull       = "full"
+	sessionLogin      = "login"
+	sessionPreauth    = "preauth"
+	sessionRecovery   = "recovery"
+	sessionEnrollment = "enrollment"
 )
 
 var (
@@ -25,6 +26,12 @@ var (
 	ErrCSRF                   = errors.New("csrf_failed")
 	ErrRateLimited            = errors.New("rate_limited")
 	ErrSecurityUnavailable    = errors.New("security_unavailable")
+	ErrPermissionDenied       = errors.New("permission_denied")
+	ErrStepUpRequired         = errors.New("step_up_required")
+	ErrVersionConflict        = errors.New("version_conflict")
+	ErrInvalidTransition      = errors.New("invalid_transition")
+	ErrNotFound               = errors.New("not_found")
+	ErrValidation             = errors.New("validation_failed")
 )
 
 // AuthConfig binds credentials to one installation and external encryption key.
@@ -41,6 +48,8 @@ type AuthService struct {
 type AuthRequest struct {
 	Token, CSRF string
 	ClientIP    netip.Addr
+	// RequestID is a server-generated UUID, never a caller-selected identity.
+	RequestID string
 }
 
 // SessionTokens contains secrets returned only after their transaction commits.
@@ -89,7 +98,7 @@ func authError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, context.Canceled, context.DeadlineExceeded} {
+	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, ErrPermissionDenied, ErrStepUpRequired, ErrVersionConflict, ErrInvalidTransition, ErrNotFound, ErrValidation, context.Canceled, context.DeadlineExceeded} {
 		if errors.Is(err, known) {
 			return err
 		}
@@ -124,7 +133,7 @@ func authAudit(ctx context.Context, tx *sql.Tx, op, user string, denied bool) er
 	if user != "" {
 		actor = user
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO public.security_audit(id,operation,actor_id,target_id,result,reason)VALUES($1,$2,$3,$3,$4,$5)`, id, op, actor, result, reason)
+	_, err = tx.ExecContext(ctx, `INSERT INTO public.security_audit(id,operation,actor_id,target_id,result,reason,request_id)VALUES($1,$2,$3,$3,$4,$5,$6)`, id, op, actor, result, reason, ctx.Value(auditRequestKey{}))
 	return err
 }
 func (s *AuthService) issue(ctx context.Context, tx *sql.Tx, user, kind string, version int64, step bool) (SessionTokens, error) {
@@ -146,7 +155,7 @@ func (s *AuthService) issue(ctx context.Context, tx *sql.Tx, user, kind string, 
 	if kind == sessionFull {
 		ttl = "12 hours"
 	}
-	if kind == sessionRecovery {
+	if kind == sessionRecovery || kind == sessionEnrollment {
 		ttl = "10 minutes"
 	}
 	var uid, cv any
@@ -175,7 +184,7 @@ func (s *AuthService) session(ctx context.Context, tx *sql.Tx, req AuthRequest, 
 	if !validBearer(req.Token) {
 		return x, ErrAuthenticationRequired
 	}
-	err := tx.QueryRowContext(ctx, `SELECT s.id::text,COALESCE(s.user_id::text,''),s.kind,COALESCE(s.credential_version,0),s.step_up_at,s.csrf_digest,clock_timestamp(),s.created_at,s.expires_at FROM public.sessions s LEFT JOIN public.users u ON u.id=s.user_id WHERE s.token_digest=$1 AND s.kind=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND (s.kind<>'full' OR s.last_seen>clock_timestamp()-interval '30 minutes') AND (s.kind='preauth' OR (u.state='active' AND u.credential_version=s.credential_version)) AND s.failed_attempts<5`, digest(req.Token), kind).Scan(&x.id, &x.user, &x.kind, &x.version, &x.stepUp, &expected, &x.now, &x.created, &x.expires)
+	err := tx.QueryRowContext(ctx, `SELECT s.id::text,COALESCE(s.user_id::text,''),s.kind,COALESCE(s.credential_version,0),s.step_up_at,s.csrf_digest,clock_timestamp(),s.created_at,s.expires_at FROM public.sessions s LEFT JOIN public.users u ON u.id=s.user_id WHERE s.token_digest=$1 AND s.kind=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND (s.kind<>'full' OR s.last_seen>clock_timestamp()-interval '30 minutes') AND (s.kind='preauth' OR (u.credential_version=s.credential_version AND ((s.kind='enrollment' AND u.state='pending' AND u.enrollment_completed_at IS NULL) OR (s.kind<>'enrollment' AND u.state='active')))) AND s.failed_attempts<5`, digest(req.Token), kind).Scan(&x.id, &x.user, &x.kind, &x.version, &x.stepUp, &expected, &x.now, &x.created, &x.expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return x, ErrAuthenticationRequired
 	}

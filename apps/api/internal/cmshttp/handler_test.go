@@ -65,9 +65,7 @@ func requestAuth(t *testing.T, server *httptest.Server, opts authRequestOptions)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = res.Body.Close() })
-	if res.Header.Get("Cache-Control") != "no-store" {
-		t.Fatal("response permits caching")
-	}
+	assertPrivateNoStore(t, res)
 	if res.Header.Get("Access-Control-Allow-Origin") != "" {
 		t.Fatal("CORS enabled")
 	}
@@ -326,5 +324,12 @@ func setBrowserMetadata(req *http.Request, site, referer, origin string) {
 		if value != "" {
 			req.Header.Set(key, value)
 		}
+	}
+}
+
+func assertPrivateNoStore(t *testing.T, res *http.Response) {
+	t.Helper()
+	if res.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("response permits caching")
 	}
 }

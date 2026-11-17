@@ -18,6 +18,7 @@ const (
 	originCode         = "origin_denied"
 	validationCode     = "validation_failed"
 	csrfCode           = "csrf_failed"
+	notFoundCode       = "not_found"
 )
 
 type csrfResponse struct {
@@ -54,6 +55,18 @@ func writeError(w http.ResponseWriter, err error) {
 		status, code = http.StatusUnauthorized, authenticationCode
 	case errors.Is(err, cms.ErrCSRF):
 		status, code = http.StatusForbidden, csrfCode
+	case errors.Is(err, cms.ErrPermissionDenied):
+		status, code = http.StatusForbidden, "permission_denied"
+	case errors.Is(err, cms.ErrStepUpRequired):
+		status, code = http.StatusForbidden, "step_up_required"
+	case errors.Is(err, cms.ErrVersionConflict):
+		status, code = http.StatusConflict, "version_conflict"
+	case errors.Is(err, cms.ErrInvalidTransition):
+		status, code = http.StatusConflict, "invalid_transition"
+	case errors.Is(err, cms.ErrNotFound):
+		status, code = http.StatusNotFound, notFoundCode
+	case errors.Is(err, cms.ErrValidation):
+		status, code = http.StatusBadRequest, validationCode
 	case errors.Is(err, cms.ErrRateLimited):
 		status, code = http.StatusTooManyRequests, "rate_limited"
 		w.Header().Set("Retry-After", "900")

@@ -53,8 +53,7 @@ func publicRequest(t *testing.T, ctx context.Context, client *http.Client, targe
 	if response.StatusCode != status {
 		t.Fatalf("GET %s: got %d, want %d; body=%s", target, response.StatusCode, status, body)
 	}
-	if response.Header.Get("X-Request-ID") == "" || response.Header.Get("Cache-Control") != "no-store" {
-		t.Fatal("request ID or cache policy missing")
-	}
+	authResponseRequestID(t, response)
+	assertAuthNoStore(t, response)
 	return body, response.Header
 }

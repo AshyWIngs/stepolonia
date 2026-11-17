@@ -2,6 +2,7 @@ package platform
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -62,7 +63,60 @@ func assertDocumentationPaths(t *testing.T, handler http.Handler, enabled bool) 
 func assertLivePublicSpecification(t *testing.T, actual []byte) {
 	t.Helper()
 	exported, err := OpenAPIJSON()
-	if err != nil || !bytes.Equal(exported, actual) || strings.Contains(string(actual), "/admin/auth/") {
+	if err != nil || !bytes.Equal(exported, actual) || strings.Contains(string(actual), "/admin/") {
 		t.Fatal("live public spec differs from SDK source or leaks private routes")
+	}
+}
+
+func TestPrivateUserRoutesRequireConfiguredBoundary(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	private := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
+	for _, enabled := range []bool{false, true} {
+		var auth http.Handler
+		if enabled {
+			auth = private
+		}
+		handler := HandlerWithAuth(failingDatabase{}, nil, logger, auth)
+		want := http.StatusNotFound
+		if enabled {
+			want = http.StatusForbidden
+		}
+		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/users", "/api/v1/admin/users/00000000-0000-4000-8000-000000000001/onboarding-token"})
+		assertAdminRouteStatus(t, handler, http.StatusNotFound, []string{"/api/v1/admin/roles", "/api/v1/admin/content/article"})
+	}
+}
+
+func assertAdminRouteStatus(t *testing.T, handler http.Handler, want int, paths []string) {
+	t.Helper()
+	for _, path := range paths {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}")))
+		if w.Code != want {
+			t.Fatalf("%s: got %d want %d", path, w.Code, want)
+		}
+	}
+}
+
+func TestPrivateCommandRequestCorrelation(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	const serverRequestID = "10000000-0000-4000-8000-000000000001"
+	private := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(requestIDHeader, serverRequestID)
+		w.WriteHeader(http.StatusForbidden)
+	})
+	handler := HandlerWithAuth(failingDatabase{}, nil, logger, private)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", strings.NewReader("{}"))
+	r.Header.Set(requestIDHeader, "untrusted-client-value")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	var event struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(logs.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if w.Header().Get(requestIDHeader) != serverRequestID || event.RequestID != serverRequestID {
+		t.Fatal("response and command log must use the server audit correlation ID")
 	}
 }

@@ -2,7 +2,7 @@
   "minLines": 10,
   "minTokens": 80,
   "threshold": 0,
-  "format": ["go", "python", "typescript", "vue"],
+  "format": ["go", "python", "javascript", "typescript", "vue"],
   "reporters": ["consoleFull"],
   "ignore": [
     "**/node_modules/**", "**/.nuxt/**", "**/.output/**",

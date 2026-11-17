@@ -45,16 +45,22 @@ Draft нельзя считать принятым для merge. SonarCloud/Coda
 
 | Инструмент | Версия и блокирующие правила |
 |---|---|
-| golangci-lint | 2.15.0, Go 1.27.4: staticcheck, errcheck, gosec, gocognit, gocyclo, unused, funlen, goconst |
+| golangci-lint | 2.15.0, Go 1.27.4: staticcheck, errcheck, gosec, gocognit, gocyclo, unused, funlen, goconst, revive/argument-limit |
 | Ruff | 0.17.5: E4/E7/E9/F/B/C901/PLR0915, только scripts |
 | Nuxt ESLint / ESLint | 1.17.0 / 10.14.0: штатный Vue/TypeScript flat config, warnings=0 |
 | SDK | openapi-typescript 7.13.0, openapi-fetch 0.17.0, TypeScript 5.9.3, ESLint с теми же лимитами сложности |
-| jscpd | 5.4.3, Node 26.13.1/npm 11.21.2, Go/Python/TypeScript/Vue |
+| jscpd | 5.4.3, Node 26.13.1/npm 11.21.2, Go/Python/JavaScript/TypeScript/Vue |
 
 Go cognitive/cyclomatic и ESLint cognitive/cyclomatic: максимум 15 для всех
 функций, включая тесты. Исключений по сложности и повышенных baseline-бюджетов
 нет. Go funlen и ESLint ограничивают функцию 80 строками и 50 statements;
 комментарии не учитываются, ESLint также пропускает пустые строки.
+Go `revive/argument-limit` ограничивает функции семью параметрами, включая
+`_test.go`; `run.tests: true` задан явно. Этот локальный эквивалент Sonar S107
+включён отдельно: одинаковый охват файлов не означает одинаковый набор правил
+у локальных и облачных анализаторов. Go lint запускается для API и обоих
+healthcheck-модулей. Ruff анализирует `scripts`, включая `scripts/tests`;
+ESLint запускается с `.` отдельно в web и SDK, включая `.mjs`-тесты и SDK type tests.
 Ruff C901 ограничивает cyclomatic complexity Python значением 15, PLR0915
 ограничивает функцию 50 statements. Это не cognitive metric Python: её отдельно
 проверяет SonarQube IDE/Cloud. Go goconst проверяет строки длиной от трёх
@@ -70,7 +76,8 @@ eslint-plugin-sonarjs 4.2.2; остальные его правила не ду�
 чисел: превышение блокирует проверку и требует осмысленного изменения.
 
 jscpd блокирует любое совпадение размером не менее 10 строк и 80 токенов:
-порог дублирования 0%. Тесты включены. Исключены зависимости, Nuxt output,
+порог дублирования 0%. Тесты включены, в том числе JavaScript `.mjs` fixtures.
+Исключены зависимости, Nuxt output,
 генерируемые Go-файлы и SDK-типы, lockfiles и отчёты. Авторские SDK-файлы включены.
 Результат требует смыслового разбора:
 похожие fixtures или SQL не объединяются автоматически.

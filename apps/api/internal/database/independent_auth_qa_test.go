@@ -163,9 +163,7 @@ func qaSpoofedLogin(t *testing.T, f authHTTPFixture, csrf, body string, status i
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, f.server.URL+qaLoginPath, strings.NewReader(body))
 	requireNoError(t, err)
-	req.Header.Set("Origin", f.server.URL)
-	req.Header.Set(qaContentTypeHeader, "application/json")
-	req.Header.Set("X-CSRF-Token", csrf)
+	setAuthHTTPHeaders(req, f.server.URL, csrf)
 	req.Header.Set("X-Forwarded-For", "203.0.113.123")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	res, err := f.client.Do(req)
@@ -185,9 +183,7 @@ func qaSpoofedLogin(t *testing.T, f authHTTPFixture, csrf, body string, status i
 }
 
 func TestAuthIndependentCrossSiteLogoutBrowserIntegration(t *testing.T) {
-	if os.Getenv("CMS_HTTP_BROWSER_TEST") != "1" {
-		t.Skip("NOT RUN: opt-in local Chromium required")
-	}
+	requireAuthBrowser(t)
 	f := newAuthHTTPFixture(t)
 	full := authFull(t, f.state)
 	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -231,16 +227,11 @@ func TestAuthIndependentExpiredLogoutCookiesIntegration(t *testing.T) {
 	requireNoError(t, err)
 	target, err := url.Parse(f.server.URL)
 	requireNoError(t, err)
-	f.client.Jar.SetCookies(target, []*http.Cookie{{Name: "__Host-sp_session", Value: full.Token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}})
+	f.client.Jar.SetCookies(target, []*http.Cookie{{Name: authFullSessionCookie, Value: full.Token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}})
 	_, res := f.request(t, http.MethodPost, "/api/v1/admin/auth/logout", full.CSRF, "{}", http.StatusUnauthorized)
-	clears := 0
-	for _, cookie := range res.Cookies() {
-		if cookie.MaxAge < 0 && cookie.Secure && cookie.HttpOnly && cookie.SameSite == http.SameSiteStrictMode && cookie.Path == "/" && cookie.Domain == "" {
-			clears++
-		}
-	}
-	if clears != 4 || len(f.client.Jar.Cookies(target)) != 0 {
-		t.Fatal("validated expired logout failed to clear all local authentication cookies")
+	assertAuthCookiesCleared(t, res)
+	if len(f.client.Jar.Cookies(target)) != 0 {
+		t.Fatal("validated expired logout retained browser authentication cookies")
 	}
 }
 

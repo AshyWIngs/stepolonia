@@ -328,6 +328,11 @@ func (s *AuthService) Logout(ctx context.Context, req AuthRequest, kind string) 
 				return err
 			}
 		}
+		if kind == sessionEnrollment {
+			if err = endEnrollment(ctx, tx, x); err != nil {
+				return err
+			}
+		}
 		if err = revokeSession(ctx, tx, x.id); err != nil {
 			return err
 		}
@@ -346,6 +351,9 @@ func (s *AuthService) RevokeAll(ctx context.Context, req AuthRequest) error {
 	})
 }
 func revokeUser(ctx context.Context, tx *sql.Tx, user string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.enrollment_attempts SET ended_at=clock_timestamp() WHERE user_id=$1 AND ended_at IS NULL`, user); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE public.recovery_attempts SET ended_at=clock_timestamp() WHERE user_id=$1 AND ended_at IS NULL`, user); err != nil {
 		return err
 	}
