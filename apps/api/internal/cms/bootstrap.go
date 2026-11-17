@@ -243,7 +243,7 @@ func (s *BootstrapService) startTx(ctx context.Context, tx *sql.Tx, login, hash 
 	if _, err := tx.ExecContext(ctx, `INSERT INTO public.mfa_totp(user_id,ciphertext,key_version,last_counter) VALUES($1,$2,$3,-1)`, snap.id, ciphertext, s.config.KeyVersion); err != nil {
 		return err
 	}
-	if err := seedBootstrapRoles(ctx, tx, snap.id); err != nil {
+	if err := seedBootstrapRoles(ctx, tx); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE public.security_state SET site=$1,bootstrap_user_id=$2 WHERE id=1`, s.config.Site, snap.id); err != nil {

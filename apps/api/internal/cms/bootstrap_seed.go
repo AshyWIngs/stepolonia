@@ -19,7 +19,7 @@ const (
 var bootstrapContentOperations = []string{opContentCreate, opContentRead, opContentUpdate, opContentReady, opContentPublish, "content.items.unpublish", "content.items.assign"}
 var bootstrapInstallationOperations = []string{"content_types.manage", "content_types.initialize_access", opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage"}
 
-func seedBootstrapRoles(ctx context.Context, tx *sql.Tx, user string) error {
+func seedBootstrapRoles(ctx context.Context, tx *sql.Tx) error {
 	if err := checkBootstrapOperations(ctx, tx); err != nil {
 		return err
 	}
