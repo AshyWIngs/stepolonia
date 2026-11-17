@@ -202,7 +202,7 @@ class DisposableDownTests(unittest.TestCase):
         self.assertIn("db-tools", tools["services"])
 
     def test_foreign_resource_label_stops_cleanup(self):
-        inspected = json.dumps([{"Config": {"Labels": {publishing.LABEL: "foreign-owner"}}}])
+        inspected = json.dumps([{"Config": {"Labels": {publishing.OWNERSHIP_LABEL: "foreign-owner"}}}])
         with patch.object(publishing, "command", side_effect=["own-name-collision", inspected]) as command:
             with self.assertRaisesRegex(RuntimeError, "Очистка запрещена"):
                 publishing.verify_owned(self.marker["project"], self.marker["token"], io.StringIO())

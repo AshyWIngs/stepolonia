@@ -10,7 +10,7 @@ export function markdownDescription(source: string): string {
   return text(markdownTokens(source)).replace(/\s+/gu, ' ').trim().slice(0, 200)
 }
 
-const tags = new Set(['p', 'blockquote', 'ul', 'ol', 'li', 'strong', 'em', 's', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'])
+const allowedMarkdownTags = new Set(['p', 'blockquote', 'ul', 'ol', 'li', 'strong', 'em', 's', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'])
 
 function linkUrl(value: string): string | undefined {
   if (!value || /[\s\\\p{Cc}\p{Cf}]/u.test(value) || value.startsWith('//')) return undefined
@@ -40,7 +40,7 @@ export function markdownNodes(tokens: Token[]): VNodeChild[] {
   for (const token of tokens) {
     const current = stack.at(-1) ?? root
     if (token.hidden) continue
-    if (token.nesting === 1) stack.push({ tag: tags.has(token.tag) ? token.tag : 'span', attrs: attributes(token), children: [] })
+    if (token.nesting === 1) stack.push({ tag: allowedMarkdownTags.has(token.tag) ? token.tag : 'span', attrs: attributes(token), children: [] })
     else if (token.nesting === -1) {
       const frame = stack.pop()
       if (frame) (stack.at(-1) ?? root).children.push(h(frame.tag, frame.attrs, frame.children))

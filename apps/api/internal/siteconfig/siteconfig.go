@@ -14,11 +14,6 @@ import (
 	"golang.org/x/text/language"
 )
 
-const (
-	unavailableCode     = "site_configuration_unavailable"
-	versionConflictCode = "site_version_conflict"
-)
-
 type Settings struct {
 	Tagline          string `json:"tagline" maxLength:"300" doc:"Short site tagline. An empty string means no tagline." example:"Stories and events from our community"`
 	Notice           string `json:"notice" maxLength:"2000" doc:"Optional site notice as plain text. An empty string means no notice." example:""`
@@ -46,6 +41,12 @@ type Draft struct {
 	Settings Settings
 	Catalogs map[string]map[string]string
 }
+
+const (
+	unavailableCode     = "site_configuration_unavailable"
+	versionConflictCode = "site_version_conflict"
+)
+
 type Error struct {
 	Status int
 	Code   string

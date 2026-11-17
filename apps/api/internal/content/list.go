@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"database/sql"
+	"stepolonia/apps/api/internal/cms"
 )
 
 type itemScope struct {
@@ -21,7 +22,7 @@ func (s *Service) ListDrafts(ctx context.Context, actor Actor, typeID string, li
 		return nil, problem(Forbidden, "security_unavailable")
 	}
 	out := []DraftState{}
-	err := s.withTx(ctx, actor, readOperation, typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(cms.OpContentRead), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		scope, err := s.scope(ctx, tx, actor, typeID)
 		if err != nil {
 			return err
@@ -65,7 +66,7 @@ func (s *Service) visibleDraft(ctx context.Context, tx *sql.Tx, actor Actor, sta
 func (s *Service) materializeDraftIDs(ctx context.Context, tx *sql.Tx, actor Actor, typeID string, ids []string) ([]DraftState, error) {
 	out := []DraftState{}
 	for _, id := range ids {
-		if err := s.authorize(ctx, tx, actor, readOperation, typeID, id, nil); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), typeID, id, nil); err != nil {
 			return nil, err
 		}
 		state, err := loadDraft(ctx, tx, id)

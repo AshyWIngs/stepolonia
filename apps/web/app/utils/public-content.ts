@@ -56,11 +56,13 @@ export function canonicalUrl(origin: string, path: string): string | undefined {
   }
 }
 
+export const contentPageSize = 20
+
 export function contentListPage(value: unknown): number {
   if (value === undefined) return 1
   if (typeof value !== 'string' || !/^[1-9]\d{0,4}$/u.test(value)) throw publicError(400)
   const page = Number(value)
-  if ((page - 1) * 20 > 10000) throw publicError(400)
+  if ((page - 1) * contentPageSize > 10000) throw publicError(400)
   return page
 }
 

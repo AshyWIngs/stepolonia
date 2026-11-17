@@ -11,6 +11,7 @@ import (
 )
 
 const statusFormat = "status %d"
+const testNullOrigin = "null"
 const sameTestOrigin = "same"
 
 const testToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -79,19 +80,19 @@ func TestTransportRejectsBeforeService(t *testing.T) {
 		name, path, body, origin, media, csrf string
 		status                                int
 	}{
-		{"missing origin", loginPath, "{}", "", jsonType, testToken, 403},
-		{"null origin", loginPath, "{}", nullOrigin, jsonType, testToken, 403},
-		{"suffix origin", loginPath, "{}", server.URL + ".evil", jsonType, testToken, 403},
+		{"missing origin", loginPath, "{}", "", jsonMediaType, testToken, 403},
+		{"null origin", loginPath, "{}", testNullOrigin, jsonMediaType, testToken, 403},
+		{"suffix origin", loginPath, "{}", server.URL + ".evil", jsonMediaType, testToken, 403},
 		{"wrong media", loginPath, "{}", server.URL, "text/plain", testToken, 400},
-		{"missing csrf", loginPath, "{}", server.URL, jsonType, "", 403},
-		{"compound field", loginPath, `{"login,password":"ignored"}`, server.URL, jsonType, testToken, 400},
-		{"unknown field", loginPath, `{"roles":[]}`, server.URL, jsonType, testToken, 400},
-		{"duplicate key", loginPath, `{"login":"a","login":"b"}`, server.URL, jsonType, testToken, 400},
-		{"null credential", loginPath, `{"password":null}`, server.URL, jsonType, testToken, 400},
-		{"trailing value", loginPath, "{}{}", server.URL, jsonType, testToken, 400},
-		{"oversize", loginPath, strings.Repeat("x", maxBody+1), server.URL, jsonType, testToken, 413},
-		{"query", "/login?token=secret", "{}", server.URL, jsonType, testToken, 400},
-		{"unknown route", "/users", "{}", server.URL, jsonType, testToken, 404},
+		{"missing csrf", loginPath, "{}", server.URL, jsonMediaType, "", 403},
+		{"compound field", loginPath, `{"login,password":"ignored"}`, server.URL, jsonMediaType, testToken, 400},
+		{"unknown field", loginPath, `{"roles":[]}`, server.URL, jsonMediaType, testToken, 400},
+		{"duplicate key", loginPath, `{"login":"a","login":"b"}`, server.URL, jsonMediaType, testToken, 400},
+		{"null credential", loginPath, `{"password":null}`, server.URL, jsonMediaType, testToken, 400},
+		{"trailing value", loginPath, "{}{}", server.URL, jsonMediaType, testToken, 400},
+		{"oversize", loginPath, strings.Repeat("x", maxCredentialBodyBytes+1), server.URL, jsonMediaType, testToken, 413},
+		{"query", "/login?token=secret", "{}", server.URL, jsonMediaType, testToken, 400},
+		{"unknown route", "/users", "{}", server.URL, jsonMediaType, testToken, 404},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,7 +114,7 @@ func TestLoginCookieAndUntrustedForwardedIP(t *testing.T) {
 	server := tlsServer(t, service)
 	res := requestAuth(t, server, authRequestOptions{
 		method: http.MethodPost, path: loginPath, body: `{"login":"admin","password":"secret"}`,
-		origin: server.URL, media: jsonType, csrf: testToken,
+		origin: server.URL, media: jsonMediaType, csrf: testToken,
 	})
 	if res.StatusCode != 200 || service.calls != 1 {
 		t.Fatalf("login status %d calls %d", res.StatusCode, service.calls)
@@ -141,7 +142,7 @@ func TestLogoutCookieBoundary(t *testing.T) {
 		status                     int
 		cleared                    bool
 	}{
-		{"cross origin", http.MethodPost, nullOrigin, testToken, nil, 403, false},
+		{"cross origin", http.MethodPost, testNullOrigin, testToken, nil, 403, false},
 		{"missing origin GET", http.MethodGet, "", testToken, nil, 403, false},
 		{"same origin GET", http.MethodGet, sameTestOrigin, testToken, nil, 405, false},
 		{"missing CSRF", http.MethodPost, sameTestOrigin, "", nil, 403, false},
@@ -160,7 +161,7 @@ func TestLogoutCookieBoundary(t *testing.T) {
 			}
 			res := requestAuth(t, server, authRequestOptions{
 				method: tc.method, path: logoutPath, body: "{}",
-				origin: origin, media: jsonType, csrf: tc.csrf,
+				origin: origin, media: jsonMediaType, csrf: tc.csrf,
 			})
 			if res.StatusCode != tc.status {
 				t.Fatalf(statusFormat, res.StatusCode)
@@ -264,7 +265,7 @@ func TestRestrictedCookieCannotCrossRoute(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set(originHeader, server.URL)
-		req.Header.Set(contentTypeHeader, jsonType)
+		req.Header.Set(contentTypeHeader, jsonMediaType)
 		req.Header.Set("X-CSRF-Token", testToken)
 		req.AddCookie(&http.Cookie{Name: name, Value: testToken, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		res, err := server.Client().Do(req)
@@ -296,7 +297,7 @@ func TestBrowserCSRFMetadata(t *testing.T) {
 		{"missing referer", sameOriginSite, "", "", 403},
 		{"wrong referer", sameOriginSite, "https://evil.test/admin", "", 403},
 		{"malformed referer", sameOriginSite, ":invalid", "", 403},
-		{"null origin cannot fallback", sameOriginSite, server.URL + "/admin", nullOrigin, 403},
+		{"null origin cannot fallback", sameOriginSite, server.URL + "/admin", testNullOrigin, 403},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

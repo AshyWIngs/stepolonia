@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const authLoginSQL = `SELECT login_key FROM public.users WHERE id=$1`
+
 type authBudget struct {
 	at                time.Time
 	account, ip, site string

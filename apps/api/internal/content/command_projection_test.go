@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"database/sql"
+	"stepolonia/apps/api/internal/cms"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func testCommandProjection(t *testing.T, command string) {
 	input := initialType()
 	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
-	target := createTestDraft(t, s, typeID(t, db, initialArticleKey), map[string]ValuePatch{"ru": fullLocale("hidden-target")})
+	target := createTestDraft(t, s, typeID(t, db, articleTypeKey), map[string]ValuePatch{"ru": fullLocale("hidden-target")})
 	input.Fields = append(input.Fields, Definition{Key: privateNoteKey, Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate}, Definition{Key: hiddenLinkKey, Kind: kindRelation, Scope: scopeShared, Visibility: visibilityPrivate, TargetTypeID: target.TypeID})
 	schema, err := s.CreateType(ctx, Actor{}, input)
 	must(t, err)
@@ -59,7 +60,7 @@ func testCommandProjection(t *testing.T, command string) {
 	}
 }
 func denyPrivateRead(_ context.Context, _ *sql.Tx, _ Actor, operation, _, _ string, fields []string) error {
-	if operation != readOperation {
+	if operation != string(cms.OpContentRead) {
 		return nil
 	}
 	for _, field := range fields {

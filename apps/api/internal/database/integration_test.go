@@ -18,6 +18,8 @@ const (
 	languageImporterTestRole = "sp_language_importer"
 )
 
+const nodeExecutable = "node"
+
 func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
 	t.Helper()
 	dsn := os.Getenv("STAGE12_TEST_DATABASE_URL")

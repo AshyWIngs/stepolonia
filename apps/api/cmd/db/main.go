@@ -18,13 +18,16 @@ import (
 	"stepolonia/apps/api/internal/database"
 )
 
-const commandImportLanguages = "import-languages"
+const (
+	commandImportLanguages = "import-languages"
+	commandBootstrapAdmin  = "bootstrap-admin"
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	timeout := 2 * time.Minute
-	if len(os.Args) > 1 && os.Args[1] == bootstrapCommand {
+	if len(os.Args) > 1 && os.Args[1] == commandBootstrapAdmin {
 		timeout = 10 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -57,7 +60,7 @@ func run(ctx context.Context, args []string) error {
 	if err := validateCommand(args); err != nil {
 		return err
 	}
-	if args[0] == bootstrapCommand {
+	if args[0] == commandBootstrapAdmin {
 		return runBootstrap(ctx)
 	}
 	var rows []database.Language
@@ -96,7 +99,7 @@ func validateCommand(args []string) error {
 		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin"}
 	}
 	switch args[0] {
-	case "prepare-roles", "seed", bootstrapCommand:
+	case "prepare-roles", "seed", commandBootstrapAdmin:
 		if len(args) == 1 {
 			return nil
 		}

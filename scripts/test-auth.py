@@ -9,8 +9,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LABEL = "io.stepolonia.auth-test"
-IMAGE = "postgres:18.7-alpine3.24"
+OWNERSHIP_LABEL = "io.stepolonia.auth-test"
+POSTGRES_IMAGE = "postgres:18.7-alpine3.24"
 
 
 def command(arguments, *, environment=None, capture=False):
@@ -24,7 +24,7 @@ def command(arguments, *, environment=None, capture=False):
 def owned_container(name, token):
     """Refuse cleanup or connection if resource identity or binding differs."""
     items = json.loads(command(["docker", "inspect", name], capture=True))
-    if len(items) != 1 or items[0]["Config"].get("Labels", {}).get(LABEL) != token:
+    if len(items) != 1 or items[0]["Config"].get("Labels", {}).get(OWNERSHIP_LABEL) != token:
         raise RuntimeError("Disposable authentication container ownership changed")
     bindings = items[0]["NetworkSettings"]["Ports"].get("5432/tcp") or []
     if len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1":
@@ -51,10 +51,10 @@ def main():
     name, database = f"sp-auth-test-{token}", f"stage31_{token}"
     # Trust is restricted to this ephemeral database's published loopback port.
     # Dedicated LOGIN tests still exercise actual PostgreSQL object privileges.
-    command(["docker", "run", "--detach", "--name", name, "--label", f"{LABEL}={token}",
+    command(["docker", "run", "--detach", "--name", name, "--label", f"{OWNERSHIP_LABEL}={token}",
              "--publish", "127.0.0.1::5432", "--env", f"POSTGRES_DB={database}",
              "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--tmpfs", "/var/lib/postgresql",
-             IMAGE])
+             POSTGRES_IMAGE])
     try:
         port = owned_container(name, token)
         wait_ready(name)

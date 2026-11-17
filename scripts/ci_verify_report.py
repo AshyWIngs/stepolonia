@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 import sys
 
-AUDIT = Path("reports/npm-audit.json")
-AUDIT_EXIT = Path("reports/npm-audit.exit")
+NPM_AUDIT_REPORT_PATH = Path("reports/npm-audit.json")
+NPM_AUDIT_EXIT_PATH = Path("reports/npm-audit.exit")
 NOT_RUN = "NOT RUN"
 
 def group(message):
@@ -17,10 +17,10 @@ def group(message):
 
 
 def audit_data():
-    if not AUDIT.is_file():
+    if not NPM_AUDIT_REPORT_PATH.is_file():
         return NOT_RUN, {}, [], "Отчёт npm audit отсутствует"
     try:
-        payload = json.loads(AUDIT.read_text(encoding="utf-8"))
+        payload = json.loads(NPM_AUDIT_REPORT_PATH.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return NOT_RUN, {}, [], "npm audit вернул невалидный JSON"
     if not isinstance(payload, dict) or payload.get("error"):
@@ -38,7 +38,7 @@ def audit_data():
                                if isinstance(via, dict) and isinstance(via.get("source"), int)})
         items.append({"name": pkg, "severity": detail.get("severity", "unknown"),
                       "advisory_ids": advisory_ids})
-    exit_status = AUDIT_EXIT.read_text(encoding="utf-8").strip() if AUDIT_EXIT.is_file() else "unknown"
+    exit_status = NPM_AUDIT_EXIT_PATH.read_text(encoding="utf-8").strip() if NPM_AUDIT_EXIT_PATH.is_file() else "unknown"
     if exit_status not in ("0", "1"):
         return NOT_RUN, {}, [], f"npm audit вернул неожиданный код завершения: {exit_status}"
     return "REVIEW", counts, items, None

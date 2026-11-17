@@ -6,6 +6,8 @@ import (
 	"stepolonia/apps/api/internal/cms"
 )
 
+const bodyFieldKey = "body"
+
 // SeedInitialRegistry is a fixed infrastructure seed, never an editorial command.
 // It requires a direct database owner and cannot create arbitrary types or content.
 func SeedInitialRegistry(ctx context.Context, db *sql.DB) error {
@@ -32,5 +34,5 @@ func SeedInitialRegistry(ctx context.Context, db *sql.DB) error {
 	})
 }
 func initialType() TypeInput {
-	return TypeInput{Key: initialArticleKey, RouteNamespace: articlesNamespace, Fields: []Definition{{Key: titleFieldKey, Kind: kindString, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"min_length":1,"max_length":500}`)}, {Key: slugFieldKey, Kind: kindString, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"slug":true,"max_length":200}`)}, {Key: bodyFieldKey, Kind: kindMarkdown, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"min_length":1}`)}}}
+	return TypeInput{Key: articleTypeKey, RouteNamespace: articlesNamespace, Fields: []Definition{{Key: titleFieldKey, Kind: kindString, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"min_length":1,"max_length":500}`)}, {Key: slugFieldKey, Kind: kindString, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"slug":true,"max_length":200}`)}, {Key: bodyFieldKey, Kind: kindMarkdown, Scope: scopeLocalized, Visibility: visibilityPublic, Required: true, Config: []byte(`{"min_length":1}`)}}}
 }

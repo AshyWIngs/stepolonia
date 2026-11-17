@@ -29,7 +29,7 @@ func populateRuntimeFixture(t *testing.T, db *sql.DB, mode string) {
 	prepareContent(t, db)
 	s := testService(db)
 	ctx := context.Background()
-	article := typeID(t, db, initialArticleKey)
+	article := typeID(t, db, articleTypeKey)
 	var schema int64
 	must(t, db.QueryRow(`SELECT current_schema_no FROM public.content_types WHERE id=$1`, article).Scan(&schema))
 	state, err := s.Create(ctx, Actor{}, article, schema)
@@ -60,12 +60,12 @@ func createEventRuntimeFixture(t *testing.T, s *Service) {
 	input := initialType()
 	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
-	input.Fields = append(input.Fields, Definition{Key: featuredFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "price", Kind: kindDecimal, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "secret", Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate})
+	input.Fields = append(input.Fields, Definition{Key: fixtureFeaturedFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "price", Kind: kindDecimal, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "secret", Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate})
 	schema, err := s.CreateType(ctx, Actor{}, input)
 	must(t, err)
 	state := createTestDraft(t, s, schema.TypeID, map[string]ValuePatch{"fr": fullLocale("stage32-event")})
 	title := ValuePatch{Values: map[string]FieldValue{titleFieldKey: stringValue("Stage 3.2 Event")}}
-	state, err = s.SaveDraft(ctx, Actor{}, state.ItemID, state.Version, DraftPatch{SchemaNo: 1, Shared: map[string]FieldValue{featuredFieldKey: {kindBoolean, json.RawMessage(`true`)}, "price": {kindDecimal, json.RawMessage(`"123456789012.123456"`)}, "secret": stringValue("private-event-secret")}, Locales: map[string]ValuePatch{"fr": title}})
+	state, err = s.SaveDraft(ctx, Actor{}, state.ItemID, state.Version, DraftPatch{SchemaNo: 1, Shared: map[string]FieldValue{fixtureFeaturedFieldKey: {kindBoolean, json.RawMessage(`true`)}, "price": {kindDecimal, json.RawMessage(`"123456789012.123456"`)}, "secret": stringValue("private-event-secret")}, Locales: map[string]ValuePatch{"fr": title}})
 	must(t, err)
 	state = readyTestDraft(t, s, state, "fr")
 	_, err = s.Publish(ctx, Actor{}, state.ItemID, state.Version, 1, []string{"fr"})
@@ -77,7 +77,7 @@ func createSEOFixture(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled) VALUES('qaa','Private test','Private test','ltr',true),('en-us','English US','English US','ltr',true),('zh-hans-cn','Chinese','中文','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
 	must(t, err)
 	s := testService(db)
-	article := typeID(t, db, initialArticleKey)
+	article := typeID(t, db, articleTypeKey)
 	for index := 1; index <= 21; index++ {
 		slug := "seo-fixture-" + strconv.Itoa(index)
 		locales := map[string]ValuePatch{"fr": fullLocale(slug)}

@@ -131,7 +131,7 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 // Проверяем экспортируемый SDK через настоящий HTTP и runtime-подключение к PostgreSQL.
 func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable bool) {
 	t.Helper()
-	command := exec.CommandContext(ctx, "node", "../../../../packages/sdk/tests/site-live.mjs")
+	command := exec.CommandContext(ctx, nodeExecutable, "../../../../packages/sdk/tests/site-live.mjs")
 	if unavailable {
 		command.Args = append(command.Args, "--unavailable")
 	}

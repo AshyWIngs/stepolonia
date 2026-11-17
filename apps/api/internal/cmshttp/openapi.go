@@ -10,13 +10,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-const (
-	csrfResponseSchema = "CSRFResponse"
-	logoutOperation    = "authLogout"
-	schemaPrefix       = "#/components/schemas/"
-	syntheticCSRF      = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-)
-
 // OpenAPIJSON describes the registered private auth transport independently of
 // the public Huma API and SDK. Generating it does not register HTTP handlers.
 func OpenAPIJSON() ([]byte, error) {
@@ -42,7 +35,7 @@ func OpenAPIJSON() ([]byte, error) {
 			op.RequestBody = &huma.RequestBody{
 				Required:    true,
 				Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, non-string values and trailing JSON are rejected. Omitted credential fields decode as empty strings and are checked by authentication; a successful request supplies the credentials shown in the example.",
-				Content:     map[string]*huma.MediaType{jsonType: {Schema: schemaRef(name), Example: example}},
+				Content:     map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
 			}
 			item.Post = op
 		}
@@ -80,6 +73,8 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 
 const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST requires exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET csrf accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
+const schemaPrefix = "#/components/schemas/"
+
 func schemaRef(name string) *huma.Schema {
 	return &huma.Schema{Ref: schemaPrefix + name}
 }
@@ -95,12 +90,12 @@ func credentialSchema(rt route) (*huma.Schema, map[string]any) {
 		for _, field := range strings.Split(rt.fields, ",") {
 			var property *huma.Schema
 			switch field {
-			case loginKind:
+			case "login":
 				property = stringSchema("Account login normalized by Unicode NFC and case folding. The normalized value must be nonempty, at most 256 UTF-8 bytes, without surrounding whitespace, NUL, CR or LF. Invalid or unknown accounts use the same credential failure response.", "docs-editor")
 			case "password":
 				property = stringSchema("Current account password; case-sensitive UTF-8, at most 512 bytes, and never returned. Synthetic example only. Empty or incorrect values do not authenticate.", "Synthetic example password 42!")
 				property.WriteOnly = true
-			case codeField:
+			case credentialCodeField:
 				property = stringSchema("Fresh six-digit TOTP from the enrolled factor; leading zeros are significant. Used counters cannot be replayed.", "012345")
 				switch rt.operationID {
 				case "authRecover":
@@ -116,7 +111,12 @@ func credentialSchema(rt route) (*huma.Schema, map[string]any) {
 	return closedObjectSchema("Credentials accepted by "+rt.operationID+". Fields may be absent at the JSON boundary; absent values become empty strings and do not bypass service authentication. Empty objects are intentional for cancellation and logout.", props, nil, example), example
 }
 
+const csrfResponseSchema = "CSRFResponse"
+
+const syntheticCSRF = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 func privateSchemas() map[string]*huma.Schema {
+	const csrfField = "csrf_token"
 	csrf := stringSchema("Current session CSRF token. Send it verbatim as X-CSRF-Token on the next POST; successful token responses replace the previous value.", syntheticCSRF)
 	csrf.MinLength, csrf.MaxLength = intPointer(43), intPointer(43)
 	csrf.Pattern = "^[A-Za-z0-9_-]{43}$"
@@ -130,18 +130,18 @@ func privateSchemas() map[string]*huma.Schema {
 	return map[string]*huma.Schema{
 		csrfResponseSchema: closedObjectSchema(
 			"Successful session transition or CSRF rotation. The opaque session bearer stays in a Secure HttpOnly cookie and is never returned in JSON.",
-			map[string]*huma.Schema{csrfField: csrf}, []string{csrfField}, map[string]any{csrfField: syntheticCSRF}),
+			map[string]*huma.Schema{csrfField: csrf}, []string{csrfField}, csrfResponse{CSRFToken: syntheticCSRF}),
 		"RecoveryEnrollment": closedObjectSchema(
 			"Restricted pending enrollment, not an authenticated full session. The real seed must not be logged or cached.",
-			map[string]*huma.Schema{csrfField: csrf, secretField: secret}, []string{csrfField, secretField}, map[string]any{csrfField: syntheticCSRF, secretField: secret.Examples[0]}),
+			map[string]*huma.Schema{csrfField: csrf, "secret": secret}, []string{csrfField, "secret"}, recoveryEnrollmentResponse{CSRFToken: syntheticCSRF, Secret: secret.Examples[0].(string)}),
 		"RecoveryCodes": closedObjectSchema(
 			"One-time disclosure of ten replacement recovery codes after successful factor confirmation. All browser session cookies are cleared.",
-			map[string]*huma.Schema{recoveryCodesField: {Type: "array", Description: "Ten new single-use secrets; replaces the previous recovery-code set.", Items: code, MinItems: intPointer(10), MaxItems: intPointer(10), Examples: []any{codes}}},
-			[]string{recoveryCodesField}, map[string]any{recoveryCodesField: codes}),
+			map[string]*huma.Schema{"recovery_codes": {Type: "array", Description: "Ten new single-use secrets; replaces the previous recovery-code set.", Items: code, MinItems: intPointer(10), MaxItems: intPointer(10), Examples: []any{codes}}},
+			[]string{"recovery_codes"}, recoveryCodesResponse{RecoveryCodes: codes}),
 		"AuthProblem": closedObjectSchema(
 			"Private transport problem; uses status, code and title only, without account existence or secret details. It is not the public Huma error model.",
-			map[string]*huma.Schema{statusField: {Type: "integer", Description: "HTTP response status.", Examples: []any{401}}, codeField: stringSchema("Stable machine-readable failure reason; see each status response for actual codes.", authenticationCode), titleField: stringSchema("Standard HTTP status phrase.", "Unauthorized")},
-			[]string{statusField, codeField, titleField}, map[string]any{statusField: 401, codeField: authenticationCode, titleField: "Unauthorized"}),
+			map[string]*huma.Schema{"status": {Type: "integer", Description: "HTTP response status.", Examples: []any{401}}, "code": stringSchema("Stable machine-readable failure reason; see each status response for actual codes.", authenticationCode), "title": stringSchema("Standard HTTP status phrase.", "Unauthorized")},
+			[]string{"status", "code", "title"}, authProblem{Status: 401, Code: authenticationCode, Title: "Unauthorized"}),
 	}
 
 }
@@ -190,7 +190,7 @@ func authResponses(rt route) map[string]*huma.Response {
 		responses["204"] = &huma.Response{Description: "Session revoked and browser session cookies cleared; no response body.", Headers: successHeaders}
 	} else {
 		schema := privateSchemas()[rt.response]
-		responses["200"] = &huma.Response{Description: "Transition committed; use the returned CSRF token when present and retain browser-managed cookie updates.", Headers: successHeaders, Content: map[string]*huma.MediaType{jsonType: {Schema: schemaRef(rt.response), Example: schema.Examples[0]}}}
+		responses["200"] = &huma.Response{Description: "Transition committed; use the returned CSRF token when present and retain browser-managed cookie updates.", Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: schema.Examples[0]}}}
 	}
 	for status, codes := range authErrorCodes(rt) {
 		responses[strconv.Itoa(status)] = authErrorResponse(rt, status, codes)
@@ -217,7 +217,7 @@ func authErrorCodes(rt route) map[int][]string {
 func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 	examples := map[string]*huma.Example{}
 	for _, code := range codes {
-		examples[code] = &huma.Example{Summary: code, Value: map[string]any{statusField: status, codeField: code, titleField: http.StatusText(status)}}
+		examples[code] = &huma.Example{Summary: code, Value: authProblem{Status: status, Code: code, Title: http.StatusText(status)}}
 	}
 	headers := authResponseHeaders()
 	description := http.StatusText(status) + ": " + strings.Join(codes, ", ") + "."

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"strconv"
 	"time"
@@ -17,19 +16,7 @@ import (
 	"stepolonia/apps/api/internal/content"
 )
 
-const (
-	jsonMediaType           = "application/json"
-	invalidParametersCode   = "invalid_parameters"
-	leftToRightDirection    = "ltr"
-	emptyMessageKey         = "empty"
-	problemJSONMediaType    = "application/problem+json"
-	databaseUnavailableCode = "database_unavailable"
-	contentTypeHeader       = "Content-Type"
-	locationHeader          = "Location"
-	languageQueryKey        = "language"
-	limitQueryKey           = "limit"
-	offsetQueryKey          = "offset"
-)
+const leftToRightDirection = "ltr"
 
 type languageDTO struct {
 	Code       string `json:"code" doc:"Normalized BCP 47 content language code." example:"pl"`
@@ -37,6 +24,12 @@ type languageDTO struct {
 	NativeName string `json:"native_name" doc:"Language name in its own language." example:"Polski"`
 	Direction  string `json:"direction" enum:"ltr,rtl" doc:"Writing direction used when rendering this language." example:"ltr"`
 }
+
+const (
+	languageQueryKey = "language"
+	limitQueryKey    = "limit"
+	offsetQueryKey   = "offset"
+)
 
 type contentListInput struct {
 	TypeKey  string `path:"type_key" doc:"Public Registry collection key. Unknown or non-public collections return 404." example:"article"`
@@ -53,54 +46,13 @@ type languagesOutput struct {
 	Body []languageDTO `nullable:"false"`
 }
 type contentListOutput struct{ Body content.PublicPage }
+
+const locationHeader = "Location"
+
 type contentOutput struct {
 	Status   int
 	Location string              `header:"Location" doc:"Canonical API address in the same content language, present on historical-slug 301 responses."`
 	Body     *content.PublicItem `nullable:"false"`
-}
-
-type publicProblem struct {
-	Type   string `json:"type" doc:"Problem type URI. Currently about:blank." example:"about:blank"`
-	Title  string `json:"title" doc:"HTTP reason phrase for status." example:"Bad Request"`
-	Status int    `json:"status" doc:"HTTP response status code." example:"400"`
-	Detail string `json:"detail" doc:"Safe human-readable explanation without dependency details." example:"The request parameters are invalid."`
-	Code   string `json:"code" doc:"Machine-readable failure code. See the operation response for supported codes." example:"invalid_parameters"`
-}
-
-func (p *publicProblem) Error() string             { return p.Code }
-func (p *publicProblem) GetStatus() int            { return p.Status }
-func (p *publicProblem) ContentType(string) string { return problemJSONMediaType }
-
-func newProblem(status int, code string) *publicProblem {
-	detail := "The request parameters are invalid."
-	switch status {
-	case http.StatusConflict:
-		detail = "The published version has changed."
-	case http.StatusNotFound:
-		detail = "The requested resource was not found."
-	case http.StatusServiceUnavailable:
-		detail = "A required dependency is unavailable."
-	}
-	return &publicProblem{Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: detail, Code: code}
-}
-
-func problemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
-	result := make(map[string]*huma.Response, len(statuses))
-	schema := api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[publicProblem](), true, "PublicProblem")
-	for _, status := range statuses {
-		code := invalidParametersCode
-		description := "Invalid, missing, repeated, empty or unsupported query parameters, malformed language, type key, slug or pagination. Codes include invalid_parameters, invalid_language, invalid_type_key, invalid_slug, invalid_page and invalid_value."
-		switch status {
-		case 404:
-			code, description = "content_not_found", "The collection, language or published translation is unavailable. Code content_not_found."
-		case 409:
-			code, description = "version_conflict", "A database serialization, deadlock or lock conflict interrupted the read. Codes version_conflict and route_conflict. Retry the request."
-		case 503:
-			code, description = databaseUnavailableCode, "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
-		}
-		result[strconv.Itoa(status)] = &huma.Response{Description: description, Content: map[string]*huma.MediaType{problemJSONMediaType: {Schema: schema, Example: newProblem(status, code)}}}
-	}
-	return result
 }
 
 func registerContent(api huma.API, reader *content.PublicReader, logger *slog.Logger) {
@@ -230,11 +182,7 @@ func (languageDTO) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.S
 	return schema
 }
 
-// TransformSchema documents the stable public error envelope.
-func (publicProblem) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Description = "Public application/problem+json failure. status matches the HTTP status, code is machine-readable, and detail contains a safe generic explanation. All properties are present."
-	return schema
-}
+const emptyExampleName = "empty"
 
 func languageResponses(api huma.API) map[string]*huma.Response {
 	responses := problemResponses(api, 400, 503)
@@ -251,7 +199,7 @@ func languageResponses(api huma.API) map[string]*huma.Response {
 							{Code: "ru", Name: "Russian", NativeName: "Русский", Direction: leftToRightDirection},
 						},
 					},
-					emptyMessageKey: {Summary: "No active content languages", Value: []languageDTO{}},
+					emptyExampleName: {Summary: "No active content languages", Value: []languageDTO{}},
 				},
 			},
 		},
@@ -270,10 +218,10 @@ func contentResponses(api huma.API, list bool) map[string]*huma.Response {
 	if list {
 		next := 1
 		examples = map[string]*huma.Example{
-			"page":          {Summary: "First page with limit=1 and another item available", Value: content.PublicPage{Items: []content.PublicItem{apiexamples.SecondArticle()}, NextOffset: &next}},
-			"last":          {Summary: "Final page with next_offset null", Value: content.PublicPage{Items: []content.PublicItem{article}}},
-			emptyMessageKey: {Summary: "Empty published collection", Value: content.PublicPage{Items: []content.PublicItem{}}},
-			"events":        {Summary: "Event collection with a public relation to an Article", Value: content.PublicPage{Items: []content.PublicItem{event}}},
+			"page":           {Summary: "First page with limit=1 and another item available", Value: content.PublicPage{Items: []content.PublicItem{apiexamples.SecondArticle()}, NextOffset: &next}},
+			"last":           {Summary: "Final page with next_offset null", Value: content.PublicPage{Items: []content.PublicItem{article}}},
+			emptyExampleName: {Summary: "Empty published collection", Value: content.PublicPage{Items: []content.PublicItem{}}},
+			"events":         {Summary: "Event collection with a public relation to an Article", Value: content.PublicPage{Items: []content.PublicItem{event}}},
 		}
 	}
 	responses["200"] = &huma.Response{

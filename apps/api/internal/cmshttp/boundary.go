@@ -11,12 +11,12 @@ import (
 	"strings"
 )
 
-const originHeader = "Origin"
-const httpsScheme = "https"
-const sameOriginSite = "same-origin"
-const nullOrigin = "null"
-
-const authPrefix = "/api/v1/admin/auth"
+const (
+	originHeader       = "Origin"
+	forwardedForHeader = "X-Forwarded-For"
+	httpsScheme        = "https"
+	sameOriginSite     = "same-origin"
+)
 
 // Config identifies the installation origin and explicitly trusted proxy peers.
 type Config struct {

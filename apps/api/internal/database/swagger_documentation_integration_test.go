@@ -16,8 +16,6 @@ import (
 	"stepolonia/apps/api/internal/platform"
 )
 
-const swaggerNodeExecutable = "node"
-
 // This browser scenario uses real security storage and the Swagger controls;
 // cookies, Origin and Referer are supplied by Chromium rather than a mock.
 func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
@@ -40,7 +38,7 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	handler = platform.HandlerWithDocumentation(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, swaggerNodeExecutable, "-e", qaSwaggerBrowserScript)
+	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaSwaggerBrowserScript)
 	command.Env = append(os.Environ(), "QA_SWAGGER_ORIGIN="+server.URL, "QA_SWAGGER_LOGIN="+bootstrapTestLogin, "QA_SWAGGER_PASSWORD="+bootstrapTestPassphrase, "QA_SWAGGER_CODE="+bootstrapCode(t, f.state.db, f.state.secret))
 	output, err := command.CombinedOutput()
 	if err != nil {

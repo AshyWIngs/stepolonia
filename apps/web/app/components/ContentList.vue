@@ -5,7 +5,7 @@ import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
-import { contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
+import { contentPageSize, contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
 
 defineOptions({ name: 'PublishedContentList' })
 
@@ -15,7 +15,7 @@ const language = routeSegment(route.params.lang).toLowerCase()
 const page = contentListPage(route.query.page)
 const content = usePublicContent()
 const { t } = usePublicUi()
-const { data, error } = await useAsyncData(`content:${namespace}:${language}:${page}`, () => content.list(namespace, language, (page - 1) * 20), {
+const { data, error } = await useAsyncData(`content:${namespace}:${language}:${page}`, () => content.list(namespace, language, (page - 1) * contentPageSize), {
   getCachedData: (key, app) => app.isHydrating ? app.payload.data[key] : undefined,
 })
 if (error.value) throw publicError(error.value.status ?? 503)

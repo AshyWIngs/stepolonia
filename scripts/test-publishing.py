@@ -16,7 +16,7 @@ import smoke
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
 
 
-LABEL = "io.stepolonia.stage12-test"
+OWNERSHIP_LABEL = "io.stepolonia.stage12-test"
 
 
 def command(arguments, log, *, env=None, capture=False, cwd=ROOT):
@@ -32,7 +32,7 @@ def verify_named_volume(project, token, volume, log):
     if volume not in existing:
         return
     inspected = json.loads(command(["docker", "volume", "inspect", volume], log, capture=True))
-    if len(inspected) != 1 or (inspected[0].get("Labels") or {}).get(LABEL) != token:
+    if len(inspected) != 1 or (inspected[0].get("Labels") or {}).get(OWNERSHIP_LABEL) != token:
         raise RuntimeError(f"Очистка запрещена: том {volume} не принадлежит тесту {project}")
 
 
@@ -40,7 +40,7 @@ def verify_resource_owner(item, resource, project, token):
     """Отсутствующий или чужой маркер запрещает очистку найденного ресурса."""
     metadata = item.get("Config", {}) if resource == "container" else item
     labels = metadata.get("Labels") or {}
-    if labels.get(LABEL) != token:
+    if labels.get(OWNERSHIP_LABEL) != token:
         raise RuntimeError(f"Очистка запрещена: другой маркер владельца ресурса {resource}; "
                            f"проект {project}. Сохраните ресурсы и проверьте их владельца вручную")
 
@@ -92,7 +92,7 @@ def prepare_installation(site, project, database, token, *, runtime=False):
 def installation_override(project, token, volume, *, runtime=False, images_project=None):
     """Один источник конфигурации ресурсов для основной и второй одноразовых установок."""
     images = images_project or project
-    labels = {LABEL: token}
+    labels = {OWNERSHIP_LABEL: token}
     services = {
         "postgres-init": {"image": f"{images}-init:check", "labels": labels},
         "postgres": {"image": f"{images}-postgres:check", "labels": labels,
@@ -143,7 +143,7 @@ def check_cli(site, directory, override, compose, config, log):
 def published_port(compose, service, target, token, log):
     containers = command([*compose, "ps", "-q", service], log, capture=True).split()
     inspected = json.loads(command(["docker", "inspect", *containers], log, capture=True))
-    if len(inspected) != 1 or inspected[0]["Config"]["Labels"].get(LABEL) != token:
+    if len(inspected) != 1 or inspected[0]["Config"]["Labels"].get(OWNERSHIP_LABEL) != token:
         raise RuntimeError(f"Не совпадает идентичность контейнера {service}")
     bindings = inspected[0]["NetworkSettings"]["Ports"].get(f"{target}/tcp") or []
     if (len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1"

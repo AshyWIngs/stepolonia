@@ -1,6 +1,6 @@
 import { usePublicApi } from './usePublicApi'
 import { usePublicSite } from './usePublicSite'
-import { contentRedirect, contentPath, contentType, publicError, type ContentNamespace } from '~/utils/public-content'
+import { contentRedirect, contentPath, contentType, contentPageSize, publicError, type ContentNamespace } from '~/utils/public-content'
 
 export function usePublicContent() {
   const { client, request } = usePublicApi()
@@ -23,7 +23,7 @@ export function usePublicContent() {
 
   async function list(namespace: ContentNamespace, code: string, offset: number) {
     const { selected, languages } = await language(code)
-    const { data, response } = await request(() => client.listContent({ path: { type_key: contentType(namespace) }, query: { language: selected.code, limit: 20, offset } }))
+    const { data, response } = await request(() => client.listContent({ path: { type_key: contentType(namespace) }, query: { language: selected.code, limit: contentPageSize, offset } }))
     if (!data) throw publicError(response.status)
     return { items: data.items, nextOffset: data.next_offset, language: selected, languages }
   }
