@@ -8,7 +8,8 @@ CREATE TABLE public.ui_message_keys (
 );
 
 INSERT INTO public.ui_message_keys (message_key) VALUES
-('articles'), ('empty'), ('pagination'), ('previous'), ('next'), ('navigation'),
+('articles'), ('events'), ('empty'), ('pagination'), ('previous'), ('next'),
+('navigation'),
 ('all'), ('languages'), ('errors.400'), ('errors.404'), ('errors.503'),
 ('errors.other'), ('errors.retry'), ('errors.home');
 

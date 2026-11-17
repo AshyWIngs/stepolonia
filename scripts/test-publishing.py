@@ -164,8 +164,9 @@ def check_runtime(site, directory, override, compose, environment, project, toke
     command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
     port = published_port(compose, "caddy", 8080, token, log)
     base = f"http://127.0.0.1:{port}"
-    command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingRuntimeIntegration$",
-             "./internal/database"], log, env={**environment, "STAGE15_API_URL": base}, cwd=ROOT / "apps/api")
+    command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestContentRuntimeFixture$",
+             "./internal/content"], log, env={**environment, "STAGE15_API_URL": base, "STAGE32_CONTENT_FIXTURE": "primary"}, cwd=ROOT / "apps/api")
+    publish_site_fixture(environment, "primary", log)
     smoke.COMPOSE = compose
     with redirect_stdout(log):
         smoke.check_publishing(base)
@@ -225,7 +226,7 @@ def check_localization(base, images_project, primary_compose, log):
         port = published_port(compose, "caddy", 8080, token, log)
         second_base = f"http://127.0.0.1:{port}"
         localization_browser(base, "--localization", log, STAGE22_SECOND_URL=second_base)
-        check_seo(base, second_base, primary_compose, compose, config, log)
+        check_seo(base, second_base, primary_compose, compose, config, environment, log)
         check_language_configuration(second_base, compose, config, environment, log)
     finally:
         if resources_owned:
@@ -246,7 +247,7 @@ def seo_origin(compose, origin, log):
         command([*compose, "-f", overlay.name, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "120", "web"], log)
 
 
-def check_seo(base, second, primary_compose, compose, config, log):
+def check_seo(base, second, primary_compose, compose, config, environment, log):
     """SEO проверяется на общих образах, разных БД и только owned disposable-данных."""
     primary_origin = "https://primary.stepolonia.kz"
     second_origin = "https://secondary.stepolonia.kz"
@@ -254,29 +255,9 @@ def check_seo(base, second, primary_compose, compose, config, log):
     seo_origin(compose, second_origin, log)
     localization_browser(base, "--seo", log, STAGE23_ORIGIN=primary_origin,
                          STAGE22_SECOND_URL=second, STAGE23_SECOND_ORIGIN=second_origin)
-    # Синтетические публикации собираем штатными ограничениями, без отключения триггеров.
-    fixture = """BEGIN;
-INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
-VALUES ('qaa','Private use','Private use','ltr',true),
-       ('en-us','English US','English US','ltr',true),
-       ('zh-hans-cn','Chinese simplified','简体中文','ltr',true);
-DO $fixture$ DECLARE a uuid; r uuid; n integer; lang text;
-BEGIN
- FOR n IN 1..21 LOOP
-  a := gen_random_uuid(); r := gen_random_uuid();
-  INSERT INTO public.articles(id) VALUES(a);
-  INSERT INTO public.article_revisions(id,article_id,revision_no) VALUES(r,a,1);
-  FOREACH lang IN ARRAY CASE WHEN n=21 THEN ARRAY['fr','qaa'] ELSE ARRAY['fr'] END LOOP
-   INSERT INTO public.public_routes(language_code,slug,article_id) VALUES(lang,'seo-fixture-'||n,a);
-   INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)
-   VALUES(a,r,lang,'SEO fixture '||n,'seo-fixture-'||n,'SEO fixture body');
-  END LOOP;
-  UPDATE public.article_revisions SET sealed=true WHERE id=r;
-  UPDATE public.articles SET published_revision_id=r WHERE id=a;
- END LOOP;
-END $fixture$;
-COMMIT;"""
-    command([*compose, *postgres_sql_args(config, fixture)], log)
+    # The same Engine service creates bounded fixtures through its test-only actor.
+    command(["go", "test", "-count=1", "-run", "^TestContentRuntimeFixture$", "./internal/content"],
+            log, env={**environment, "STAGE32_CONTENT_FIXTURE": "seo"}, cwd=ROOT / "apps/api")
     localization_browser(second, "--seo-unsupported", log, STAGE23_ORIGIN=second_origin)
     logs = command([*compose, "logs", "--no-color", "web"], log, capture=True)
     if "Набор hreflang пропущен: неподдерживаемые коды языков" not in logs or "qaa" not in logs:
@@ -367,8 +348,10 @@ def main(runtime=False):
             else:
                 check_cli(site, directory, override, compose, config, log)
                 # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
-                command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestPublishingSchemaIntegration$",
+                command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestContentSchemaIntegration$",
                          "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
+                command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestContentIntegration$",
+                         "./internal/content"], log, env=environment, cwd=ROOT / "apps/api")
             success = True
     finally:
         if resources_owned:

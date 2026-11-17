@@ -9,9 +9,8 @@ import (
 )
 
 // Canonical definitions describe the complete domain migration set on PostgreSQL 18.
-// Контракт ограничен publishing: сравниваем текст pg_get_* целиком, сохраняя
-// пробелы внутри SQL literals и тел функций. Смена major требует проверки контракта.
-type publishingContract struct {
+// Compare complete catalog definitions, including literal whitespace and function bodies.
+type schemaContract struct {
 	PostgresMajor int               `json:"postgres_major"`
 	Constraints   map[string]string `json:"constraints"`
 	Triggers      map[string]string `json:"triggers"`
@@ -24,6 +23,7 @@ type publishingContract struct {
 	Indexes       map[string]string `json:"indexes"`
 	Comments      map[string]string `json:"comments"`
 	Operations    map[string]string `json:"operations"`
+	Privileges    map[string]string `json:"privileges"`
 }
 
 func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
@@ -31,7 +31,7 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 	if err != nil {
 		return err
 	}
-	var contract publishingContract
+	var contract schemaContract
 	if err := json.Unmarshal(raw, &contract); err != nil {
 		return err
 	}
@@ -58,20 +58,20 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 		"constraints": contract.Constraints, "triggers": contract.Triggers, "functions": contract.Functions,
 		"defaults": contract.Defaults, "collations": contract.Collations, "columns": contract.Columns,
 		"views": contract.Views, "view_options": contract.ViewOptions,
-		"indexes": contract.Indexes, "comments": contract.Comments, "operations": contract.Operations,
+		"indexes": contract.Indexes, "comments": contract.Comments, "operations": contract.Operations, "privileges": contract.Privileges,
 	}
-	if err := checkPublishingMetadata(ctx, tx); err != nil {
+	if err := checkSchemaMetadata(ctx, tx); err != nil {
 		return err
 	}
 	if err := checkCMSPrivileges(ctx, tx); err != nil {
 		return err
 	}
-	return checkPublishingDefinitions(ctx, tx, expected)
+	return checkSchemaDefinitions(ctx, tx, expected)
 }
 
-func checkPublishingMetadata(ctx context.Context, tx *sql.Tx) error {
+func checkSchemaMetadata(ctx context.Context, tx *sql.Tx) error {
 	var safe bool
-	err := tx.QueryRowContext(ctx, publishingMetadataQuery).Scan(&safe)
+	err := tx.QueryRowContext(ctx, schemaMetadataQuery).Scan(&safe)
 	if err != nil {
 		return err
 	}
@@ -81,8 +81,8 @@ func checkPublishingMetadata(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func checkPublishingDefinitions(ctx context.Context, tx *sql.Tx, expected map[string]map[string]string) error {
-	rows, err := tx.QueryContext(ctx, publishingDefinitionsQuery)
+func checkSchemaDefinitions(ctx context.Context, tx *sql.Tx, expected map[string]map[string]string) error {
+	rows, err := tx.QueryContext(ctx, schemaDefinitionsQuery)
 	if err != nil {
 		return err
 	}
@@ -109,25 +109,30 @@ func checkPublishingDefinitions(ctx context.Context, tx *sql.Tx, expected map[st
 	return nil
 }
 
-const publishingMetadataQuery = `SELECT
-     (SELECT count(*)=31 AND bool_and(relowner=current_user::regrole AND
-      relkind=CASE WHEN relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages') THEN 'v'::"char" ELSE 'r'::"char" END)
-      FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
-      ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
-     AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
-      WHERE c.relnamespace='public'::regnamespace AND c.relname IN
-      ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages') AND NOT t.tgisinternal AND t.tgenabled<>'O')
-     AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
-      ('guard_security_state','guard_security_audit','guard_user_activation','cms_write_mutex','reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND proowner<>current_user::regrole)
-     AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
-      WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND a.grantee=0 AND a.privilege_type='EXECUTE')`
+const schemaMetadataQuery = `SELECT
+ NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace
+ AND relname NOT LIKE 'goose_db_version%' AND (relowner<>current_user::regrole OR relrowsecurity OR relforcerowsecurity))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
+ WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal AND t.tgenabled<>'O')
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proowner<>current_user::regrole)
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+ CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) a
+ WHERE c.relnamespace='public'::regnamespace AND c.relkind='r' AND c.relname<>'goose_db_version'
+ AND a.grantee<>c.relowner AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute col ON col.attrelid=c.oid
+ CROSS JOIN LATERAL pg_catalog.aclexplode(col.attacl) a
+ WHERE c.relnamespace='public'::regnamespace AND a.grantee<>c.relowner
+ AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+ CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
+ WHERE p.pronamespace='public'::regnamespace AND a.grantee<>p.proowner
+ AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))`
 
-const publishingDefinitionsQuery = `WITH tables AS (
- SELECT oid,relname FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
- ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages')
+const schemaDefinitionsQuery = `WITH tables AS (
+ SELECT oid,relname,relowner,relacl FROM pg_catalog.pg_class
+ WHERE relnamespace='public'::regnamespace AND relkind='r' AND relname<>'goose_db_version'
  ), views AS (
- SELECT oid,relname,reloptions FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace
- AND relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages')
+ SELECT oid,relname,reloptions FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relkind='v'
  )
  SELECT 'columns',c.relname||'.'||a.attname,pg_catalog.format_type(a.atttypid,a.atttypmod)||CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE ' NULL' END
  FROM pg_catalog.pg_attribute a JOIN tables c ON c.oid=a.attrelid WHERE a.attnum>0 AND NOT a.attisdropped
@@ -136,8 +141,7 @@ const publishingDefinitionsQuery = `WITH tables AS (
  UNION ALL SELECT 'triggers',c.relname||'.'||t.tgname,pg_catalog.pg_get_triggerdef(t.oid,false)
  FROM pg_catalog.pg_trigger t JOIN tables c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal
  UNION ALL SELECT 'functions',p.proname,pg_catalog.pg_get_functiondef(p.oid)
- FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN
- ('guard_security_state','guard_security_audit','guard_user_activation','cms_write_mutex','reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
+ FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace
  UNION ALL SELECT 'views',relname,pg_catalog.pg_get_viewdef(oid,false) FROM views
  UNION ALL SELECT 'view_options',relname,COALESCE(array_to_string(reloptions,','),'') FROM views
  UNION ALL SELECT 'defaults',c.relname||'.'||a.attname,pg_catalog.pg_get_expr(d.adbin,d.adrelid,false)
@@ -149,11 +153,17 @@ const publishingDefinitionsQuery = `WITH tables AS (
  WHERE a.attnum>0 AND NOT a.attisdropped
  UNION ALL SELECT 'indexes',c.relname||'.'||i.relname,pg_catalog.pg_get_indexdef(i.oid)
  FROM tables c JOIN pg_catalog.pg_index x ON x.indrelid=c.oid JOIN pg_catalog.pg_class i ON i.oid=x.indexrelid
- WHERE c.relname IN ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
- UNION ALL SELECT 'comments',c.relname,COALESCE(pg_catalog.obj_description(c.oid,'pg_class'),'')
- FROM tables c WHERE c.relname IN ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
+ UNION ALL SELECT 'comments',c.relname,COALESCE(pg_catalog.obj_description(c.oid,'pg_class'),'') FROM tables c
  UNION ALL SELECT 'comments',c.relname||'.'||a.attname,pg_catalog.col_description(c.oid,a.attnum)
  FROM tables c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
- WHERE c.relname IN ('security_state','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields') AND a.attnum>0 AND NOT a.attisdropped AND pg_catalog.col_description(c.oid,a.attnum) IS NOT NULL
- UNION ALL SELECT 'comments','cms_write_mutex()',COALESCE(pg_catalog.obj_description('public.cms_write_mutex()'::regprocedure,'pg_proc'),'')
+ WHERE a.attnum>0 AND NOT a.attisdropped AND pg_catalog.col_description(c.oid,a.attnum) IS NOT NULL
+ UNION ALL SELECT 'comments','function.'||p.proname,pg_catalog.obj_description(p.oid,'pg_proc')
+ FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace AND pg_catalog.obj_description(p.oid,'pg_proc') IS NOT NULL
+ UNION ALL SELECT 'privileges','table.'||c.relname||'.'||a.grantee::regrole::text||'.'||a.privilege_type,a.is_grantable::text
+ FROM tables c CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) a WHERE a.grantee<>c.relowner
+ UNION ALL SELECT 'privileges','column.'||c.relname||'.'||col.attname||'.'||a.grantee::regrole::text||'.'||a.privilege_type,a.is_grantable::text
+ FROM tables c JOIN pg_catalog.pg_attribute col ON col.attrelid=c.oid
+ CROSS JOIN LATERAL pg_catalog.aclexplode(col.attacl) a WHERE a.grantee<>c.relowner
+ UNION ALL SELECT 'privileges','function.'||p.proname||'.'||a.grantee::regrole::text||'.'||a.privilege_type,a.is_grantable::text
+ FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(p.proacl) a WHERE p.pronamespace='public'::regnamespace AND a.grantee<>p.proowner
  UNION ALL SELECT 'operations',key,scope FROM public.permission_operations`

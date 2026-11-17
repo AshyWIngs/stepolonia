@@ -50,6 +50,14 @@ function publishedHTML(html) {
 }
 
 async function checkSSR() {
+  const event = await documentResponse('/fr/events/stage32-event', 200)
+  assert.ok(event.html.includes('Stage 3.2 Event'))
+  assert.ok(event.html.includes('data-field="featured"'))
+  assert.ok(!event.html.includes('private-event-secret'))
+  const eventList = await documentResponse('/fr/events', 200)
+  assert.ok(eventList.html.includes('/fr/events/stage32-event'))
+  await documentResponse('/fr/arbitrary/stage32-event', 404)
+  await documentResponse('/fr/articles?page=502', 400)
   const listed = await documentResponse('/fr/articles', 200)
   assert.ok(listed.html.includes(articleTitle))
   const { html, response } = await documentResponse(currentPath, 200, {
@@ -387,10 +395,10 @@ async function checkSeo() {
     await browserSeo(page, articleSeo(seoOrigin))
     // Обрыв браузерного API-запроса проверяет очистку head при клиентской 503.
     // Реальную остановку API/БД отдельно выполняет recovery-сценарий harness.
-    await page.route('**/api/v1/articles/**', route => route.abort('connectionrefused'))
+    await page.route('**/api/v1/content/**', route => route.abort('connectionrefused'))
     await routeTo(page, '/ru/articles/stage22-ru-current')
     await browserSeo(page, [])
-    await page.unroute('**/api/v1/articles/**')
+    await page.unroute('**/api/v1/content/**')
     await page.goto(`${base}${currentPath}`)
     await browserSeo(page, articleSeo(seoOrigin))
     assert.deepEqual(errors, [])

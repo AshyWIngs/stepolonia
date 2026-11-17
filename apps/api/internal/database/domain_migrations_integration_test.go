@@ -107,7 +107,7 @@ func domainQARejectUnchanged(t *testing.T, db *sql.DB, role string) {
 }
 
 func TestDomainMigrationsPartialPrefixesIntegration(t *testing.T) {
-	for version := int64(1); version < 5; version++ {
+	for version := int64(1); version < finalMigrationVersion; version++ {
 		t.Run(fmt.Sprintf("prefix%d", version), func(t *testing.T) {
 			db, role := domainQAFixture(t)
 			provider, err := Provider(db)

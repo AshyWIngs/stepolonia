@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/v1/articles": {
+    "/api/v1/content/{type_key}": {
         parameters: {
             query?: never;
             header?: never;
@@ -12,10 +12,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List published articles in one content language
-         * @description Ordered by publication time descending, then article ID descending. An active language with no articles returns an empty array. No language fallback.
+         * List published collection content
+         * @description Publication time and item ID descending. No content language fallback or field predicates.
          */
-        get: operations["listArticles"];
+        get: operations["listContent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -24,18 +24,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/articles/{slug}": {
+    "/api/v1/content/{type_key}/{slug}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get a published article or its canonical address
-         * @description Missing, unpublished, disabled or untranslated content returns 404. No language fallback.
-         */
-        get: operations["getArticle"];
+        /** Get published content or its canonical address */
+        get: operations["getContent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -117,24 +114,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        ArticleDTO: {
-            /** Format: uuid */
-            article_id: string;
-            body_markdown: string;
-            language_code: string;
-            slug: string;
-            title: string;
-        };
-        ArticleDetailDTO: {
-            /** Format: uuid */
-            article_id: string;
-            body_markdown: string;
-            language_code: string;
-            /** @description Published translations of this article in enabled content languages, ordered by language code. Each slug is canonical for its language. */
-            published_translations: components["schemas"]["PublishedTranslationDTO"][];
-            slug: string;
-            title: string;
-        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -194,6 +173,94 @@ export interface components {
             name: string;
             native_name: string;
         };
+        PublicItem: {
+            canonical_url: string;
+            /** Format: uuid */
+            item_id: string;
+            language: string;
+            localized: {
+                [key: string]: {
+                    /** @enum {string} */
+                    kind: "string";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "text";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "markdown";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "enum";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "integer";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "decimal";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "datetime";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "boolean";
+                    value: boolean;
+                };
+            };
+            /** Format: uuid */
+            publication_id: string;
+            relations: components["schemas"]["PublicRelation"][];
+            schema_no: string;
+            shared: {
+                [key: string]: {
+                    /** @enum {string} */
+                    kind: "string";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "text";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "markdown";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "enum";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "integer";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "decimal";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "datetime";
+                    value: string;
+                } | {
+                    /** @enum {string} */
+                    kind: "boolean";
+                    value: boolean;
+                };
+            };
+            slug: string;
+            translations: components["schemas"]["PublicTranslation"][];
+            type_key: string;
+        };
+        PublicPage: {
+            items: components["schemas"]["PublicItem"][];
+            /** Format: int64 */
+            next_offset: number | null;
+        };
         PublicProblem: {
             code: string;
             detail: string;
@@ -201,6 +268,20 @@ export interface components {
             status: number;
             title: string;
             type: string;
+        };
+        PublicRelation: {
+            field_key: string;
+            targets: components["schemas"]["PublicTarget"][];
+        };
+        PublicTarget: {
+            canonical_url: string;
+            /** Format: uuid */
+            item_id: string;
+        };
+        PublicTranslation: {
+            canonical_url: string;
+            language: string;
+            slug: string;
         };
         Publication: {
             language: components["schemas"]["Language"];
@@ -213,10 +294,6 @@ export interface components {
             settings: components["schemas"]["Settings"];
             /** Format: uuid */
             version: string;
-        };
-        PublishedTranslationDTO: {
-            language_code: string;
-            slug: string;
         };
         Settings: {
             accent: string;
@@ -236,16 +313,18 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    listArticles: {
+    listContent: {
         parameters: {
             query: {
                 /** @description Content language (BCP 47). */
-                lang: string;
+                language: string;
                 limit?: number;
                 offset?: number;
             };
             header?: never;
-            path?: never;
+            path: {
+                type_key: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -256,7 +335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArticleDTO"][];
+                    "application/json": components["schemas"]["PublicPage"];
                 };
             };
             /** @description Bad Request */
@@ -277,6 +356,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicProblem"];
+                };
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {
@@ -288,14 +376,14 @@ export interface operations {
             };
         };
     };
-    getArticle: {
+    getContent: {
         parameters: {
             query: {
-                /** @description Content language (BCP 47). */
-                lang: string;
+                language: string;
             };
             header?: never;
             path: {
+                type_key: string;
                 slug: string;
             };
             cookie?: never;
@@ -309,10 +397,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArticleDetailDTO"];
+                    "application/json": components["schemas"]["PublicItem"];
                 };
             };
-            /** @description Historical slug; Location points directly to the current address in the same content language. */
+            /** @description Historical slug; direct canonical API address in the same language. */
             301: {
                 headers: {
                     Location: string;
@@ -333,6 +421,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicProblem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

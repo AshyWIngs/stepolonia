@@ -1,6 +1,6 @@
 import { usePublicApi } from './usePublicApi'
 import { usePublicSite } from './usePublicSite'
-import { articleRedirect, articlesPath, publicError } from '~/utils/public-content'
+import { contentRedirect, contentPath, contentType, publicError, type ContentNamespace } from '~/utils/public-content'
 
 export function usePublicContent() {
   const { client, request } = usePublicApi()
@@ -21,27 +21,27 @@ export function usePublicContent() {
     return { selected, languages }
   }
 
-  async function list(code: string, offset: number) {
+  async function list(namespace: ContentNamespace, code: string, offset: number) {
     const { selected, languages } = await language(code)
-    const { data, response } = await request(() => client.listArticles({ query: { lang: selected.code, limit: 20, offset } }))
+    const { data, response } = await request(() => client.listContent({ path: { type_key: contentType(namespace) }, query: { language: selected.code, limit: 20, offset } }))
     if (!data) throw publicError(response.status)
-    return { articles: data, language: selected, languages }
+    return { items: data.items, nextOffset: data.next_offset, language: selected, languages }
   }
 
-  async function article(code: string, slug: string) {
+  async function detail(namespace: ContentNamespace, code: string, slug: string) {
     const { selected, languages } = await language(code)
-    const result = await request(() => client.getArticle({ path: { slug }, query: { lang: selected.code } }))
-    const source = articlesPath(selected.code, slug)
+    const result = await request(() => client.getContent({ path: { type_key: contentType(namespace), slug }, query: { language: selected.code } }))
+    const source = contentPath(namespace, selected.code, slug)
     // Браузер скрывает Location при manual redirect. Полный переход возвращает обработку 301 серверу.
     if (import.meta.client && result.response.type === 'opaqueredirect') {
       return { kind: 'redirect' as const, path: source }
     }
     if (result.response.status === 301) {
-      return { kind: 'redirect' as const, path: articleRedirect(result.response.headers.get('location'), selected.code, source) }
+      return { kind: 'redirect' as const, path: contentRedirect(result.response.headers.get('location'), namespace, selected.code, source) }
     }
     if (!result.data) throw publicError(result.response.status)
-    return { kind: 'article' as const, article: result.data, language: selected, languages }
+    return { kind: 'content' as const, item: result.data, language: selected, languages }
   }
 
-  return { list, article, listLanguages }
+  return { list, detail, listLanguages }
 }

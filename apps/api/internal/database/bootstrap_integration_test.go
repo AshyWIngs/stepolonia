@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/pquerna/otp/totp"
 	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/content"
 )
 
 const bootstrapTestPassphrase = "Local test enrollment ! 73029"
@@ -275,12 +276,9 @@ func TestBootstrapAuditFailureRollbackIntegration(t *testing.T) {
 func TestBootstrapExactSeedGrantsIntegration(t *testing.T) {
 	db, svc, _ := bootstrapFixture(t)
 	ctx := context.Background()
-	const article = "b0000000-0000-0000-0000-000000000001"
-	const event = "b0000000-0000-0000-0000-000000000002"
-	_, err := db.Exec(`INSERT INTO public.content_types(id,key) VALUES($1,'article'),($2,'event')`, article, event)
-	requireNoError(t, err)
-	_, err = db.Exec(`INSERT INTO public.content_fields(type_id,field_id,key) VALUES($1,'b0000000-0000-0000-0000-000000000003','title'),($1,'b0000000-0000-0000-0000-000000000004','private_note'),($2,'b0000000-0000-0000-0000-000000000005','other')`, article, event)
-	requireNoError(t, err)
+	requireNoError(t, content.SeedInitialRegistry(ctx, db))
+	var article string
+	requireNoError(t, db.QueryRow("SELECT id::text FROM public.content_types WHERE key='article'").Scan(&article))
 	en, err := svc.Start(ctx, bootstrapTestLogin, bootstrapTestPassphrase)
 	requireNoError(t, err)
 	_, err = svc.Complete(ctx, bootstrapTestLogin, bootstrapTestPassphrase, bootstrapCode(t, db, en.Secret))
@@ -338,7 +336,7 @@ func assertBootstrapGrantRow(t *testing.T, rows *sql.Rows, expected map[string]m
 		}
 		wantFields := 0
 		if bootstrapFieldOperation(op) {
-			wantFields = 2
+			wantFields = 3
 		}
 		if fields != wantFields {
 			t.Fatal("seed field set differs from existing exact fields")

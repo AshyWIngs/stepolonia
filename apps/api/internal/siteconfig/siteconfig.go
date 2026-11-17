@@ -311,8 +311,8 @@ func checkPublicRole(ctx context.Context, tx *sql.Tx) error {
  AND NOT pg_catalog.has_schema_privilege(oid,'public','CREATE')
  AND NOT pg_catalog.has_database_privilege(oid,current_database(),'CREATE,TEMP')
  AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid)
- AND NOT EXISTS(SELECT 1 FROM (VALUES('public.languages'),('public.articles'),('public.article_draft_translations'),('public.article_revisions'),('public.article_revision_translations'),('public.public_routes'),('public.site_state'),('public.site_revisions'),('public.ui_message_keys'),('public.site_revision_keys'),('public.site_revision_languages'),('public.site_revision_messages')) AS p(name)
- WHERE pg_catalog.has_table_privilege(r.oid,p.name,'SELECT') OR pg_catalog.has_any_column_privilege(r.oid,p.name,'SELECT'))
+ AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relkind='r'
+ AND (pg_catalog.has_table_privilege(r.oid,c.oid,'SELECT') OR pg_catalog.has_any_column_privilege(r.oid,c.oid,'SELECT')))
  FROM pg_catalog.pg_roles r WHERE rolname=current_user`).Scan(&allowed)
 	if err != nil {
 		return dbError(err)

@@ -1,10 +1,11 @@
 import { createError } from '#imports'
 
 export function publicError(status: number) {
-  const code = [400, 404, 503].includes(status) ? status : 503
+  const code = [400, 404, 409, 503].includes(status) ? status : 503
   const messages: Record<number, string> = {
     400: 'Bad Request',
     404: 'Not Found',
+    409: 'Conflict',
     503: 'Service Unavailable',
   }
   return createError({ status: code, statusText: messages[code], fatal: true })
@@ -17,18 +18,24 @@ export function routeSegment(value: string | string[] | undefined): string {
   return value
 }
 
-export function articlesPath(language: string, slug?: string): string {
-  const path = `/${encodeURIComponent(language)}/articles`
+export type ContentNamespace = 'articles' | 'events'
+export function contentNamespace(value: string | string[] | undefined): ContentNamespace {
+  if (value !== 'articles' && value !== 'events') throw publicError(404)
+  return value
+}
+export function contentType(namespace: ContentNamespace): 'article' | 'event' {
+  return namespace === 'articles' ? 'article' : 'event'
+}
+export function contentPath(namespace: ContentNamespace, language: string, slug?: string): string {
+  const path = `/${encodeURIComponent(language)}/${namespace}`
   return slug === undefined ? path : `${path}/${encodeURIComponent(slug)}`
 }
-
-export function articleRedirect(location: string | null, language: string, original: string): string {
-  // Проверяем контракт API Location и собираем SSR-путь текущей установки.
-  const match = location?.match(/^\/api\/v1\/articles\/([a-z0-9]+(?:-[a-z0-9]+)*)\?lang=([^&#]+)$/u)
-  if (!match?.[1] || match[1].length > 200 || match[2] !== encodeURIComponent(language)) {
-    throw publicError(503)
-  }
-  const destination = articlesPath(language, match[1])
+export function contentRedirect(location: string | null, namespace: ContentNamespace, language: string, original: string): string {
+  const prefix = `/api/v1/content/${contentType(namespace)}/`
+  if (!location?.startsWith(prefix)) throw publicError(503)
+  const match = location.slice(prefix.length).match(/^([a-z0-9]+(?:-[a-z0-9]+)*)\?language=([^&#]+)$/u)
+  if (!match?.[1] || match[1].length > 200 || match[2] !== encodeURIComponent(language)) throw publicError(503)
+  const destination = contentPath(namespace, language, match[1])
   if (destination === original) throw publicError(503)
   return destination
 }
@@ -49,10 +56,12 @@ export function canonicalUrl(origin: string, path: string): string | undefined {
   }
 }
 
-export function articleListPage(value: unknown): number {
+export function contentListPage(value: unknown): number {
   if (value === undefined) return 1
   if (typeof value !== 'string' || !/^[1-9]\d{0,4}$/u.test(value)) throw publicError(400)
-  return Number(value)
+  const page = Number(value)
+  if ((page - 1) * 20 > 10000) throw publicError(400)
+  return page
 }
 
 function hreflangParts(code: string) {
@@ -85,17 +94,17 @@ function supportedHreflang(code: string): boolean {
       && recognized('region', region.toUpperCase())))
 }
 
-export function contentSeoLinks(origin: string, path: string, translations: readonly { language_code: string, slug?: string }[]) {
+export function contentSeoLinks(origin: string, path: string, namespace: ContentNamespace, translations: readonly { language: string, slug?: string }[]) {
   const canonical = canonicalUrl(origin, path)
   if (!canonical) return []
   const links = [{ rel: 'canonical' as const, href: canonical }]
-  const unsupported = translations.filter(item => !supportedHreflang(item.language_code)).map(item => item.language_code)
+  const unsupported = translations.filter(item => !supportedHreflang(item.language)).map(item => item.language)
   if (unsupported.length) {
     console.warn('Набор hreflang пропущен: неподдерживаемые коды языков', unsupported)
     return links
   }
   return [...links, ...translations.map(item => ({
-    rel: 'alternate' as const, hreflang: item.language_code,
-    href: new URL(articlesPath(item.language_code, item.slug), canonical).href,
+    rel: 'alternate' as const, hreflang: item.language,
+    href: new URL(contentPath(namespace, item.language, item.slug), canonical).href,
   }))]
 }

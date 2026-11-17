@@ -31,7 +31,7 @@ func siteError(t *testing.T, err error, status int) {
 	}
 }
 func siteFixture() siteconfig.Draft {
-	keys := []string{siteArticlesKey, siteEmptyKey, "pagination", "previous", "next", "navigation", "all", "languages", "errors.400", "errors.404", "errors.503", "errors.other", "errors.retry", "errors.home"}
+	keys := []string{siteArticlesKey, "events", siteEmptyKey, "pagination", "previous", "next", "navigation", "all", "languages", "errors.400", "errors.404", "errors.503", "errors.other", "errors.retry", "errors.home"}
 	catalogs := map[string]map[string]string{}
 	for _, code := range []string{"pl", "en"} {
 		catalogs[code] = map[string]string{}
@@ -106,7 +106,7 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	body, _ := publicRequest(t, ctx, f.server.Client(), f.base, 200)
 	var out siteconfig.Publication
 	requireNoError(t, json.Unmarshal(body, &out))
-	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || len(out.Messages) != 14 || out.Settings.Accent != "#123aBC" {
+	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || len(out.Messages) != 15 || out.Settings.Accent != "#123aBC" {
 		t.Fatalf("unexpected site contract: %s", body)
 	}
 	out, err = f.reader.Read(ctx, "PL", f.publication)
