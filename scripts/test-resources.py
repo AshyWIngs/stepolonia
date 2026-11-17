@@ -168,7 +168,7 @@ def run_load(harness, base, items, duration, concurrency, log):
 def configure(harness, site, project, token):
     directory, override, log_path, volume = harness.prepare_installation(
         site, project, f"stage12_{token}", token, runtime=True)
-    configuration = json.loads(override.read_text())
+    configuration = harness.installation_override(project, token, volume, runtime=True)
     for service in configuration["services"].values():
         service["cpuset"] = "0"
     override.write_text(json.dumps(configuration))

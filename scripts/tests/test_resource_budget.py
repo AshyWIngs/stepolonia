@@ -1,9 +1,12 @@
 """Reject resource evidence collected with missing or ineffective limits."""
 from copy import deepcopy
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 def load_harness():
@@ -73,6 +76,23 @@ class ResourceEvidenceTests(unittest.TestCase):
         result = resources.summarize(rows)
         self.assertEqual(result["/fr/articles"]["p95_ms"], 19)
         self.assertEqual(result["/api/v1/site?lang=fr"]["requests"], 0)
+
+    def test_configuration_uses_generated_services_and_preserves_ownership(self):
+        harness = resources.load_publishing()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "sites").mkdir()
+            with patch.object(harness, "ROOT", root), patch.object(harness, "site_directory", return_value=root / "sites/resource.test"):
+                _, override, _, volume, _ = resources.configure(harness, "resource.test", "sp-resource-fixture", "a" * 12)
+            configuration = json.loads(override.read_text())
+        self.assertEqual(set(configuration["services"]), {"api", "web", "caddy", "postgres", "postgres-init", "db-tools"})
+        for name, service in configuration["services"].items():
+            with self.subTest(service=name):
+                self.assertEqual(service["cpuset"], "0")
+                self.assertEqual(service["labels"][harness.OWNERSHIP_LABEL], "a" * 12)
+                self.assertTrue(service["image"].startswith("sp-resource-fixture-"))
+        self.assertEqual(configuration["volumes"]["postgres_data"]["name"], volume)
+        self.assertEqual(configuration["services"]["postgres"]["ports"][0]["host_ip"], "127.0.0.1")
 
 
 if __name__ == "__main__":
