@@ -13,6 +13,8 @@ import (
 
 const (
 	originHeader       = "Origin"
+	fetchSiteHeader    = "Sec-Fetch-Site"
+	refererHeader      = "Referer"
 	forwardedForHeader = "X-Forwarded-For"
 	httpsScheme        = "https"
 	sameOriginSite     = "same-origin"
@@ -90,7 +92,7 @@ func (b boundary) check(r *http.Request) (string, string) {
 	if !b.validRequestOrigin(r, origins) {
 		return "", originCode
 	}
-	if r.URL.RawQuery != "" {
+	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && (r.Method != http.MethodGet || r.URL.Path != usersPath) {
 		return "", validationCode
 	}
 	return ip, ""
@@ -115,10 +117,11 @@ func (b boundary) validRequestOrigin(r *http.Request, origins []string) bool {
 	if len(origins) != 0 {
 		return len(origins) == 1 && origins[0] == b.origin
 	}
-	if r.Method != http.MethodGet || r.URL.Path != authPrefix+"/csrf" {
+	path, _ := userRoutePath(r.URL.Path)
+	if r.Method != http.MethodGet || (r.URL.Path != authPrefix+"/csrf" && path != usersPath && path != userPath) {
 		return false
 	}
-	sites, referers := r.Header.Values("Sec-Fetch-Site"), r.Header.Values("Referer")
+	sites, referers := r.Header.Values(fetchSiteHeader), r.Header.Values(refererHeader)
 	if len(sites) != 1 || sites[0] != sameOriginSite || len(referers) != 1 {
 		return false
 	}

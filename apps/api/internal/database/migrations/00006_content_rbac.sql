@@ -63,7 +63,13 @@ CREATE TABLE public.role_grants (
     CONSTRAINT role_grants_scope_check CHECK (
         (
             scope = 'installation'
-            AND type_id IS null
+            AND (
+                type_id IS null
+                OR (
+                    operation = 'content.permissions.delegate'
+                    AND target_scope = 'type'
+                )
+            )
             AND object_scope IS null
             AND operation NOT LIKE 'content.items.%'
         )
@@ -87,7 +93,10 @@ CREATE TABLE public.role_grants (
             AND scope = 'installation'
             AND target_scope IS NOT null
             AND object_ceiling IS NOT null
-            AND target_scope IN ('installation', 'type')
+            AND (
+                (target_scope = 'installation' AND type_id IS null)
+                OR (target_scope = 'type' AND type_id IS NOT null)
+            )
             AND object_ceiling IN ('assigned', 'any')
             AND cardinality(delegate_operations) BETWEEN 1 AND 7
             AND delegate_operations
@@ -157,6 +166,10 @@ COMMENT ON TABLE public.role_grants IS
 COMMENT ON COLUMN public.role_grants.can_delegate IS
 'Allows delegation only within the actor''s authorized delegation '
 'envelope.';
+
+COMMENT ON COLUMN public.role_grants.type_id IS
+'Exact data type or delegation target type; installation-wide authority '
+'has no implicit field grants.';
 
 INSERT INTO public.permission_operations (key, scope) VALUES
 ('content.items.create', 'content'),

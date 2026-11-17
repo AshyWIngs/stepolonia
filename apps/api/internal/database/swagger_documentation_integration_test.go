@@ -73,10 +73,11 @@ const assert = require('node:assert/strict');
   assert(!JSON.stringify(publicSpec).includes('__Host-sp_'),'Private credential in public spec');
   const privateSpec=await (await context.request.get(origin+'/openapi-auth.json')).json();
   assert(Object.keys(privateSpec.paths).length>=8);
-  const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}/onboarding-token'];
-  assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private onboarding issuer operation');
+  const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable'];
+  assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
+  assert.deepEqual(Object.keys(privateSpec.paths['/api/v1/admin/users']).sort(),['get','post']);
   assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)));
-  await page.locator('.topbar select').selectOption({label:'Private authentication'});
+  await page.locator('.topbar select').selectOption({label:'Private CMS API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();
   async function operation(id,body,csrf,status) {

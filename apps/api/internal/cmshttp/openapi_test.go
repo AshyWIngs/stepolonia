@@ -23,6 +23,8 @@ type privateOperation struct {
 	OperationID string `json:"operationId"`
 	Tags        []string
 	Description string
+	Parameters  []*huma.Param
+	Security    []map[string][]string
 	RequestBody *struct{ Content map[string]privateMedia } `json:"requestBody"`
 	Responses   map[string]struct {
 		Content map[string]privateMedia
@@ -59,12 +61,14 @@ func TestPrivateOpenAPICoversDispatchRegistry(t *testing.T) {
 		t.Fatal("documented paths differ from dispatch registry")
 	}
 	ids := map[string]bool{}
-	for path, rt := range privateRoutes() {
-		op := checkRegistryOperation(t, doc, path, rt)
-		if ids[op.OperationID] {
-			t.Fatalf("duplicate operation ID: %s", op.OperationID)
+	for path, methods := range privateRoutes() {
+		for _, rt := range methods {
+			op := checkRegistryOperation(t, doc, path, rt)
+			if ids[op.OperationID] {
+				t.Fatalf("duplicate operation ID: %s", op.OperationID)
+			}
+			ids[op.OperationID] = true
 		}
-		ids[op.OperationID] = true
 	}
 	for _, forbidden := range []string{"EncryptionKey", "DATABASE_URL", "password_hash", "ciphertext", "token_digest"} {
 		if bytes.Contains(raw, []byte(forbidden)) {
@@ -77,7 +81,7 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	t.Helper()
 	operations := doc.Paths[path]
 	op, ok := operations[strings.ToLower(rt.method)]
-	if !ok || len(operations) != 1 || op.OperationID == "" || len(op.Description) < 100 {
+	if !ok || len(operations) != len(privateRoutes()[path]) || op.OperationID == "" || len(op.Description) < 100 {
 		t.Fatalf("missing or incomplete operation %s: %+v", path, op)
 	}
 	if rt.method == http.MethodGet {
@@ -239,7 +243,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"authentication-sessions": {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
-		"users":                   {"usersCreate", "usersIssueOnboardingToken"},
+		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable"},
 	}
 	declared := map[string]bool{}
 	for _, tag := range doc.Tags {
@@ -397,6 +401,63 @@ func TestPrivateSessionErrorCodesPreserveGenericFailures(t *testing.T) {
 			if len(codes) != 1 || codes[0] != "authentication_required" {
 				t.Fatalf("incorrect session error contract: %s %v", path, codes)
 			}
+		}
+	}
+}
+
+func TestPrivateLifecycleContract(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	if len(doc.Paths[usersPath]) != 2 {
+		t.Fatal("list replaced account creation")
+	}
+	for _, path := range []string{usersPath, userPath} {
+		op := doc.Paths[path]["get"]
+		if len(op.Security) != 1 || op.Security[0]["__Host-sp_session"] == nil {
+			t.Fatal("read authentication contract permits anonymous or restricted access")
+		}
+		if _, exists := op.Responses["200"].Headers["Set-Cookie"]; exists {
+			t.Fatal("safe read promises session mutation")
+		}
+		if _, exists := op.Responses["429"]; exists {
+			t.Fatal("safe read promises a denial budget it does not consume")
+		}
+		for _, parameter := range op.Parameters {
+			if parameter.Name == testCSRFHeader {
+				t.Fatal("read unexpectedly requires CSRF")
+			}
+		}
+	}
+}
+
+func TestPrivateLifecycleProjectionAndPaginationContract(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	list := doc.Paths[usersPath]["get"]
+	queries := map[string]*huma.Param{}
+	for _, parameter := range list.Parameters {
+		if parameter.In == "query" {
+			queries[parameter.Name] = parameter
+		}
+	}
+	if len(queries) != 2 || queries["limit"].Schema.Default != float64(20) || *queries["limit"].Schema.Maximum != 100 || *queries["offset"].Schema.Maximum != 100 {
+		t.Fatal("missing bounded pagination contract")
+	}
+	safeState := doc.Components.Schemas[safeUserSchema].Properties["state"].Enum
+	pendingState := doc.Components.Schemas[pendingUserSchema].Properties["state"].Enum
+	if len(safeState) != 3 || !slices.Contains(safeState, any("active")) || len(pendingState) != 1 || pendingState[0] != "pending" {
+		t.Fatal("safe lifecycle projection changed pending-only onboarding contract")
+	}
+}
+
+func TestPrivateLifecycleMutationContract(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	for _, path := range []string{activateUserPath, disableUserPath} {
+		op := doc.Paths[path]["post"]
+		codes := op.Responses["409"].Content["application/problem+json"].Schema.AllOf[1].Properties["code"].Enum
+		if !slices.Contains(codes, any("last_admin_required")) || !slices.Contains(codes, any("version_conflict")) {
+			t.Fatal("lifecycle conflicts missing from machine-readable contract")
+		}
+		if _, exists := op.Responses["200"].Headers["Set-Cookie"]; exists {
+			t.Fatal("lifecycle promises session mutation")
 		}
 	}
 }

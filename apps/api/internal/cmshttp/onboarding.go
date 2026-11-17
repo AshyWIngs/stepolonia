@@ -34,30 +34,60 @@ const (
 	expectedVersionField     = "expected_version"
 )
 
-var userRoutes = map[string]route{
-	usersPath: {kind: fullKind, fields: requestFields(createUserInput{}), method: http.MethodPost, operationID: createUserOperation, summary: "Create a pending account", response: pendingUserSchema,
-		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. Creates a pending account without credentials, roles or sessions. The actor and permissions come exclusively from the verified server session. The successful write and audit commit atomically."},
-	onboardingTokenPath: {kind: fullKind, fields: expectedVersionField, method: http.MethodPost, operationID: issueOnboardingOperation, summary: "Issue or replace a pending user's onboarding token", response: "OnboardingToken",
-		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. The target must still be pending and expected_version must match its current version under the write mutex. Atomically revokes the previous onboarding token and restricted enrollment and returns a new 24-hour one-time token only after audit commits. Deliver it over a verified external channel; never place it in a URL or log."},
+var userRoutes = map[string][]route{
+	userPath:         {getUserRoute},
+	activateUserPath: {activateUserRoute},
+	disableUserPath:  {disableUserRoute},
+	usersPath: {listUsersRoute, {kind: fullKind, fields: requestFields(createUserInput{}), method: http.MethodPost, operationID: createUserOperation, summary: "Create a pending account", response: pendingUserSchema,
+		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. Creates a pending account without credentials, roles or sessions. The actor and permissions come exclusively from the verified server session. The successful write and audit commit atomically."}},
+	onboardingTokenPath: {{kind: fullKind, fields: expectedVersionField, method: http.MethodPost, operationID: issueOnboardingOperation, summary: "Issue or replace a pending user's onboarding token", response: "OnboardingToken",
+		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. The target must still be pending and expected_version must match its current version under the write mutex. Atomically revokes the previous onboarding token and restricted enrollment and returns a new 24-hour one-time token only after audit commits. Deliver it over a verified external channel; never place it in a URL or log."}},
 }
 
-func resolveRoute(path string) (route, string, string, bool) {
+func resolveRoute(path, method string) (route, string, string, bool) {
 	if strings.HasPrefix(path, authPrefix+"/") {
 		key := strings.TrimPrefix(path, authPrefix)
 		rt, ok := routes[key]
 		return rt, key, "", ok
 	}
-	if path == usersPath {
-		return userRoutes[usersPath], usersPath, "", true
+	key, id := userRoutePath(path)
+	candidates, ok := userRoutes[key]
+	if !ok {
+		return route{}, "", "", false
 	}
-	const suffix = "/onboarding-token"
-	if strings.HasPrefix(path, usersPath+"/") && strings.HasSuffix(path, suffix) {
-		id := strings.TrimSuffix(strings.TrimPrefix(path, usersPath+"/"), suffix)
-		if id != "" && !strings.Contains(id, "/") {
-			return userRoutes[onboardingTokenPath], onboardingTokenPath, id, true
+	for _, rt := range candidates {
+		if rt.method == method {
+			return rt, key, id, true
 		}
 	}
-	return route{}, "", "", false
+	return candidates[0], key, id, true
+}
+
+func userRoutePath(path string) (string, string) {
+	if path == usersPath {
+		return usersPath, ""
+	}
+	if !strings.HasPrefix(path, usersPath+"/") {
+		return "", ""
+	}
+	segments := strings.Split(strings.TrimPrefix(path, usersPath+"/"), "/")
+	if segments[0] == "" {
+		return "", ""
+	}
+	if len(segments) == 1 {
+		return userPath, segments[0]
+	}
+	if len(segments) == 2 {
+		switch segments[1] {
+		case "onboarding-token":
+			return onboardingTokenPath, segments[0]
+		case "activate":
+			return activateUserPath, segments[0]
+		case "disable":
+			return disableUserPath, segments[0]
+		}
+	}
+	return "", ""
 }
 
 type pendingUserResponse struct {
@@ -145,4 +175,15 @@ func isOnboardingRoute(path string) bool {
 	default:
 		return false
 	}
+}
+
+func routeMethods(path string) string {
+	if rt, ok := routes[path]; ok {
+		return rt.method
+	}
+	methods := make([]string, 0, len(userRoutes[path]))
+	for _, rt := range userRoutes[path] {
+		methods = append(methods, rt.method)
+	}
+	return strings.Join(methods, ", ")
 }

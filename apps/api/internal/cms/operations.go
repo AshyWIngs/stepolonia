@@ -14,10 +14,12 @@ const (
 )
 
 const (
-	opContentCreate   = "content.items.create"
-	opContentReady    = "content.items.ready"
-	opContentPublish  = "content.items.publish"
-	opContentDelegate = "content.permissions.delegate"
+	opContentCreate           = "content.items.create"
+	opContentReady            = "content.items.ready"
+	opContentPublish          = "content.items.publish"
+	opContentDelegate         = "content.permissions.delegate"
+	opContentInitializeAccess = "content_types.initialize_access"
+	opSettingsManage          = "settings.manage"
 )
 
 // OperationScope distinguishes exact content grants from installation operations.
@@ -36,10 +38,10 @@ func (o Operation) Scope() (OperationScope, error) {
 	case opContentCreate, OpContentRead, OpContentUpdate,
 		opContentReady, opContentPublish, "content.items.unpublish", "content.items.assign":
 		return ContentScope, nil
-	case OpContentTypesManage, "content_types.initialize_access", opContentDelegate,
+	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",
 		"roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable",
-		"roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage":
+		"roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage:
 		return InstallationScope, nil
 	default:
 		return 0, fmt.Errorf("unregistered CMS operation %q", o)

@@ -14,11 +14,13 @@ const (
 )
 
 const (
-	authenticationCode = "authentication_required"
-	originCode         = "origin_denied"
-	validationCode     = "validation_failed"
-	csrfCode           = "csrf_failed"
-	notFoundCode       = "not_found"
+	authenticationCode   = "authentication_required"
+	originCode           = "origin_denied"
+	validationCode       = "validation_failed"
+	csrfCode             = "csrf_failed"
+	notFoundCode         = "not_found"
+	permissionCode       = "permission_denied"
+	methodNotAllowedCode = "method_not_allowed"
 )
 
 type csrfResponse struct {
@@ -56,9 +58,11 @@ func writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, cms.ErrCSRF):
 		status, code = http.StatusForbidden, csrfCode
 	case errors.Is(err, cms.ErrPermissionDenied):
-		status, code = http.StatusForbidden, "permission_denied"
+		status, code = http.StatusForbidden, permissionCode
 	case errors.Is(err, cms.ErrStepUpRequired):
 		status, code = http.StatusForbidden, "step_up_required"
+	case errors.Is(err, cms.ErrLastAdminRequired):
+		status, code = http.StatusConflict, "last_admin_required"
 	case errors.Is(err, cms.ErrVersionConflict):
 		status, code = http.StatusConflict, "version_conflict"
 	case errors.Is(err, cms.ErrInvalidTransition):

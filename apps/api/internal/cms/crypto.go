@@ -50,20 +50,30 @@ func verifyPassword(password, phc string) bool {
 	if len(password) > 512 || !utf8.ValidString(password) {
 		return false
 	}
-	parts := strings.Split(phc, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" || parts[3] != "m=19456,t=2,p=1" {
-		return false
-	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil || len(salt) != 16 {
-		return false
-	}
-	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil || len(expected) != 32 {
+	salt, expected, valid := passwordHashParts(phc)
+	if !valid {
 		return false
 	}
 	actual := argon2.IDKey([]byte(password), salt, 2, passwordMemoryKiB, 1, 32)
 	return subtle.ConstantTimeCompare(actual, expected) == 1
+}
+
+// passwordHashParts validates login-compatible factors without running a KDF
+// while a lifecycle command holds the installation mutex.
+func passwordHashParts(phc string) ([]byte, []byte, bool) {
+	parts := strings.Split(phc, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" || parts[3] != "m=19456,t=2,p=1" {
+		return nil, nil, false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) != 16 {
+		return nil, nil, false
+	}
+	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(hash) != 32 {
+		return nil, nil, false
+	}
+	return salt, hash, true
 }
 
 func randomID() (string, error) {

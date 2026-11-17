@@ -66,9 +66,11 @@ const (
 	authPrefix = "/api/v1/admin/auth"
 	loginPath  = "/login"
 	logoutPath = "/logout"
+	csrfPath   = "/csrf"
 )
 
 const (
+	csrfOperation               = "authCSRF"
 	logoutOperation             = "authLogout"
 	recoverOperation            = "authRecover"
 	completeRecoveryOperation   = "authCompleteRecovery"
@@ -89,7 +91,7 @@ type route struct {
 
 // Route metadata is shared by dispatch and the private OpenAPI generator.
 var routes = map[string]route{
-	"/csrf": {kind: "", method: http.MethodGet, operationID: "authCSRF", summary: "Create or rotate a CSRF token", response: csrfResponseSchema,
+	csrfPath: {kind: "", method: http.MethodGet, operationID: csrfOperation, summary: "Create or rotate a CSRF token", response: csrfResponseSchema,
 		description: "Without session cookies, creates a five-minute preauth session. With exactly one valid session cookie, rotates its CSRF token while retaining its session kind. Start here before login or recovery; use the returned token in the next POST and retain the browser-managed cookie."},
 	loginPath: {kind: preauthKind, fields: "login,password", method: http.MethodPost, operationID: "authLogin", summary: "Verify the password and begin MFA", response: csrfResponseSchema,
 		description: "Requires a preauth session and its CSRF token. A successful password check replaces preauth with a five-minute restricted login session; it does not grant full access. Submit a fresh TOTP to MFA verification with the returned CSRF token."},
@@ -114,7 +116,7 @@ var routes = map[string]route{
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	rt, path, userID, ok := resolveRoute(r.URL.Path)
+	rt, path, userID, ok := resolveRoute(r.URL.Path, r.Method)
 	if !ok {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
@@ -128,35 +130,47 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
-	if rt.method == http.MethodGet && r.Method == rt.method {
+	if path == csrfPath && r.Method == rt.method {
 		h.csrf(w, r, ip)
 		return
 	}
-	if rt.method == http.MethodGet {
+	if path == csrfPath {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
 	}
 	if r.Method != rt.method {
-		problem(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		w.Header().Set("Allow", routeMethods(path))
+		problem(w, http.StatusMethodNotAllowed, methodNotAllowedCode)
 		return
 	}
-	input, code, status := readCredentials(w, r, rt.fields)
+	input, code, status := readRouteInput(w, r, rt)
 	if code != "" {
 		problem(w, status, code)
 		return
 	}
+	h.dispatch(w, r, rt, userTarget{path, userID}, ip, input)
+}
+
+type userTarget struct{ path, id string }
+
+func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, target userTarget, ip string, input credentials) {
+	path, userID := target.path, target.id
 	req, kind, err := requestSession(r, rt.kind, ip)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	if isOnboardingRoute(path) {
+	if isOnboardingRoute(path) || isLifecycleRoute(path) {
 		req.RequestID, err = newRequestID()
 		if err != nil {
 			writeError(w, cms.ErrSecurityUnavailable)
 			return
 		}
 		w.Header().Set("X-Request-ID", req.RequestID)
+	}
+	if isLifecycleRoute(path) && (path != usersPath || r.Method == http.MethodGet) {
+		h.executeLifecycle(w, r, rt.operationID, userID, req, input)
+		return
 	}
 	if userID != "" || path == usersPath {
 		h.executeUser(w, r, path, userID, req, input)
@@ -171,14 +185,18 @@ func requestSession(r *http.Request, want, ip string) (cms.AuthRequest, string, 
 		return cms.AuthRequest{}, "", err
 	}
 	csrf := r.Header.Values("X-CSRF-Token")
-	if len(csrf) != 1 || len(csrf[0]) != 43 {
+	if r.Method != http.MethodGet && (len(csrf) != 1 || len(csrf[0]) != 43) {
 		return cms.AuthRequest{}, "", cms.ErrCSRF
 	}
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
 		return cms.AuthRequest{}, "", cms.ErrCSRF
 	}
-	return cms.AuthRequest{Token: token, CSRF: csrf[0], ClientIP: addr}, kind, nil
+	req := cms.AuthRequest{Token: token, ClientIP: addr}
+	if r.Method != http.MethodGet {
+		req.CSRF = csrf[0]
+	}
+	return req, kind, nil
 }
 
 func newRequestID() (string, error) {
@@ -188,6 +206,13 @@ func newRequestID() (string, error) {
 	}
 	id[6], id[8] = (id[6]&15)|64, (id[8]&63)|128
 	return fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:]), nil
+}
+
+func readRouteInput(w http.ResponseWriter, r *http.Request, rt route) (credentials, string, int) {
+	if rt.method == http.MethodGet {
+		return credentials{}, "", 0
+	}
+	return readCredentials(w, r, rt.fields)
 }
 
 func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (credentials, string, int) {
