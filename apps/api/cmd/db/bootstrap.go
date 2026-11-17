@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/database"
 )
 
@@ -210,28 +209,9 @@ func (t *bootstrapTerminal) password(ctx context.Context, prompt string) ([]byte
 // The key is provisioned by the operator outside PostgreSQL. Reject symlinks,
 // group-readable files and wrong ownership before reading any key bytes.
 func bootstrapKey() ([]byte, int, error) {
-	path := os.Getenv(totpKeyFileEnv)
-	version, err := strconv.Atoi(os.Getenv("CMS_TOTP_KEY_VERSION"))
-	if path == "" || err != nil || version < 1 {
-		return nil, 0, inputError{"CMS_TOTP_KEY_FILE and positive CMS_TOTP_KEY_VERSION are required"}
-	}
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	key, version, err := config.InstallationKey()
 	if err != nil {
-		return nil, 0, inputError{"cannot open the TOTP key file"}
-	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, 0, err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !ok || int64(stat.Uid) != int64(os.Geteuid()) {
-		return nil, 0, inputError{"TOTP key must be a private regular file owned by the current operator"}
-	}
-	key, err := io.ReadAll(io.LimitReader(f, 33))
-	if err != nil || len(key) != 32 {
-		clear(key)
-		return nil, 0, inputError{"TOTP key file must contain exactly 32 raw bytes"}
+		return nil, 0, inputError{err.Error()}
 	}
 	return key, version, nil
 }

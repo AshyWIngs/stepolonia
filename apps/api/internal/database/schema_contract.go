@@ -26,13 +26,19 @@ type schemaContract struct {
 	Privileges    map[string]string `json:"privileges"`
 }
 
-func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
+func readSchemaContract() (schemaContract, error) {
+	var contract schemaContract
 	raw, err := migrations.ReadFile("schema_contract.json")
 	if err != nil {
-		return err
+		return contract, err
 	}
-	var contract schemaContract
-	if err := json.Unmarshal(raw, &contract); err != nil {
+	err = json.Unmarshal(raw, &contract)
+	return contract, err
+}
+
+func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
+	contract, err := readSchemaContract()
+	if err != nil {
 		return err
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -54,19 +60,23 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 	if !installed {
 		return nil
 	}
-	expected := map[string]map[string]string{
-		"constraints": contract.Constraints, "triggers": contract.Triggers, "functions": contract.Functions,
-		"defaults": contract.Defaults, "collations": contract.Collations, "columns": contract.Columns,
-		"views": contract.Views, "view_options": contract.ViewOptions,
-		"indexes": contract.Indexes, "comments": contract.Comments, "operations": contract.Operations, "privileges": contract.Privileges,
-	}
+
 	if err := checkSchemaMetadata(ctx, tx); err != nil {
 		return err
 	}
 	if err := checkCMSPrivileges(ctx, tx); err != nil {
 		return err
 	}
-	return checkSchemaDefinitions(ctx, tx, expected)
+	return checkSchemaDefinitions(ctx, tx, contract.definitions())
+}
+
+func (contract schemaContract) definitions() map[string]map[string]string {
+	return map[string]map[string]string{
+		"constraints": contract.Constraints, "triggers": contract.Triggers, "functions": contract.Functions,
+		"defaults": contract.Defaults, "collations": contract.Collations, "columns": contract.Columns,
+		"views": contract.Views, "view_options": contract.ViewOptions,
+		"indexes": contract.Indexes, "comments": contract.Comments, "operations": contract.Operations, "privileges": contract.Privileges,
+	}
 }
 
 func checkSchemaMetadata(ctx context.Context, tx *sql.Tx) error {
@@ -118,15 +128,15 @@ const schemaMetadataQuery = `SELECT
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
  CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) a
  WHERE c.relnamespace='public'::regnamespace AND c.relkind='r' AND c.relname<>'goose_db_version'
- AND a.grantee<>c.relowner AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))
+ AND a.grantee<>c.relowner AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole,'sp_security'::regrole))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute col ON col.attrelid=c.oid
  CROSS JOIN LATERAL pg_catalog.aclexplode(col.attacl) a
  WHERE c.relnamespace='public'::regnamespace AND a.grantee<>c.relowner
- AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))
+ AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole,'sp_security'::regrole))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
  CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
  WHERE p.pronamespace='public'::regnamespace AND a.grantee<>p.proowner
- AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole))`
+ AND a.grantee NOT IN ('sp_publisher'::regrole,'sp_language_importer'::regrole,'sp_security'::regrole))`
 
 const schemaDefinitionsQuery = `WITH tables AS (
  SELECT oid,relname,relowner,relacl FROM pg_catalog.pg_class

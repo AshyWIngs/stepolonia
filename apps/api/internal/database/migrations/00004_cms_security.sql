@@ -1,5 +1,5 @@
 -- +goose Up
--- Bootstrap is owner-only; ordinary authentication and commands remain dormant.
+-- Authentication uses a dedicated pool; editorial commands remain dormant.
 CREATE TABLE public.users (
     id uuid CONSTRAINT users_pkey PRIMARY KEY,
     login_key text COLLATE "C" NOT NULL CONSTRAINT users_login_key_key UNIQUE,
@@ -168,6 +168,9 @@ CREATE TABLE public.sessions (
     csrf_digest bytea NOT NULL,
     user_id uuid,
     kind text NOT NULL,
+    credential_version bigint,
+    step_up_at timestamptz,
+    failed_attempts integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT current_timestamp,
     last_seen timestamptz NOT NULL DEFAULT current_timestamp,
     expires_at timestamptz NOT NULL,
@@ -178,11 +181,24 @@ CREATE TABLE public.sessions (
     CONSTRAINT sessions_digest_check CHECK (
         octet_length(token_digest) = 32 AND octet_length(csrf_digest) = 32
     ),
-    CONSTRAINT sessions_kind_check CHECK (kind = 'preauth' AND user_id IS null),
+    CONSTRAINT sessions_kind_check CHECK (
+        kind IN ('preauth', 'login', 'full', 'recovery', 'enrollment')
+        AND (user_id IS null) = (kind = 'preauth')
+        AND (credential_version IS null) = (kind = 'preauth')
+        AND (credential_version IS null OR credential_version > 0)
+        AND (step_up_at IS null OR kind = 'full')
+        AND failed_attempts BETWEEN 0 AND 5
+    ),
     CONSTRAINT sessions_time_check CHECK (
         last_seen >= created_at AND expires_at > last_seen
-        AND expires_at <= created_at + interval '5 minutes'
+        AND expires_at <= created_at + CASE kind
+            WHEN 'full' THEN interval '12 hours'
+            WHEN 'recovery' THEN interval '10 minutes'
+            WHEN 'enrollment' THEN interval '24 hours'
+            ELSE interval '5 minutes'
+        END
         AND (revoked_at IS null OR revoked_at >= created_at)
+        AND (step_up_at IS null OR step_up_at BETWEEN created_at AND last_seen)
     )
 );
 
@@ -242,6 +258,64 @@ CREATE TABLE public.recovery_codes (
     CONSTRAINT recovery_codes_digest_check CHECK (octet_length(digest) = 32)
 );
 
+CREATE TABLE public.recovery_attempts (
+    id uuid CONSTRAINT recovery_attempts_pkey PRIMARY KEY,
+    session_id uuid NOT NULL CONSTRAINT recovery_attempts_session_key UNIQUE,
+    user_id uuid NOT NULL,
+    code_digest bytea NOT NULL,
+    credential_version bigint NOT NULL,
+    pending_ciphertext bytea NOT NULL,
+    key_version integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT current_timestamp,
+    expires_at timestamptz NOT NULL,
+    ended_at timestamptz,
+    CONSTRAINT recovery_attempts_session_fkey FOREIGN KEY (
+        session_id
+    ) REFERENCES public.sessions (id) ON DELETE RESTRICT,
+    CONSTRAINT recovery_attempts_code_fkey FOREIGN KEY (
+        user_id, code_digest
+    ) REFERENCES public.recovery_codes (user_id, digest) ON DELETE RESTRICT,
+    CONSTRAINT recovery_attempts_shape_check CHECK (
+        octet_length(code_digest) = 32
+        AND octet_length(pending_ciphertext) BETWEEN 48 AND 1024
+        AND credential_version > 0 AND key_version > 0
+        AND expires_at > created_at
+        AND expires_at <= created_at + interval '10 minutes'
+        AND (ended_at IS null OR ended_at >= created_at)
+    )
+);
+
+CREATE UNIQUE INDEX recovery_attempts_active_user_idx
+ON public.recovery_attempts (user_id) WHERE ended_at IS null;
+
+CREATE UNIQUE INDEX recovery_attempts_active_code_idx
+ON public.recovery_attempts (code_digest) WHERE ended_at IS null;
+
+CREATE TABLE public.auth_attempts (
+    bucket_start timestamptz NOT NULL,
+    kind text NOT NULL,
+    key_digest bytea NOT NULL,
+    count integer NOT NULL DEFAULT 0,
+    CONSTRAINT auth_attempts_pkey PRIMARY KEY (bucket_start, kind, key_digest),
+    CONSTRAINT auth_attempts_shape_check CHECK (
+        kind IN ('account', 'ip', 'site', 'preauth_ip', 'preauth_site')
+        AND octet_length(key_digest) = 32
+        AND count BETWEEN 0 AND CASE kind
+            WHEN 'account' THEN 5
+            WHEN 'ip' THEN 30 WHEN 'preauth_ip' THEN 30 ELSE 100
+        END
+    )
+);
+
+COMMENT ON TABLE public.recovery_attempts IS
+'Recovery reservations ended explicitly under the CMS mutex.';
+
+COMMENT ON COLUMN public.recovery_attempts.pending_ciphertext IS
+'AEAD-encrypted replacement TOTP seed confirmed only at completion.';
+
+COMMENT ON TABLE public.auth_attempts IS
+'Bounded authentication buckets storing account and IP digests.';
+
 CREATE TABLE public.security_audit (
     id uuid CONSTRAINT security_audit_pkey PRIMARY KEY,
     occurred_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -254,7 +328,13 @@ CREATE TABLE public.security_audit (
     CONSTRAINT security_audit_operation_check CHECK (
         operation IN (
             'bootstrap.started', 'bootstrap.restarted', 'bootstrap.completed',
-            'bootstrap.denied'
+            'bootstrap.denied', 'auth.login_started', 'auth.login_completed',
+            'auth.denied',
+            'auth.logout',
+            'auth.sessions_revoked',
+            'auth.step_up',
+            'mfa.recovery_started', 'mfa.recovery_cancelled',
+            'mfa.recovery_expired', 'mfa.recovery_completed'
         )
     ),
     CONSTRAINT security_audit_result_check CHECK (
@@ -263,7 +343,8 @@ CREATE TABLE public.security_audit (
     CONSTRAINT security_audit_reason_check CHECK (
         reason IN (
             '', 'operator_enrollment', 'operator_restart', 'totp_verified',
-            'invalid_credentials'
+            'invalid_credentials', 'expired', 'cancelled', 'session_revoked',
+            'rate_limited', 'credential_changed'
         )
     )
 );
@@ -304,8 +385,7 @@ COMMENT ON COLUMN public.users.state IS
 'Pending enrollment never authenticates; active requires completed enrollment.';
 
 COMMENT ON COLUMN public.users.credential_version IS
-'Positive credential generation reserved for future session '
-'revocation checks.';
+'Credential generation checked on every authenticated session access.';
 
 COMMENT ON TABLE public.roles IS
 'Installation-local role identities; role names never authorize an '
@@ -334,8 +414,16 @@ COMMENT ON TABLE public.sessions IS
 'Opaque session digests; never exposed through public views.';
 
 COMMENT ON COLUMN public.sessions.kind IS
-'Only restricted preauth storage exists; full and enrollment sessions '
-'are not implemented.';
+'Only full sessions authorize CMS; other kinds have restricted allowlists.';
+
+COMMENT ON COLUMN public.sessions.credential_version IS
+'Credential generation at issuance; NULL only for anonymous preauth.';
+
+COMMENT ON COLUMN public.sessions.step_up_at IS
+'Database time of successful password and TOTP reauthentication.';
+
+COMMENT ON COLUMN public.sessions.expires_at IS
+'Absolute expiry; idle touches update last_seen without extending this value.';
 
 COMMENT ON COLUMN public.sessions.csrf_digest IS
 'SHA-256 digest of a separate CSRF token; never a plaintext bearer.';
@@ -485,6 +573,12 @@ ON public.recovery_codes
 FOR EACH STATEMENT
 EXECUTE FUNCTION public.cms_write_mutex();
 
+CREATE TRIGGER recovery_attempts_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
+ON public.recovery_attempts
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.cms_write_mutex();
+
 CREATE TRIGGER security_audit_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.security_audit
@@ -507,11 +601,27 @@ public.roles,
 public.user_roles,
 public.permission_operations,
 public.role_grants,
-public.sessions FROM public,
+public.sessions,
+public.recovery_attempts,
+public.auth_attempts FROM public,
 sp_publisher,
 sp_language_importer;
 
+GRANT USAGE ON SCHEMA public TO sp_security;
+GRANT SELECT ON public.users, public.roles, public.user_roles,
+public.permission_operations, public.role_grants, public.grant_fields,
+public.security_state, public.mfa_totp, public.recovery_codes,
+public.sessions, public.recovery_attempts, public.auth_attempts TO sp_security;
+GRANT UPDATE ON public.users, public.mfa_totp, public.recovery_codes,
+public.sessions, public.recovery_attempts, public.auth_attempts TO sp_security;
+GRANT INSERT ON public.sessions, public.recovery_attempts,
+public.auth_attempts, public.recovery_codes TO sp_security;
+GRANT DELETE ON public.auth_attempts, public.sessions TO sp_security;
+GRANT INSERT ON public.security_audit TO sp_security;
+
 -- +goose Down
+DROP TABLE public.auth_attempts;
+DROP TABLE public.recovery_attempts;
 DROP TABLE public.security_audit;
 DROP TABLE public.recovery_codes;
 DROP TABLE public.mfa_totp;

@@ -39,7 +39,7 @@ func PrepareRoles(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, name := range []string{"sp_publisher", "sp_language_importer"} {
+	for _, name := range []string{"sp_publisher", "sp_language_importer", "sp_security"} {
 		var safe bool
 		err := tx.QueryRowContext(ctx, `SELECT NOT (r.rolcanlogin OR r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid)

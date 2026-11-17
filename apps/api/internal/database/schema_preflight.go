@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -11,12 +10,8 @@ import (
 // The golden catalog supplies the complete namespace inventory before Goose
 // creates its history table or commits an earlier domain.
 func checkFreshSchema(ctx context.Context, db *sql.DB) error {
-	raw, err := migrations.ReadFile("schema_contract.json")
+	contract, err := readSchemaContract()
 	if err != nil {
-		return err
-	}
-	var contract schemaContract
-	if err := json.Unmarshal(raw, &contract); err != nil {
 		return err
 	}
 	names := map[string]bool{}

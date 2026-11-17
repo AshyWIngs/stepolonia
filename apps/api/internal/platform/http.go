@@ -36,7 +36,16 @@ const requestIDField = "request_id"
 type requestIDKey struct{}
 
 func Handler(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) http.Handler {
+	return HandlerWithAuth(db, reader, logger, nil, site...)
+}
+
+// HandlerWithAuth mounts an independently configured private authentication boundary.
+// Authentication routes never enter the public OpenAPI/SDK contract.
+func HandlerWithAuth(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, site ...*siteconfig.Reader) http.Handler {
 	mux, _ := newAPI(db, reader, logger, site...)
+	if auth != nil {
+		mux.Handle("/api/v1/admin/auth/", auth)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := rand.Text()
