@@ -206,7 +206,8 @@ func TestAuthOnboardingReissueExpiryVersionIntegration(t *testing.T) {
 	}
 	_, err = f.service.CompleteEnrollment(ctx, authReq(enrollment.SessionTokens), bootstrapCode(t, f.db, enrollment.Secret))
 	onboardingError(t, err, cms.ErrAuthenticationRequired)
-	_, err = f.db.Exec(`UPDATE public.onboarding_tokens SET created_at=clock_timestamp()-interval '25 hours',expires_at=clock_timestamp()-interval '1 hour' WHERE user_id=$1 AND consumed_at IS NULL`, token.User.ID)
+	// One statement clock preserves the exact 24-hour lifetime of this expired fixture.
+	_, err = f.db.Exec(`UPDATE public.onboarding_tokens SET created_at=statement_timestamp()-interval '25 hours',expires_at=statement_timestamp()-interval '1 hour' WHERE user_id=$1 AND consumed_at IS NULL`, token.User.ID)
 	requireNoError(t, err)
 	_, err = f.service.StartEnrollment(ctx, authReq(pre), next.Token, bootstrapTestPassphrase)
 	onboardingError(t, err, cms.ErrInvalidCredentials)
