@@ -21,6 +21,9 @@ type publishingContract struct {
 	Defaults      map[string]string `json:"defaults"`
 	Collations    map[string]string `json:"collations"`
 	Columns       map[string]string `json:"columns"`
+	Indexes       map[string]string `json:"indexes"`
+	Comments      map[string]string `json:"comments"`
+	Operations    map[string]string `json:"operations"`
 }
 
 func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
@@ -55,8 +58,12 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 		"constraints": contract.Constraints, "triggers": contract.Triggers, "functions": contract.Functions,
 		"defaults": contract.Defaults, "collations": contract.Collations, "columns": contract.Columns,
 		"views": contract.Views, "view_options": contract.ViewOptions,
+		"indexes": contract.Indexes, "comments": contract.Comments, "operations": contract.Operations,
 	}
 	if err := checkPublishingMetadata(ctx, tx); err != nil {
+		return err
+	}
+	if err := checkCMSPrivileges(ctx, tx); err != nil {
 		return err
 	}
 	return checkPublishingDefinitions(ctx, tx, expected)
@@ -103,21 +110,21 @@ func checkPublishingDefinitions(ctx context.Context, tx *sql.Tx, expected map[st
 }
 
 const publishingMetadataQuery = `SELECT
-     (SELECT count(*)=18 AND bool_and(relowner=current_user::regrole AND
+     (SELECT count(*)=26 AND bool_and(relowner=current_user::regrole AND
       relkind=CASE WHEN relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages') THEN 'v'::"char" ELSE 'r'::"char" END)
       FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
-      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
+      ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
       WHERE c.relnamespace='public'::regnamespace AND c.relname IN
-      ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages') AND NOT t.tgisinternal AND t.tgenabled<>'O')
+      ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages') AND NOT t.tgisinternal AND t.tgenabled<>'O')
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
-      ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND proowner<>current_user::regrole)
+      ('cms_write_mutex','reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND proowner<>current_user::regrole)
      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
       WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state') AND a.grantee=0 AND a.privilege_type='EXECUTE')`
 
 const publishingDefinitionsQuery = `WITH tables AS (
  SELECT oid,relname FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
- ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages')
+ ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages')
  ), views AS (
  SELECT oid,relname,reloptions FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace
  AND relname IN ('public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages')
@@ -130,7 +137,7 @@ const publishingDefinitionsQuery = `WITH tables AS (
  FROM pg_catalog.pg_trigger t JOIN tables c ON c.oid=t.tgrelid WHERE NOT t.tgisinternal
  UNION ALL SELECT 'functions',p.proname,pg_catalog.pg_get_functiondef(p.oid)
  FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN
- ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
+ ('cms_write_mutex','reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
  UNION ALL SELECT 'views',relname,pg_catalog.pg_get_viewdef(oid,false) FROM views
  UNION ALL SELECT 'view_options',relname,COALESCE(array_to_string(reloptions,','),'') FROM views
  UNION ALL SELECT 'defaults',c.relname||'.'||a.attname,pg_catalog.pg_get_expr(d.adbin,d.adrelid,false)
@@ -139,4 +146,14 @@ const publishingDefinitionsQuery = `WITH tables AS (
  UNION ALL SELECT 'collations',c.relname||'.'||a.attname,n.nspname||'.'||co.collname
  FROM pg_catalog.pg_attribute a JOIN tables c ON c.oid=a.attrelid
  JOIN pg_catalog.pg_collation co ON co.oid=a.attcollation JOIN pg_catalog.pg_namespace n ON n.oid=co.collnamespace
- WHERE a.attnum>0 AND NOT a.attisdropped`
+ WHERE a.attnum>0 AND NOT a.attisdropped
+ UNION ALL SELECT 'indexes',c.relname||'.'||i.relname,pg_catalog.pg_get_indexdef(i.oid)
+ FROM tables c JOIN pg_catalog.pg_index x ON x.indrelid=c.oid JOIN pg_catalog.pg_class i ON i.oid=x.indexrelid
+ WHERE c.relname IN ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
+ UNION ALL SELECT 'comments',c.relname,COALESCE(pg_catalog.obj_description(c.oid,'pg_class'),'')
+ FROM tables c WHERE c.relname IN ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields')
+ UNION ALL SELECT 'comments',c.relname||'.'||a.attname,pg_catalog.col_description(c.oid,a.attnum)
+ FROM tables c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
+ WHERE c.relname IN ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields') AND a.attnum>0 AND NOT a.attisdropped AND pg_catalog.col_description(c.oid,a.attnum) IS NOT NULL
+ UNION ALL SELECT 'comments','cms_write_mutex()',COALESCE(pg_catalog.obj_description('public.cms_write_mutex()'::regprocedure,'pg_proc'),'')
+ UNION ALL SELECT 'operations',key,scope FROM public.permission_operations`

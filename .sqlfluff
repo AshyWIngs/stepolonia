@@ -15,7 +15,8 @@ large_file_skip_fail = True
 # отказа от keyword-имён, а RF06 снимает ненужные PostgreSQL quotes.
 # Остальные keyword identifiers продолжают проверяться RF04.
 [sqlfluff:rules:references.keywords]
-ignore_words = name,version
+# Registry key and operation are approved persisted identifiers, not SQL syntax.
+ignore_words = name,version,key,operation
 
 [sqlfluff:rules:capitalisation.keywords]
 capitalisation_policy = upper

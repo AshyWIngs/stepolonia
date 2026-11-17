@@ -4,9 +4,9 @@ DO $precondition$
 BEGIN
  -- Не принимаем чужие publishing-объекты за новую установку.
  IF EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace AND relname IN
- ('languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
+ ('users','roles','user_roles','permission_operations','role_grants','sessions','content_types','content_fields','languages','articles','article_draft_translations','article_revisions','article_revision_translations','public_routes','ui_message_keys','site_state','site_revisions','site_revision_keys','site_revision_languages','site_revision_messages','public_languages','public_article_translations','public_article_routes','public_site','public_ui_languages','public_ui_messages'))
  OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
- ('reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')) THEN
+ ('cms_write_mutex','reset_draft_ready','guard_revision_translation','guard_revision','require_closed_revision','guard_published_revision','keep_route_reservation','lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')) THEN
  RAISE EXCEPTION 'publishing-объекты уже существуют; установка остановлена до DDL';
  END IF;
 END;
@@ -958,7 +958,252 @@ COMMENT ON COLUMN public.public_site.notice IS
 COMMENT ON COLUMN public.public_site.accent IS
 'Акцент оформления в безопасном формате #RRGGBB, без CSS-выражений.';
 
+-- Dormant CMS identities only.
+-- Authentication and guarded commands are not enabled.
+CREATE TABLE public.users (
+    id uuid CONSTRAINT users_pkey PRIMARY KEY,
+    login_key text COLLATE "C" NOT NULL CONSTRAINT users_login_key_key UNIQUE,
+    state text NOT NULL DEFAULT 'pending',
+    version bigint NOT NULL DEFAULT 1,
+    credential_version bigint NOT NULL DEFAULT 1,
+    CONSTRAINT users_login_key_check CHECK (
+        length(login_key) BETWEEN 1 AND 256 AND login_key = btrim(login_key)
+    ),
+    CONSTRAINT users_state_check CHECK (state IN ('pending', 'disabled')),
+    CONSTRAINT users_version_check CHECK (
+        version > 0 AND credential_version > 0
+    )
+);
+CREATE TABLE public.roles (
+    id uuid CONSTRAINT roles_pkey PRIMARY KEY,
+    name_key text COLLATE "C" NOT NULL CONSTRAINT roles_name_key_key UNIQUE,
+    state text NOT NULL DEFAULT 'disabled',
+    version bigint NOT NULL DEFAULT 1,
+    CONSTRAINT roles_name_key_check CHECK (
+        length(name_key) BETWEEN 1 AND 128 AND name_key = btrim(name_key)
+    ),
+    CONSTRAINT roles_state_check CHECK (
+        state IN ('disabled', 'active', 'archived')
+    ),
+    CONSTRAINT roles_version_check CHECK (version > 0)
+);
+CREATE TABLE public.user_roles (
+    user_id uuid NOT NULL,
+    role_id uuid NOT NULL,
+    CONSTRAINT user_roles_pkey PRIMARY KEY (user_id, role_id),
+    CONSTRAINT user_roles_user_fkey FOREIGN KEY (
+        user_id
+    ) REFERENCES public.users (id) ON DELETE RESTRICT,
+    CONSTRAINT user_roles_role_fkey FOREIGN KEY (
+        role_id
+    ) REFERENCES public.roles (id) ON DELETE RESTRICT
+);
+CREATE INDEX user_roles_role_idx ON public.user_roles (role_id);
+CREATE TABLE public.permission_operations (
+    key text COLLATE "C" CONSTRAINT permission_operations_pkey PRIMARY KEY,
+    scope text NOT NULL,
+    CONSTRAINT permission_operations_scope_check CHECK (
+        scope IN ('installation', 'content')
+    )
+);
+CREATE TABLE public.role_grants (
+    id uuid CONSTRAINT role_grants_pkey PRIMARY KEY,
+    role_id uuid NOT NULL,
+    operation text COLLATE "C" NOT NULL,
+    scope text NOT NULL DEFAULT 'installation',
+    can_delegate boolean NOT NULL DEFAULT false,
+    CONSTRAINT role_grants_role_fkey FOREIGN KEY (
+        role_id
+    ) REFERENCES public.roles (id) ON DELETE RESTRICT,
+    CONSTRAINT role_grants_operation_fkey FOREIGN KEY (
+        operation
+    ) REFERENCES public.permission_operations (key) ON DELETE RESTRICT,
+    CONSTRAINT role_grants_operation_key UNIQUE (role_id, operation),
+    CONSTRAINT role_grants_scope_check CHECK (scope = 'installation'),
+    CONSTRAINT role_grants_operation_check CHECK (operation IN (
+        'content_types.manage', 'content_types.initialize_access',
+        'users.create', 'users.read', 'users.activate', 'users.disable',
+        'roles.create',
+        'roles.read',
+        'roles.edit',
+        'roles.assign',
+        'roles.disable',
+        'roles.enable', 'roles.archive', 'roles.restore', 'roles.delete',
+        'sessions.revoke_any', 'audit.read', 'settings.manage'
+    ))
+);
+CREATE INDEX role_grants_operation_idx ON public.role_grants (operation);
+CREATE TABLE public.sessions (
+    id uuid CONSTRAINT sessions_pkey PRIMARY KEY,
+    token_digest bytea NOT NULL CONSTRAINT sessions_token_digest_key UNIQUE,
+    csrf_digest bytea NOT NULL,
+    user_id uuid,
+    kind text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT current_timestamp,
+    last_seen timestamptz NOT NULL DEFAULT current_timestamp,
+    expires_at timestamptz NOT NULL,
+    revoked_at timestamptz,
+    CONSTRAINT sessions_user_fkey FOREIGN KEY (
+        user_id
+    ) REFERENCES public.users (id) ON DELETE RESTRICT,
+    CONSTRAINT sessions_digest_check CHECK (
+        octet_length(token_digest) = 32 AND octet_length(csrf_digest) = 32
+    ),
+    CONSTRAINT sessions_kind_check CHECK (kind = 'preauth' AND user_id IS null),
+    CONSTRAINT sessions_time_check CHECK (
+        last_seen >= created_at AND expires_at > last_seen
+        AND expires_at <= created_at + interval '5 minutes'
+        AND (revoked_at IS null OR revoked_at >= created_at)
+    )
+);
+CREATE INDEX sessions_user_idx ON public.sessions (user_id);
+CREATE TABLE public.content_types (
+    id uuid CONSTRAINT content_types_pkey PRIMARY KEY,
+    key text COLLATE "C" NOT NULL CONSTRAINT content_types_key_key UNIQUE,
+    version bigint NOT NULL DEFAULT 1,
+    CONSTRAINT content_types_key_check CHECK (key ~ '^[a-z][a-z0-9_]{0,63}$'),
+    CONSTRAINT content_types_version_check CHECK (version > 0)
+);
+CREATE TABLE public.content_fields (
+    type_id uuid NOT NULL,
+    field_id uuid NOT NULL,
+    key text COLLATE "C" NOT NULL,
+    CONSTRAINT content_fields_pkey PRIMARY KEY (type_id, field_id),
+    CONSTRAINT content_fields_type_fkey FOREIGN KEY (
+        type_id
+    ) REFERENCES public.content_types (id) ON DELETE RESTRICT,
+    CONSTRAINT content_fields_type_key UNIQUE (type_id, key),
+    CONSTRAINT content_fields_key_check CHECK (key ~ '^[a-z][a-z0-9_]{0,63}$')
+);
+COMMENT ON TABLE public.users IS
+'Dormant CMS account identities; no active accounts before MFA '
+'enrollment is implemented.';
+COMMENT ON COLUMN public.users.login_key IS
+'Unique canonical login identifier; normalization belongs to the '
+'future enrollment service.';
+COMMENT ON COLUMN public.users.state IS
+'Only pending and disabled accounts exist in this foundation; neither '
+'authenticates.';
+COMMENT ON COLUMN public.users.credential_version IS
+'Positive credential generation reserved for future session '
+'revocation checks.';
+COMMENT ON TABLE public.roles IS
+'Installation-local role identities; role names never authorize an '
+'operation.';
+COMMENT ON COLUMN public.roles.state IS
+'Only active roles grant permissions; restore returns disabled.';
+COMMENT ON TABLE public.user_roles IS
+'Explicit account-role memberships; inactive accounts and roles '
+'retain memberships.';
+COMMENT ON TABLE public.permission_operations IS
+'Registered Go operations; migration seeds the exact closed operation '
+'set.';
+COMMENT ON TABLE public.role_grants IS
+'Explicit installation grants only; content and delegation authority '
+'shapes are deferred.';
+COMMENT ON COLUMN public.role_grants.can_delegate IS
+'Allows delegation only within the actor''s authorized delegation '
+'envelope.';
+COMMENT ON TABLE public.sessions IS
+'Opaque session digests; never exposed through public views.';
+COMMENT ON COLUMN public.sessions.kind IS
+'Only restricted preauth storage exists; full and enrollment sessions '
+'are not implemented.';
+COMMENT ON COLUMN public.sessions.csrf_digest IS
+'SHA-256 digest of a separate CSRF token; never a plaintext bearer.';
+COMMENT ON TABLE public.content_types IS
+'Stable Registry type identities only; semantic schemas and commands '
+'are not implemented.';
+COMMENT ON TABLE public.content_fields IS
+'Stable field identities owned by one content type; no executable '
+'schema or values.';
+-- +goose StatementBegin
+CREATE FUNCTION public.cms_write_mutex() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $body$
+BEGIN
+    PERFORM pg_catalog.pg_advisory_xact_lock(1398031696, 1);
+    RETURN NULL;
+END;
+$body$;
+-- +goose StatementEnd
+COMMENT ON FUNCTION public.cms_write_mutex() IS
+'Acquire the installation CMS transaction lock before statement row '
+'locks.';
+REVOKE ALL ON FUNCTION public.cms_write_mutex() FROM public;
+INSERT INTO public.permission_operations (key, scope) VALUES
+('content.items.create', 'content'),
+('content.items.read', 'content'),
+('content.items.update', 'content'),
+('content.items.ready', 'content'),
+('content.items.publish', 'content'),
+('content.items.unpublish', 'content'),
+('content.items.assign', 'content'),
+('content_types.manage', 'installation'),
+('content_types.initialize_access', 'installation'),
+('content.permissions.delegate', 'installation'),
+('users.create', 'installation'),
+('users.read', 'installation'),
+('users.activate', 'installation'),
+('users.disable', 'installation'),
+('roles.create', 'installation'),
+('roles.read', 'installation'),
+('roles.edit', 'installation'),
+('roles.assign', 'installation'),
+('roles.disable', 'installation'),
+('roles.enable', 'installation'),
+('roles.archive', 'installation'),
+('roles.restore', 'installation'),
+('roles.delete', 'installation'),
+('sessions.revoke_any', 'installation'),
+('audit.read', 'installation'),
+('settings.manage', 'installation');
+CREATE TRIGGER users_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.users
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER roles_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.roles
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER user_roles_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.user_roles
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER permission_operations_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.permission_operations
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER role_grants_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.role_grants
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER sessions_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.sessions
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER content_types_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.content_types
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+CREATE TRIGGER content_fields_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.content_fields
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+REVOKE ALL ON public.users,
+public.roles,
+public.user_roles,
+public.permission_operations,
+public.role_grants,
+public.sessions,
+public.content_types,
+public.content_fields FROM public,
+sp_publisher,
+sp_language_importer;
+
+
 -- +goose Down
+DROP TABLE public.content_fields;
+DROP TABLE public.content_types;
+DROP TABLE public.sessions;
+DROP TABLE public.role_grants;
+DROP TABLE public.permission_operations;
+DROP TABLE public.user_roles;
+DROP TABLE public.roles;
+DROP TABLE public.users;
+DROP FUNCTION public.cms_write_mutex();
+
 DROP VIEW public.public_ui_messages;
 DROP VIEW public.public_ui_languages;
 DROP VIEW public.public_site;
