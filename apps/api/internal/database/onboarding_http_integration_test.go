@@ -37,7 +37,7 @@ type onboardingTokenHTTP struct {
 	User  onboardingUserHTTP `json:"user"`
 }
 
-func onboardingHTTP(t *testing.T, f authHTTPFixture, path, body, kind string, session cms.SessionTokens, status int, out any) *http.Response {
+func (f authHTTPFixture) onboardingHTTP(t *testing.T, path, body, kind string, session cms.SessionTokens, status int, out any) *http.Response {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, f.server.URL+path, strings.NewReader(body))
 	requireNoError(t, err)
@@ -69,18 +69,18 @@ func TestAuthOnboardingHTTPIntegration(t *testing.T) {
 	f := newAuthHTTPFixture(t)
 	full := authFull(t, f.state)
 	for _, body := range []string{`{"login":"invite-http","actor_id":"admin"}`, `{"login":"invite-http","state":"active"}`, `{"login":"invite-http","permissions":["users.create"]}`} {
-		onboardingHTTP(t, f, onboardingUsersPath, body, onboardingIssuerCookie, full, 400, nil)
+		f.onboardingHTTP(t, onboardingUsersPath, body, onboardingIssuerCookie, full, 400, nil)
 	}
 	var user onboardingUserHTTP
-	onboardingHTTP(t, f, onboardingUsersPath, `{"login":"invite-http"}`, onboardingIssuerCookie, full, 200, &user)
+	f.onboardingHTTP(t, onboardingUsersPath, `{"login":"invite-http"}`, onboardingIssuerCookie, full, 200, &user)
 	if user.State != "pending" || user.Version != 1 {
 		t.Fatal("creation did not return a pending user")
 	}
 	path := onboardingUsersPath + "/" + user.ID + "/onboarding-token"
 	var first, second onboardingTokenHTTP
-	onboardingHTTP(t, f, path, onboardingVersionJSON(t, 1), onboardingIssuerCookie, full, 200, &first)
-	onboardingHTTP(t, f, path, onboardingVersionJSON(t, 1), onboardingIssuerCookie, full, 409, nil)
-	onboardingHTTP(t, f, path, onboardingVersionJSON(t, 2), onboardingIssuerCookie, full, 200, &second)
+	f.onboardingHTTP(t, path, onboardingVersionJSON(t, 1), onboardingIssuerCookie, full, 200, &first)
+	f.onboardingHTTP(t, path, onboardingVersionJSON(t, 1), onboardingIssuerCookie, full, 409, nil)
+	f.onboardingHTTP(t, path, onboardingVersionJSON(t, 2), onboardingIssuerCookie, full, 200, &second)
 	if second.Token == first.Token || second.User.Version != 3 {
 		t.Fatal("reissue retained the old token or account version")
 	}
@@ -89,15 +89,15 @@ func TestAuthOnboardingHTTPIntegration(t *testing.T) {
 	startBody := func(token string) string {
 		return `{"token":` + strconv.Quote(token) + `,"password":` + strconv.Quote(onboardingPassword) + `}`
 	}
-	onboardingHTTP(t, f, onboardingStartPath, startBody(first.Token), onboardingPreauthCookie, pre, 401, nil)
+	f.onboardingHTTP(t, onboardingStartPath, startBody(first.Token), onboardingPreauthCookie, pre, 401, nil)
 	forged := pre
 	forged.CSRF = strings.Repeat("A", 43)
-	onboardingHTTP(t, f, onboardingStartPath, startBody(second.Token), onboardingPreauthCookie, forged, 403, nil)
+	f.onboardingHTTP(t, onboardingStartPath, startBody(second.Token), onboardingPreauthCookie, forged, 403, nil)
 	var enrollment struct {
 		CSRF   string `json:"csrf_token"`
 		Secret string `json:"secret"`
 	}
-	res := onboardingHTTP(t, f, onboardingStartPath, startBody(second.Token), onboardingPreauthCookie, pre, 200, &enrollment)
+	res := f.onboardingHTTP(t, onboardingStartPath, startBody(second.Token), onboardingPreauthCookie, pre, 200, &enrollment)
 	pending := cms.SessionTokens{CSRF: enrollment.CSRF}
 	for _, cookie := range res.Cookies() {
 		if cookie.Name == "__Host-sp_enrollment" && cookie.Value != "" {
@@ -107,19 +107,19 @@ func TestAuthOnboardingHTTPIntegration(t *testing.T) {
 	if pending.Token == "" {
 		t.Fatal("restricted enrollment cookie missing")
 	}
-	onboardingHTTP(t, f, onboardingUsersPath, `{"login":"forbidden"}`, onboardingRestrictedCookie, pending, 401, nil)
-	onboardingHTTP(t, f, "/api/v1/admin/auth/step-up", `{"password":"x","code":"000000"}`, onboardingRestrictedCookie, pending, 401, nil)
-	onboardingHTTP(t, f, onboardingCompletePath, `{"code":"000000","user_id":"`+f.state.user+`"}`, onboardingRestrictedCookie, pending, 400, nil)
+	f.onboardingHTTP(t, onboardingUsersPath, `{"login":"forbidden"}`, onboardingRestrictedCookie, pending, 401, nil)
+	f.onboardingHTTP(t, "/api/v1/admin/auth/step-up", `{"password":"x","code":"000000"}`, onboardingRestrictedCookie, pending, 401, nil)
+	f.onboardingHTTP(t, onboardingCompletePath, `{"code":"000000","user_id":"`+f.state.user+`"}`, onboardingRestrictedCookie, pending, 400, nil)
 	var completed struct {
 		Codes []string `json:"recovery_codes"`
 	}
 	code := bootstrapCode(t, f.state.db, enrollment.Secret)
-	res = onboardingHTTP(t, f, onboardingCompletePath, `{"code":"`+code+`"}`, onboardingRestrictedCookie, pending, 200, &completed)
+	res = f.onboardingHTTP(t, onboardingCompletePath, `{"code":"`+code+`"}`, onboardingRestrictedCookie, pending, 200, &completed)
 	if len(completed.Codes) != 10 {
 		t.Fatal("completion did not return ten recovery codes")
 	}
 	assertOnboardingCookiesCleared(t, res)
-	onboardingHTTP(t, f, onboardingCompletePath, `{"code":"`+code+`"}`, onboardingRestrictedCookie, pending, 401, nil)
+	f.onboardingHTTP(t, onboardingCompletePath, `{"code":"`+code+`"}`, onboardingRestrictedCookie, pending, 401, nil)
 	var disabled, noRoles, noSessions bool
 	requireNoError(t, f.state.db.QueryRow(`SELECT state='disabled' AND enrollment_completed_at IS NOT NULL, NOT EXISTS(SELECT 1 FROM public.user_roles WHERE user_id=u.id), NOT EXISTS(SELECT 1 FROM public.sessions WHERE user_id=u.id AND revoked_at IS NULL) FROM public.users u WHERE id=$1`, user.ID).Scan(&disabled, &noRoles, &noSessions))
 	if !disabled || !noRoles || !noSessions {
