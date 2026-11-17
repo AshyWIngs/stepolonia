@@ -4,12 +4,12 @@ RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     github.com/evanw/esbuild/cmd/esbuild@609683d892977362a0f99026cb74b96263d728a9 \
     && go version -m /out/esbuild
 
-FROM dhi.io/node:26.13.1-alpine3.24-dev AS source
+FROM dhi.io/node:26.13.1-alpine3.24-dev AS dependencies
 WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
 RUN test "$(npm --version)" = "11.21.2"
 COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
-COPY packages/sdk /workspace/packages/sdk
+COPY packages/sdk/package.json /workspace/packages/sdk/package.json
 RUN npm ci --ignore-scripts
 COPY --from=esbuild-tool /out/esbuild /tmp/esbuild
 # Заменяем upstream-бинарник, сохраняя штатное разрешение платформенного npm-пакета.
@@ -25,6 +25,8 @@ fs.copyFileSync('/tmp/esbuild', binaryPath);
 fs.unlinkSync('/tmp/esbuild');
 assert.equal(execFileSync('node_modules/.bin/esbuild', ['--version'], { encoding: 'utf8' }).trim(), version);
 JS
+FROM dependencies AS source
+COPY packages/sdk /workspace/packages/sdk
 COPY apps/web .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare

@@ -1,0 +1,32 @@
+name: Build dependency cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/actions/build-dependencies/**'
+      - '.github/workflows/build-cache.yml'
+      - 'infrastructure/quality/dependencies.hcl'
+      - '**/Dockerfile'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '**/package.json'
+      - '**/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-dependency-cache-main
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-dependencies

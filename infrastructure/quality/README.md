@@ -2,7 +2,7 @@
 
 `make lint` проверяет исходники без БД. `make duplicates` запускает только CPD.
 `make SITE=example.test verify` выполняет `lint`, `config`, `test`, `build`,
-`db-test`, `publishing-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
+`db-test`, `publishing-test`, `auth-test`, `image-audit`; `duplicates` входит через `lint` один раз. PostgreSQL создаётся только
 собственным disposable harness, постоянные volumes не очищаются.
 
 Для короткого локального цикла используйте только нужную цель:
@@ -32,10 +32,28 @@
 GitHub Actions сохраняет job `verify`: для Draft PR тяжёлые шаги пропускаются,
 при переводе в Ready for review и последующих изменениях готового PR полный
 `verify` запускается. PR только с Markdown также пропускает тяжёлые шаги.
-Для push в `main` и ручного `workflow_dispatch` полный `verify` сохраняется.
+После merge полный Verify повторно не запускается; ручной `workflow_dispatch`
+выполняет полный Gate.
 Успешный пустой job в Draft означает лишь отсутствие запуска, не Gate PASS;
 Draft нельзя считать принятым для merge. SonarCloud/Codacy остаются
 независимыми проверками, их пороги не меняются.
+
+Перед CI-проверками `build-dependencies` восстанавливает и экспортирует через
+BuildKit/GitHub cache только prerequisite stages из `dependencies.hcl`:
+Go tools/modules, npm dependencies и PostgreSQL distribution. Каждый target
+имеет отдельный cache scope; `mode=max` сохраняет промежуточные слои. Source
+копируется после dependency stage, поэтому изменение кода не использует старый
+результат lint/test/build. Все Make-проверки и актуальный CVE-аудит выполняются
+по прежнему графу. Ошибка экспорта кеша не подменяет ошибку сборки.
+
+Один builder используется Bake, Make и Compose, с автоматической загрузкой
+собранных образов в daemon. Параллелизм подготовки зависимостей ограничен двумя
+задачами. Отдельный workflow после изменения сборочных зависимостей в `main`
+прогревает default-branch cache для следующих PR, без повторного полного Gate.
+Кеши npm/pip/Chromium привязаны к соответствующим lockfiles; Chromium CLI всё
+равно проверяет закреплённый браузер и устанавливает системные зависимости.
+Первый запуск остаётся холодным; ускорение оценивается по реальным повторным
+CI-запускам, а не по наличию конфигурации кеша.
 
 Нужны Docker/BuildKit, Make и Python 3. Для `verify` также нужны Go 1.27.4+
 той же minor-ветки и C compiler для race detector. SDK также требует Node.js
