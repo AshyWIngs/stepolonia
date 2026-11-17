@@ -19,6 +19,8 @@ import site_config
 
 def load_script(name):
     spec = importlib.util.spec_from_file_location(name.replace("-", "_"), SCRIPTS / f"{name}.py")
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load script: {name}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

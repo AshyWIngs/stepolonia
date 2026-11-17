@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 SWAGGER_SCRIPT = Path(__file__).resolve().parents[1] / "dev-swagger.py"
 script_spec = importlib.util.spec_from_file_location("dev_swagger", SWAGGER_SCRIPT)
+if script_spec is None or script_spec.loader is None:
+    raise ImportError(f"Cannot load Swagger script: {SWAGGER_SCRIPT}")
 swagger = importlib.util.module_from_spec(script_spec)
 script_spec.loader.exec_module(swagger)
 
