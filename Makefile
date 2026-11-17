@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test auth-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
+.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test auth-test resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
 swagger:
 	python3 scripts/dev-swagger.py
@@ -67,6 +67,9 @@ verify: lint config test build db-test publishing-test auth-test image-audit
 
 auth-test:
 	python3 scripts/test-auth.py
+
+resource-test:
+	python3 scripts/test-resources.py
 
 # Сканируем содержимое собранных образов; daemon socket и секреты сканеру не передаются.
 # Ошибка загрузки CVE DB также блокирует проверку. High/Critical без ignore-unfixed.
