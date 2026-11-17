@@ -1,0 +1,24 @@
+name: Build dependencies
+description: Restore and export prerequisite layers without caching Gate results
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v4
+      id: builder
+      with:
+        driver-opts: default-load=true
+        buildkitd-config-inline: |
+          [worker.oci]
+            max-parallelism = 2
+    - uses: docker/bake-action@v7
+      with:
+        source: .
+        builder: ${{ steps.builder.outputs.name }}
+        files: infrastructure/quality/dependencies.hcl
+        pull: true
+    - shell: bash
+      env:
+        VERIFY_BUILDER: ${{ steps.builder.outputs.name }}
+      run: |
+        echo "BUILDX_BUILDER=$VERIFY_BUILDER" >> "$GITHUB_ENV"
+        echo "COMPOSE_BAKE=true" >> "$GITHUB_ENV"

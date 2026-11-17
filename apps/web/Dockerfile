@@ -4,7 +4,7 @@ RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     github.com/evanw/esbuild/cmd/esbuild@609683d892977362a0f99026cb74b96263d728a9 \
     && go version -m /out/esbuild
 
-FROM dhi.io/node:26.13.1-alpine3.24-dev AS source
+FROM dhi.io/node:26.13.1-alpine3.24-dev AS dependencies
 WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
 RUN test "$(npm --version)" = "11.21.2"
@@ -25,6 +25,7 @@ fs.copyFileSync('/tmp/esbuild', binaryPath);
 fs.unlinkSync('/tmp/esbuild');
 assert.equal(execFileSync('node_modules/.bin/esbuild', ['--version'], { encoding: 'utf8' }).trim(), version);
 JS
+FROM dependencies AS source
 COPY apps/web .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare

@@ -68,7 +68,14 @@ const (
 	logoutPath = "/logout"
 )
 
-const logoutOperation = "authLogout"
+const (
+	logoutOperation             = "authLogout"
+	recoverOperation            = "authRecover"
+	completeRecoveryOperation   = "authCompleteRecovery"
+	cancelRecoveryOperation     = "authCancelRecovery"
+	startEnrollmentOperation    = "authStartEnrollment"
+	completeEnrollmentOperation = "authCompleteEnrollment"
+)
 
 type route struct {
 	kind        string
@@ -90,15 +97,15 @@ var routes = map[string]route{
 		description: "Requires a restricted login session. A valid unused TOTP replaces it with a full session and rotates CSRF. Full sessions have a 12-hour absolute lifetime, a 30-minute idle timeout and five-minute strong-authentication freshness from this successful MFA. Invalid, expired or replayed factors do not grant access."},
 	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: "authStepUp", summary: "Refresh strong authentication", response: csrfResponseSchema,
 		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute session expiry."},
-	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: "authRecover", summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
+	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: recoverOperation, summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
 		description: "Requires preauth, password and an unused recovery code. Returns a pending TOTP seed and a ten-minute restricted recovery session, not full access. Enroll the seed locally, then confirm a fresh TOTP through recovery completion. A pending reservation prevents concurrent use; cancellation releases it."},
-	"/recovery/complete": {kind: recoveryKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authCompleteRecovery", summary: "Confirm the replacement factor", response: recoveryCodesSchema,
+	"/recovery/complete": {kind: recoveryKind, fields: credentialCodeField, method: http.MethodPost, operationID: completeRecoveryOperation, summary: "Confirm the replacement factor", response: recoveryCodesSchema,
 		description: "Requires the restricted recovery session and a TOTP from its pending seed. Atomically replaces factors, consumes the reserved recovery code, revokes sessions and returns ten new recovery codes once. Store them securely; browser cookies are cleared and a new login is required."},
-	"/recovery/cancel": {kind: recoveryKind, method: http.MethodPost, operationID: "authCancelRecovery", summary: "Cancel pending factor recovery",
+	"/recovery/cancel": {kind: recoveryKind, method: http.MethodPost, operationID: cancelRecoveryOperation, summary: "Cancel pending factor recovery",
 		description: "Requires the restricted recovery session and CSRF token. Send an empty JSON object. Ends the reservation without replacing factors, revokes the recovery session and clears browser session cookies."},
-	enrollmentPath: {kind: preauthKind, fields: "token,password", method: http.MethodPost, operationID: "authStartEnrollment", summary: "Begin the invited user's factor enrollment", response: "Enrollment",
+	enrollmentPath: {kind: preauthKind, fields: "token,password", method: http.MethodPost, operationID: startEnrollmentOperation, summary: "Begin the invited user's factor enrollment", response: "Enrollment",
 		description: "Requires preauth and its CSRF token. A valid unexpired one-time onboarding token and a new password create a restricted enrollment session lasting at most ten minutes and bounded by the original token expiry and return its own pending TOTP seed. This consumes the token and does not grant CMS access. Confirm the seed through enrollment completion before expiry; if interrupted, an authorized issuer must reissue the token."},
-	enrollmentCompletePath: {kind: enrollmentKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authCompleteEnrollment", summary: "Confirm the invited user's own factor", response: recoveryCodesSchema,
+	enrollmentCompletePath: {kind: enrollmentKind, fields: credentialCodeField, method: http.MethodPost, operationID: completeEnrollmentOperation, summary: "Confirm the invited user's own factor", response: recoveryCodesSchema,
 		description: "Requires the restricted enrollment session and a fresh TOTP from its pending seed. Success commits the password, TOTP and ten recovery codes, clears all browser session cookies and leaves the account disabled without roles or CMS access. Activation and assignment require separate authorized commands."},
 	logoutPath: {method: http.MethodPost, operationID: logoutOperation, summary: "Revoke the current session",
 		description: "Requires exactly one session cookie of any supported kind and its CSRF token. Send an empty JSON object. Revokes that session and clears browser cookies; expired credentials return 401 and clear cookies only after the POST, JSON and CSRF-header boundary succeeds."},

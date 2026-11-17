@@ -24,7 +24,7 @@ func OpenAPIJSON() ([]byte, error) {
 		op := &huma.Operation{
 			OperationID: rt.operationID, Summary: rt.summary,
 			Description: rt.description + " " + boundaryDescription,
-			Tags:        []string{"Private authentication"},
+			Tags:        []string{authTag(rt)},
 			Parameters:  authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt),
 		}
 		item := &huma.PathItem{}
@@ -36,7 +36,7 @@ func OpenAPIJSON() ([]byte, error) {
 			registry.Map()[name] = schema
 			op.RequestBody = &huma.RequestBody{
 				Required:    true,
-				Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. String fields decode as empty strings when omitted and are checked by the service; expected_version is a required positive integer. Examples are synthetic.",
+				Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic.",
 				Content:     map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
 			}
 			if rt.operationID == issueOnboardingOperation {
@@ -51,6 +51,7 @@ func OpenAPIJSON() ([]byte, error) {
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
 		Info:    &huma.Info{Title: "Stepolonia private authentication", Version: "1.0.0", Description: "Implemented private session and pending-user onboarding operations only. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
 	})
@@ -100,10 +101,10 @@ func credentialSchema(rt route) (*huma.Schema, map[string]any) {
 		}
 	}
 	var required []string
-	if rt.fields == expectedVersionField {
-		required = []string{expectedVersionField}
+	if rt.fields != "" {
+		required = strings.Split(rt.fields, ",")
 	}
-	return closedObjectSchema("Private command input accepted by "+rt.operationID+". Missing strings do not bypass service validation. expected_version is required for token mutations; empty objects are intentional only for cancellation and logout.", props, required, example), example
+	return closedObjectSchema("Private command input accepted by "+rt.operationID+". All listed fields are necessary for a successful command. expected_version is required for token mutations; empty objects are intentional only for cancellation and logout.", props, required, example), example
 }
 
 func credentialProperty(rt route, field string) *huma.Schema {
@@ -111,26 +112,35 @@ func credentialProperty(rt route, field string) *huma.Schema {
 	switch field {
 	case "login":
 		property = stringSchema("Account login normalized by Unicode NFC and case folding. The normalized value must be nonempty, at most 256 UTF-8 bytes, without surrounding whitespace, NUL, CR or LF. Invalid or unknown accounts use the same credential failure response.", "docs-editor")
+		property.MinLength = intPointer(1)
+		property.Pattern = `^[^\x00\r\n]+$`
 		if rt.operationID == createUserOperation {
 			property.Description = "New account login normalized by Unicode NFC and case folding. Must be nonempty, at most 256 UTF-8 bytes, without surrounding whitespace, NUL, CR or LF. Invalid input returns 400; an existing normalized login returns 409."
 		}
 	case "token":
 		property = stringSchema("One-time onboarding secret received over a verified external channel; expires after at most 24 hours and is consumed at enrollment start. Send only in this JSON body, never a URL or log.", syntheticOnboardingToken)
+		property.MinLength, property.MaxLength = intPointer(43), intPointer(43)
+		property.Pattern = "^[A-Za-z0-9_-]{43}$"
 		property.WriteOnly = true
 	case expectedVersionField:
 		property = &huma.Schema{Type: "integer", Format: "int64", Description: "Required positive current user version; checked under the write mutex to reject stale issuance or reissue.", Minimum: floatPointer(1), Examples: []any{1}}
 	case "password":
 		property = stringSchema("Current account password; case-sensitive UTF-8, at most 512 bytes, and never returned. Synthetic example only. Empty or incorrect values do not authenticate.", "Synthetic example password 42!")
 		property.WriteOnly = true
-		if rt.operationID == "authStartEnrollment" {
+		property.MinLength = intPointer(1)
+		if rt.operationID == startEnrollmentOperation {
+			property.MinLength, property.MaxLength = intPointer(15), intPointer(128)
 			property.Description = "New password for this invited account; case-sensitive UTF-8, 15 to 128 Unicode code points and at most 512 bytes. Held only as a pending password hash until TOTP confirmation; never returned."
 		}
 	case credentialCodeField:
 		property = stringSchema("Fresh six-digit TOTP from the enrolled factor; leading zeros are significant. Used counters cannot be replayed.", "012345")
+		property.MinLength, property.MaxLength = intPointer(6), intPointer(6)
+		property.Pattern = "^[0-9]{6}$"
 		switch rt.operationID {
-		case "authRecover":
+		case recoverOperation:
 			property = stringSchema("One unused recovery code, not a TOTP. The code is reserved until completion, cancellation or expiry.", "0123456789abcdef0123456789abcdef")
-		case "authCompleteRecovery", "authCompleteEnrollment":
+			property.MinLength = intPointer(1)
+		case completeRecoveryOperation, completeEnrollmentOperation:
 			property.Description = "Fresh six-digit TOTP generated from this session's pending seed; leading zeros are significant."
 		}
 		property.WriteOnly = true
@@ -184,10 +194,9 @@ func privateSchemas() map[string]*huma.Schema {
 			"One-time disclosure of ten recovery codes after successful factor confirmation. All browser session cookies are cleared.",
 			map[string]*huma.Schema{"recovery_codes": {Type: "array", Description: "Ten new single-use secrets from the completed enrollment or factor replacement.", Items: code, MinItems: intPointer(10), MaxItems: intPointer(10), Examples: []any{codes}}},
 			[]string{"recovery_codes"}, recoveryCodesResponse{RecoveryCodes: codes}),
-		"AuthProblem": closedObjectSchema(
+		"AuthProblem": responseDTOSchema(
 			"Private transport problem; uses status, code and title only, without account existence or secret details. It is not the public Huma error model.",
-			map[string]*huma.Schema{"status": {Type: "integer", Description: "HTTP response status.", Examples: []any{401}}, "code": stringSchema("Stable machine-readable failure reason; see each status response for actual codes.", authenticationCode), "title": stringSchema("Standard HTTP status phrase.", "Unauthorized")},
-			[]string{"status", "code", "title"}, authProblem{Status: 401, Code: authenticationCode, Title: "Unauthorized"}),
+			authProblem{Status: 401, Code: authenticationCode, Title: "Unauthorized"}),
 	}
 
 }
@@ -238,10 +247,10 @@ func authResponses(rt route) map[string]*huma.Response {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
-		responses["204"] = &huma.Response{Description: "Session revoked and browser session cookies cleared; no response body.", Headers: successHeaders}
+		responses["204"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders}
 	} else {
 		schema := privateSchemas()[rt.response]
-		responses["200"] = &huma.Response{Description: "Transition committed; use the returned CSRF token when present and retain browser-managed cookie updates.", Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: schema.Examples[0]}}}
+		responses["200"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: schema.Examples[0]}}}
 	}
 	for status, codes := range authErrorCodes(rt) {
 		responses[strconv.Itoa(status)] = authErrorResponse(rt, status, codes)
@@ -266,7 +275,7 @@ func authErrorCodes(rt route) map[int][]string {
 			codes[404] = []string{notFoundCode}
 		}
 	}
-	if rt.operationID == "authCancelRecovery" || rt.operationID == logoutOperation {
+	if rt.operationID == cancelRecoveryOperation || rt.operationID == logoutOperation {
 		codes[401] = []string{authenticationCode}
 		delete(codes, 429)
 	}
@@ -292,7 +301,15 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 			description += " Expired credentials clear cookies only after the request boundary succeeds."
 		}
 	}
-	return &huma.Response{Description: description, Headers: headers, Content: map[string]*huma.MediaType{"application/problem+json": {Schema: schemaRef("AuthProblem"), Examples: examples}}}
+	schema := &huma.Schema{AllOf: []*huma.Schema{schemaRef("AuthProblem"), {
+		Type: "object",
+		Properties: map[string]*huma.Schema{
+			"status": {Const: status},
+			"code":   {Enum: stringValues(codes)},
+			"title":  {Const: http.StatusText(status)},
+		},
+	}}}
+	return &huma.Response{Description: description, Headers: headers, Content: map[string]*huma.MediaType{"application/problem+json": {Schema: schema, Examples: examples}}}
 }
 
 func authRateDescription(rt route) string {
@@ -301,6 +318,9 @@ func authRateDescription(rt route) string {
 	}
 	if rt.method == http.MethodGet {
 		return " New preauth issuance permits 30 attempts per client IP and 100 per installation in 15 minutes; existing-session CSRF rotation does not consume issuance budget."
+	}
+	if rt.operationID == startEnrollmentOperation {
+		return " Credential checks reserve rolling 15-minute budgets: 5 per onboarding token, 30 per client IP and 100 per installation. Success releases its reservation; failed or interrupted checks retain it."
 	}
 	return " Credential checks reserve rolling 15-minute budgets: 5 per account, 30 per client IP and 100 per installation. Success releases its reservation; failed or interrupted checks retain it."
 }
@@ -336,4 +356,63 @@ func uuidSchema(example string) *huma.Schema {
 	schema := stringSchema("Pending account UUID.", example)
 	schema.Format = "uuid"
 	return schema
+}
+
+func authTags() []*huma.Tag {
+	return []*huma.Tag{
+		{Name: "authentication-sessions", Description: "Session initiation, password and TOTP verification, CSRF rotation, strong authentication and logout."},
+		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
+		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
+		{Name: "users", Description: "Authorized pending-account creation and one-time onboarding token issuance."},
+	}
+}
+
+func authTag(rt route) string {
+	switch rt.operationID {
+	case createUserOperation, issueOnboardingOperation:
+		return "users"
+	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
+		return "account-recovery"
+	case startEnrollmentOperation, completeEnrollmentOperation:
+		return "account-enrollment"
+	default:
+		return "authentication-sessions"
+	}
+}
+
+func authSuccessDescription(rt route) string {
+	switch rt.operationID {
+	case "authCSRF":
+		return "Preauth session created or existing session CSRF rotated; use the returned token on the next POST."
+	case "authLogin":
+		return "Password accepted; restricted login session replaces preauth. Verify a fresh TOTP with the returned CSRF token."
+	case "authVerifyMFA":
+		return "TOTP accepted; a full session replaces the login challenge and the returned CSRF token replaces the previous token."
+	case "authStepUp":
+		return "Password and TOTP accepted; full session and CSRF rotate with five-minute strong-authentication freshness."
+	case recoverOperation:
+		return "Recovery code reserved; restricted recovery session and pending TOTP seed returned with a new CSRF token."
+	case completeRecoveryOperation:
+		return "Replacement TOTP committed and previous factors and sessions revoked; ten new recovery codes returned once, cookies cleared and a new login required."
+	case cancelRecoveryOperation:
+		return "Recovery reservation released without replacing factors; restricted recovery session revoked and browser cookies cleared. No response body."
+	case startEnrollmentOperation:
+		return "Onboarding token consumed; restricted enrollment session and pending TOTP seed returned with a new CSRF token."
+	case completeEnrollmentOperation:
+		return "Password and TOTP committed; ten recovery codes returned once and cookies cleared. Account remains disabled without roles or CMS access."
+	case createUserOperation:
+		return "Pending account and audit committed without credentials, roles or sessions; current version returned."
+	case issueOnboardingOperation:
+		return "Previous onboarding token and restricted enrollment revoked; new one-time token and updated user version returned after audit commit."
+	default:
+		return "Current session revoked and browser session cookies cleared; no response body."
+	}
+}
+
+func stringValues(values []string) []any {
+	result := make([]any, len(values))
+	for i, value := range values {
+		result[i] = value
+	}
+	return result
 }

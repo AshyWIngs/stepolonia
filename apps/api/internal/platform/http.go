@@ -88,16 +88,22 @@ func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site .
 	// Контракт генерируется из операций вне HTTP; служебные маршруты закрыты.
 	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
 	cfg.CreateHooks = nil
+	cfg.Tags = []*huma.Tag{
+		{Name: healthTag, Description: "Process liveness and database connectivity probes."},
+		{Name: sitePublicationTag, Description: "Atomic published site settings and UI message catalogs."},
+		{Name: contentLanguagesTag, Description: "Active languages available for published content."},
+		{Name: publishedContentTag, Description: "Public collection items and canonical content addresses with private fields excluded."},
+	}
 	api := humago.New(mux, cfg)
 	huma.Register(api, huma.Operation{
-		OperationID: "liveness", Method: http.MethodGet, Path: "/health/live",
+		Tags: []string{healthTag}, OperationID: "liveness", Method: http.MethodGet, Path: "/health/live",
 		Summary:     "Check whether the API process is responding",
 		Description: "Returns 200 without querying PostgreSQL. This probe does not establish database readiness or the presence of published content. Use the readiness probe before routing application traffic.",
 	}, func(context.Context, *struct{}) (*healthOutput, error) {
 		return healthy(), nil
 	})
 	huma.Register(api, huma.Operation{
-		OperationID: "readiness", Method: http.MethodGet, Path: "/health/ready",
+		Tags: []string{healthTag}, OperationID: "readiness", Method: http.MethodGet, Path: "/health/ready",
 		Summary:     "Check whether the API can reach PostgreSQL",
 		Description: "Pings the configured runtime database with a one-second deadline. Returns 503 when the database is unavailable; a successful probe does not establish that site settings or content have been published.",
 		Responses:   problemResponses(api, http.StatusServiceUnavailable),

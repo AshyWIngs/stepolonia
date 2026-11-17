@@ -9,14 +9,16 @@ FROM go-base AS go-tool
 RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     github.com/golangci/golangci-lint/v2/cmd/golangci-lint@25c5369a93aacb8cccea0d46e1569ca4a194564d
 
-FROM go-base AS go-lint
+FROM go-base AS go-dependencies
 COPY --from=go-tool /out/golangci-lint /usr/local/bin/golangci-lint
 WORKDIR /src
-COPY .golangci.yml ./
 COPY apps/api/go.mod apps/api/go.sum ./apps/api/
 WORKDIR /src/apps/api
 RUN go mod download && go mod verify
 WORKDIR /src
+
+FROM go-dependencies AS go-lint
+COPY .golangci.yml ./
 COPY apps/api ./apps/api
 COPY infrastructure/postgres/healthcheck ./infrastructure/postgres/healthcheck
 COPY infrastructure/caddy/healthcheck ./infrastructure/caddy/healthcheck

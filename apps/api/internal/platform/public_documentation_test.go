@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,6 +94,32 @@ func assertPublicModelDocumentation(t *testing.T, registry huma.Registry, name s
 	for property, definition := range schema.Properties {
 		if len(strings.Fields(definition.Description)) < 4 {
 			t.Errorf("%s.%s lacks property documentation", name, property)
+		}
+	}
+}
+
+func TestPublicDocumentationDomainGroups(t *testing.T) {
+	_, api := newAPI(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	expected := map[string][]string{
+		"health":            {"liveness", "readiness"},
+		"site-publication":  {"getSite"},
+		"content-languages": {"listLanguages"},
+		"published-content": {"listContent", "getContent"},
+	}
+	declared := map[string]bool{}
+	for _, tag := range api.OpenAPI().Tags {
+		if _, ok := expected[tag.Name]; !ok || tag.Description == "" || declared[tag.Name] || !regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`).MatchString(tag.Name) {
+			t.Fatalf("invalid public domain tag: %+v", tag)
+		}
+		declared[tag.Name] = true
+	}
+	if len(declared) != len(expected) {
+		t.Fatal("missing public domain tags")
+	}
+	for _, path := range api.OpenAPI().Paths {
+		op := path.Get
+		if len(op.Tags) != 1 || !declared[op.Tags[0]] || !slices.Contains(expected[op.Tags[0]], op.OperationID) {
+			t.Fatalf("incorrect domain for %s: %v", op.OperationID, op.Tags)
 		}
 	}
 }

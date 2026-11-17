@@ -57,7 +57,7 @@ type contentOutput struct {
 
 func registerContent(api huma.API, reader *content.PublicReader, logger *slog.Logger) {
 	huma.Register(api, huma.Operation{
-		OperationID: "listLanguages", Method: http.MethodGet, Path: "/api/v1/languages",
+		Tags: []string{contentLanguagesTag}, OperationID: "listLanguages", Method: http.MethodGet, Path: "/api/v1/languages",
 		Summary:     "List active content languages",
 		Description: "Returns active content languages ordered by language code. The array may be empty. This endpoint accepts no query parameters and requires no session. UI catalog availability is reported separately by getSite.",
 		Responses:   languageResponses(api), Middlewares: huma.Middlewares{publicQuery(api)},
@@ -75,7 +75,7 @@ func registerContent(api huma.API, reader *content.PublicReader, logger *slog.Lo
 		return out, nil
 	})
 	huma.Register(api, huma.Operation{
-		OperationID: "listContent", Method: http.MethodGet, Path: "/api/v1/content/{type_key}",
+		Tags: []string{publishedContentTag}, OperationID: "listContent", Method: http.MethodGet, Path: "/api/v1/content/{type_key}",
 		Summary: "List published collection content", Description: "Lists public published items in an active content language, ordered by publication time descending and then item UUID descending. language is required. limit defaults to 20 and offset to zero. Follow next_offset until null, subject to the maximum offset of 10000. A valid empty collection returns items []. Content language fallback and field predicates are unavailable. Private fields are excluded before pagination. Unknown, repeated and empty query parameters return 400. No session is required.",
 		Responses: contentResponses(api, true), Middlewares: huma.Middlewares{publicQuery(api, languageQueryKey, limitQueryKey, offsetQueryKey)},
 	}, func(ctx context.Context, input *contentListInput) (*contentListOutput, error) {
@@ -92,7 +92,7 @@ func registerContent(api huma.API, reader *content.PublicReader, logger *slog.Lo
 	canonicalAPI := "/api/v1/content/" + url.PathEscape(canonical.TypeKey) + "/" + url.PathEscape(canonical.Slug) + "?" + url.Values{languageQueryKey: {canonical.Language}}.Encode()
 	responses["301"] = &huma.Response{Description: "Historical slug; direct canonical API address in the same language.", Headers: map[string]*huma.Param{locationHeader: {Required: true, Description: "Direct canonical API address in the same language.", Schema: &huma.Schema{Type: huma.TypeString, Examples: []any{canonicalAPI}}}}, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: &huma.Schema{Type: huma.TypeNull}, Examples: map[string]*huma.Example{"redirect": {Summary: "Historical slug resolved by the Location header", Value: json.RawMessage(`null`)}}}}}
 	huma.Register(api, huma.Operation{
-		OperationID: "getContent", Method: http.MethodGet, Path: "/api/v1/content/{type_key}/{slug}", Summary: "Get published content or its canonical address",
+		Tags: []string{publishedContentTag}, OperationID: "getContent", Method: http.MethodGet, Path: "/api/v1/content/{type_key}/{slug}", Summary: "Get published content or its canonical address",
 		Description: "Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.",
 		Responses:   responses, Middlewares: huma.Middlewares{publicQuery(api, languageQueryKey)},
 	}, func(ctx context.Context, input *contentInput) (*contentOutput, error) {

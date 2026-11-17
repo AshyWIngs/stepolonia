@@ -120,7 +120,7 @@ func TestDomainMigrationsPartialPrefixesIntegration(t *testing.T) {
 }
 
 func TestDomainMigrationsForeignHistoryIntegration(t *testing.T) {
-	for _, versions := range [][]int{{6}, {1, 3}} {
+	for _, versions := range [][]int{{7}, {1, 3}} {
 		t.Run(fmt.Sprint(versions), func(t *testing.T) {
 			db, role := domainQAFixture(t)
 			files := fstest.MapFS{}

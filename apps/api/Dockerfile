@@ -1,9 +1,11 @@
-FROM golang:1.27.4-alpine3.24 AS source
+FROM golang:1.27.4-alpine3.24 AS dependencies
 # Доступные обновления musl/zlib из репозитория той же ветки Alpine.
 RUN apk upgrade --no-cache musl zlib
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
+
+FROM dependencies AS source
 COPY . .
 
 # Проверки запускаются явно: make test / docker build --target checks.

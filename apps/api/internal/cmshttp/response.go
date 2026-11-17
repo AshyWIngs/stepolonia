@@ -32,9 +32,9 @@ type recoveryCodesResponse struct {
 	RecoveryCodes []string `json:"recovery_codes"`
 }
 type authProblem struct {
-	Status int    `json:"status"`
-	Code   string `json:"code"`
-	Title  string `json:"title"`
+	Status int    `json:"status" doc:"HTTP response status." example:"401"`
+	Code   string `json:"code" doc:"Stable machine-readable failure reason; each status response constrains the supported codes." example:"authentication_required"`
+	Title  string `json:"title" doc:"Standard HTTP status phrase." example:"Unauthorized"`
 }
 
 func respond(w http.ResponseWriter, value any) {
