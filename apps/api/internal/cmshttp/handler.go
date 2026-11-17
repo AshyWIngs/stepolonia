@@ -3,8 +3,10 @@ package cmshttp
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -53,9 +55,11 @@ const maxCredentialBodyBytes = 4096
 const credentialCodeField = "code"
 
 type credentials struct {
-	Login    string `json:"login"`
-	Password string `json:"password"`
-	Code     string `json:"code"`
+	Login           string `json:"login"`
+	Password        string `json:"password"`
+	Code            string `json:"code"`
+	Token           string `json:"token"`
+	ExpectedVersion int64  `json:"expected_version"`
 }
 
 const (
@@ -88,10 +92,14 @@ var routes = map[string]route{
 		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute session expiry."},
 	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: "authRecover", summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
 		description: "Requires preauth, password and an unused recovery code. Returns a pending TOTP seed and a ten-minute restricted recovery session, not full access. Enroll the seed locally, then confirm a fresh TOTP through recovery completion. A pending reservation prevents concurrent use; cancellation releases it."},
-	"/recovery/complete": {kind: recoveryKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authCompleteRecovery", summary: "Confirm the replacement factor", response: "RecoveryCodes",
+	"/recovery/complete": {kind: recoveryKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authCompleteRecovery", summary: "Confirm the replacement factor", response: recoveryCodesSchema,
 		description: "Requires the restricted recovery session and a TOTP from its pending seed. Atomically replaces factors, consumes the reserved recovery code, revokes sessions and returns ten new recovery codes once. Store them securely; browser cookies are cleared and a new login is required."},
 	"/recovery/cancel": {kind: recoveryKind, method: http.MethodPost, operationID: "authCancelRecovery", summary: "Cancel pending factor recovery",
 		description: "Requires the restricted recovery session and CSRF token. Send an empty JSON object. Ends the reservation without replacing factors, revokes the recovery session and clears browser session cookies."},
+	enrollmentPath: {kind: preauthKind, fields: "token,password", method: http.MethodPost, operationID: "authStartEnrollment", summary: "Begin the invited user's factor enrollment", response: "Enrollment",
+		description: "Requires preauth and its CSRF token. A valid unexpired one-time onboarding token and a new password create a restricted enrollment session lasting at most ten minutes and bounded by the original token expiry and return its own pending TOTP seed. This consumes the token and does not grant CMS access. Confirm the seed through enrollment completion before expiry; if interrupted, an authorized issuer must reissue the token."},
+	enrollmentCompletePath: {kind: enrollmentKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authCompleteEnrollment", summary: "Confirm the invited user's own factor", response: recoveryCodesSchema,
+		description: "Requires the restricted enrollment session and a fresh TOTP from its pending seed. Success commits the password, TOTP and ten recovery codes, clears all browser session cookies and leaves the account disabled without roles or CMS access. Activation and assignment require separate authorized commands."},
 	logoutPath: {method: http.MethodPost, operationID: logoutOperation, summary: "Revoke the current session",
 		description: "Requires exactly one session cookie of any supported kind and its CSRF token. Send an empty JSON object. Revokes that session and clears browser cookies; expired credentials return 401 and clear cookies only after the POST, JSON and CSRF-header boundary succeeds."},
 }
@@ -99,11 +107,11 @@ var routes = map[string]route{
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if !strings.HasPrefix(r.URL.Path, authPrefix+"/") {
-		problem(w, http.StatusNotFound, "not_found")
+	rt, path, userID, ok := resolveRoute(r.URL.Path)
+	if !ok {
+		problem(w, http.StatusNotFound, notFoundCode)
 		return
 	}
-	path := strings.TrimPrefix(r.URL.Path, authPrefix)
 	ip, code := h.boundary.check(r)
 	if code != "" {
 		status := http.StatusForbidden
@@ -113,13 +121,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
-	rt, ok := routes[path]
-	if ok && rt.method == http.MethodGet && r.Method == rt.method {
+	if rt.method == http.MethodGet && r.Method == rt.method {
 		h.csrf(w, r, ip)
 		return
 	}
-	if !ok || rt.method == http.MethodGet {
-		problem(w, http.StatusNotFound, "not_found")
+	if rt.method == http.MethodGet {
+		problem(w, http.StatusNotFound, notFoundCode)
 		return
 	}
 	if r.Method != rt.method {
@@ -131,23 +138,49 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
-	token, kind, err := sessionCookie(r, rt.kind)
+	req, kind, err := requestSession(r, rt.kind, ip)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	if isOnboardingRoute(path) {
+		req.RequestID, err = newRequestID()
+		if err != nil {
+			writeError(w, cms.ErrSecurityUnavailable)
+			return
+		}
+		w.Header().Set("X-Request-ID", req.RequestID)
+	}
+	if userID != "" || path == usersPath {
+		h.executeUser(w, r, path, userID, req, input)
+		return
+	}
+	h.execute(w, r, path, kind, req, input)
+}
+
+func requestSession(r *http.Request, want, ip string) (cms.AuthRequest, string, error) {
+	token, kind, err := sessionCookie(r, want)
+	if err != nil {
+		return cms.AuthRequest{}, "", err
+	}
 	csrf := r.Header.Values("X-CSRF-Token")
 	if len(csrf) != 1 || len(csrf[0]) != 43 {
-		problem(w, http.StatusForbidden, csrfCode)
-		return
+		return cms.AuthRequest{}, "", cms.ErrCSRF
 	}
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
-		problem(w, http.StatusForbidden, originCode)
-		return
+		return cms.AuthRequest{}, "", cms.ErrCSRF
 	}
-	req := cms.AuthRequest{Token: token, CSRF: csrf[0], ClientIP: addr}
-	h.execute(w, r, path, kind, req, input)
+	return cms.AuthRequest{Token: token, CSRF: csrf[0], ClientIP: addr}, kind, nil
+}
+
+func newRequestID() (string, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return "", err
+	}
+	id[6], id[8] = (id[6]&15)|64, (id[8]&63)|128
+	return fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:]), nil
 }
 
 func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (credentials, string, int) {
@@ -169,13 +202,13 @@ func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (cr
 	if !allowedObject(raw, allowed) {
 		return input, validationCode, http.StatusBadRequest
 	}
-	if json.Unmarshal(raw, &input) != nil {
+	if json.Unmarshal(raw, &input) != nil || (allowed == expectedVersionField && input.ExpectedVersion <= 0) {
 		return input, validationCode, http.StatusBadRequest
 	}
 	return input, "", 0
 }
 
-// Reject duplicate keys and non-string credentials before decoding the DTO.
+// Reject duplicate keys and mismatched scalar types before decoding the DTO.
 func allowedObject(raw []byte, allowed string) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	token, err := dec.Token()
@@ -193,8 +226,7 @@ func allowedObject(raw []byte, allowed string) bool {
 			return false
 		}
 		seen[key] = true
-		var value json.RawMessage
-		if dec.Decode(&value) != nil || len(value) == 0 || value[0] != '"' {
+		if !allowedScalar(dec, key) {
 			return false
 		}
 	}
@@ -203,6 +235,18 @@ func allowedObject(raw []byte, allowed string) bool {
 	}
 	_, err = dec.Token()
 	return errors.Is(err, io.EOF)
+}
+
+func allowedScalar(dec *json.Decoder, key string) bool {
+	var value json.RawMessage
+	if dec.Decode(&value) != nil || len(value) == 0 {
+		return false
+	}
+	if key == expectedVersionField {
+		var version int64
+		return json.Unmarshal(value, &version) == nil && version > 0
+	}
+	return value[0] == '"'
 }
 
 func (h *handler) execute(w http.ResponseWriter, r *http.Request, path, kind string, req cms.AuthRequest, input credentials) {
@@ -215,6 +259,9 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request, path, kind str
 		tokens, err = h.service.VerifyMFA(r.Context(), req, input.Code)
 	case "/step-up":
 		tokens, err = h.service.StepUp(r.Context(), req, input.Password, input.Code)
+	case enrollmentPath, enrollmentCompletePath:
+		h.executeEnrollment(w, r, path, req, input)
+		return
 	case "/recovery":
 		var out cms.RecoveryEnrollment
 		out, err = h.service.Recover(r.Context(), req, input.Login, input.Password, input.Code)
@@ -276,13 +323,14 @@ func (h *handler) csrf(w http.ResponseWriter, r *http.Request, ip string) {
 }
 
 const (
-	preauthKind  = "preauth"
-	loginKind    = "login"
-	fullKind     = "full"
-	recoveryKind = "recovery"
+	preauthKind    = "preauth"
+	loginKind      = "login"
+	fullKind       = "full"
+	recoveryKind   = "recovery"
+	enrollmentKind = "enrollment"
 )
 
-var cookieNames = map[string]string{fullKind: "__Host-sp_session", preauthKind: "__Host-sp_preauth", loginKind: "__Host-sp_login", recoveryKind: "__Host-sp_recovery"}
+var cookieNames = map[string]string{fullKind: "__Host-sp_session", preauthKind: "__Host-sp_preauth", loginKind: "__Host-sp_login", recoveryKind: "__Host-sp_recovery", enrollmentKind: "__Host-sp_enrollment"}
 
 func noSessionCookies(r *http.Request) bool {
 	for _, cookie := range r.Cookies() {

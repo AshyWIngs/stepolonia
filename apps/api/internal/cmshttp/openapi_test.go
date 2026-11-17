@@ -20,7 +20,10 @@ type privateOperation struct {
 	OperationID string `json:"operationId"`
 	Description string
 	RequestBody *struct{ Content map[string]privateMedia } `json:"requestBody"`
-	Responses   map[string]struct{ Content map[string]privateMedia }
+	Responses   map[string]struct {
+		Content map[string]privateMedia
+		Headers map[string]*huma.Param
+	}
 }
 
 type privateMedia struct {
@@ -50,11 +53,11 @@ func TestPrivateOpenAPICoversDispatchRegistry(t *testing.T) {
 	if err != nil || !bytes.Equal(raw, repeated) {
 		t.Fatal("private specification is not deterministic", err)
 	}
-	if len(doc.Paths) != len(routes) {
+	if len(doc.Paths) != len(privateRoutes()) {
 		t.Fatal("documented paths differ from dispatch registry")
 	}
 	ids := map[string]bool{}
-	for path, rt := range routes {
+	for path, rt := range privateRoutes() {
 		op := checkRegistryOperation(t, doc, path, rt)
 		if ids[op.OperationID] {
 			t.Fatalf("duplicate operation ID: %s", op.OperationID)
@@ -70,7 +73,7 @@ func TestPrivateOpenAPICoversDispatchRegistry(t *testing.T) {
 
 func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt route) privateOperation {
 	t.Helper()
-	operations := doc.Paths[authPrefix+path]
+	operations := doc.Paths[path]
 	op, ok := operations[strings.ToLower(rt.method)]
 	if !ok || len(operations) != 1 || op.OperationID == "" || len(op.Description) < 100 {
 		t.Fatalf("missing or incomplete operation %s: %+v", path, op)
@@ -201,5 +204,24 @@ func TestCSRFRegistryPreservesMethodBoundary(t *testing.T) {
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusNotFound || service.calls != 0 {
 		t.Fatal("documentation changed handler boundary")
+	}
+}
+
+func TestPrivateOnboardingOpenAPIDenialBudget(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	for _, path := range []string{"/api/v1/admin/users", "/api/v1/admin/users/{id}/onboarding-token"} {
+		response, ok := doc.Paths[path]["post"].Responses["429"]
+		if !ok {
+			t.Fatalf("missing denial-budget status for %s", path)
+		}
+		retry := response.Headers["Retry-After"]
+		if retry == nil || retry.Schema == nil || retry.Schema.Const != "900" {
+			t.Fatalf("missing denial-budget retry contract for %s", path)
+		}
+		example := response.Content["application/problem+json"].Examples["rate_limited"].Value
+		problem, ok := example.(map[string]any)
+		if !ok || problem["status"] != float64(429) || problem["code"] != "rate_limited" {
+			t.Fatalf("incorrect denial-budget example for %s", path)
+		}
 	}
 }

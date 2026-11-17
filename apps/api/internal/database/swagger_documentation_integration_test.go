@@ -19,9 +19,7 @@ import (
 // This browser scenario uses real security storage and the Swagger controls;
 // cookies, Origin and Referer are supplied by Chromium rather than a mock.
 func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
-	if os.Getenv("CMS_HTTP_BROWSER_TEST") != "1" {
-		t.Skip("NOT RUN: opt-in local Chromium required")
-	}
+	requireAuthBrowser(t)
 	f := newAuthHTTPFixture(t)
 	cfg := cmsDisposableDatabaseConfig(t)
 	requireNoError(t, f.state.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
@@ -75,7 +73,9 @@ const assert = require('node:assert/strict');
   assert(!JSON.stringify(publicSpec).includes('__Host-sp_'),'Private credential in public spec');
   const privateSpec=await (await context.request.get(origin+'/openapi-auth.json')).json();
   assert(Object.keys(privateSpec.paths).length>=8);
-  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')));
+  const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}/onboarding-token'];
+  assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private onboarding issuer operation');
+  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)));
   await page.locator('.topbar select').selectOption({label:'Private authentication'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();

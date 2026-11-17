@@ -8,14 +8,18 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/cmshttp"
 	"stepolonia/apps/api/internal/platform"
 )
+
+const authFullSessionCookie = "__Host-sp_session"
 
 type authHTTPFixture struct {
 	state  authFixtureState
@@ -58,11 +62,7 @@ func (f authHTTPFixture) request(t *testing.T, method, path, csrf, body string, 
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, f.server.URL+path, strings.NewReader(body))
 	requireNoError(t, err)
-	req.Header.Set("Origin", f.server.URL)
-	req.Header.Set("Content-Type", "application/json")
-	if csrf != "" {
-		req.Header.Set("X-CSRF-Token", csrf)
-	}
+	setAuthHTTPHeaders(req, f.server.URL, csrf)
 	res, err := f.client.Do(req)
 	requireNoError(t, err)
 	defer func() { _ = res.Body.Close() }()
@@ -71,9 +71,7 @@ func (f authHTTPFixture) request(t *testing.T, method, path, csrf, body string, 
 	if res.StatusCode != status {
 		t.Fatalf("%s %s status=%d body=%s", method, path, res.StatusCode, data)
 	}
-	if res.Header.Get("Cache-Control") != "no-store" {
-		t.Fatal("authentication response permits caching")
-	}
+	assertAuthNoStore(t, res)
 	out := map[string]string{}
 	if status == http.StatusOK {
 		requireNoError(t, json.Unmarshal(data, &out))
@@ -92,7 +90,7 @@ func TestAuthHTTPDedicatedPoolIntegration(t *testing.T) {
 	full, res := f.request(t, http.MethodPost, "/api/v1/admin/auth/mfa/verify", challenge["csrf_token"], `{"code":"`+code+`"}`, 200)
 	var bearer string
 	for _, cookie := range res.Cookies() {
-		if cookie.Name == "__Host-sp_session" && cookie.Value != "" {
+		if cookie.Name == authFullSessionCookie && cookie.Value != "" {
 			bearer = cookie.Value
 			if !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" {
 				t.Fatal("unsafe session cookie")
@@ -107,4 +105,58 @@ func TestAuthHTTPDedicatedPoolIntegration(t *testing.T) {
 	f.request(t, http.MethodPost, "/api/v1/admin/content/article", "", "{}", 404)
 	f.request(t, http.MethodPost, "/api/v1/admin/auth/logout", full["csrf_token"], "{}", 204)
 	authDenied(t, f.state.service.WithSession(context.Background(), req, false, authAllow))
+}
+
+func setAuthHTTPHeaders(req *http.Request, origin, csrf string) {
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Content-Type", "application/json")
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+}
+
+func assertAuthNoStore(t *testing.T, res *http.Response) {
+	t.Helper()
+	if res.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("authentication response permits caching")
+	}
+}
+
+func requireAuthBrowser(t *testing.T) {
+	t.Helper()
+	if os.Getenv("CMS_HTTP_BROWSER_TEST") != "1" {
+		t.Skip("NOT RUN: opt-in local Chromium required")
+	}
+}
+
+func authResponseRequestID(t *testing.T, res *http.Response) string {
+	t.Helper()
+	id := res.Header.Get("X-Request-ID")
+	if id == "" {
+		t.Fatal("authentication response lacks server correlation identifier")
+	}
+	return id
+}
+
+func assertAuthCookiesCleared(t *testing.T, res *http.Response) {
+	t.Helper()
+	expected := map[string]bool{
+		"__Host-sp_session":    true,
+		"__Host-sp_preauth":    true,
+		"__Host-sp_login":      true,
+		"__Host-sp_recovery":   true,
+		"__Host-sp_enrollment": true,
+	}
+	if len(res.Cookies()) != len(expected) {
+		t.Fatal("logout did not clear each supported authentication cookie")
+	}
+	for _, cookie := range res.Cookies() {
+		if !expected[cookie.Name] {
+			t.Fatal("logout returned an unknown or duplicate cookie")
+		}
+		delete(expected, cookie.Name)
+		if cookie.Value != "" || cookie.MaxAge != -1 || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" || cookie.Expires.After(time.Now()) {
+			t.Fatal("logout cookie deletion lacks required security attributes")
+		}
+	}
 }

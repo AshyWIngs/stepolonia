@@ -291,6 +291,85 @@ ON public.recovery_attempts (user_id) WHERE ended_at IS null;
 CREATE UNIQUE INDEX recovery_attempts_active_code_idx
 ON public.recovery_attempts (code_digest) WHERE ended_at IS null;
 
+CREATE TABLE public.onboarding_tokens (
+    digest bytea CONSTRAINT onboarding_tokens_pkey PRIMARY KEY,
+    user_id uuid NOT NULL,
+    credential_version bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    expires_at timestamptz NOT NULL,
+    consumed_at timestamptz,
+    CONSTRAINT onboarding_tokens_user_fkey FOREIGN KEY (
+        user_id
+    ) REFERENCES public.users (id) ON DELETE RESTRICT,
+    CONSTRAINT onboarding_tokens_identity_key UNIQUE (
+        digest, user_id, credential_version
+    ),
+    CONSTRAINT onboarding_tokens_shape_check CHECK (
+        octet_length(digest) = 32 AND credential_version > 0
+        AND expires_at > created_at
+        AND expires_at <= created_at + interval '24 hours'
+        AND (consumed_at IS null OR consumed_at >= created_at)
+    )
+);
+
+CREATE INDEX onboarding_tokens_user_idx ON public.onboarding_tokens (user_id);
+
+CREATE UNIQUE INDEX onboarding_tokens_live_user_idx
+ON public.onboarding_tokens (user_id) WHERE consumed_at IS null;
+
+CREATE TABLE public.enrollment_attempts (
+    session_id uuid CONSTRAINT enrollment_attempts_pkey PRIMARY KEY,
+    user_id uuid NOT NULL,
+    token_digest bytea NOT NULL,
+    credential_version bigint NOT NULL,
+    password_hash text NOT NULL,
+    pending_ciphertext bytea NOT NULL,
+    key_version integer NOT NULL,
+    created_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL,
+    ended_at timestamptz,
+    CONSTRAINT enrollment_attempts_session_fkey FOREIGN KEY (
+        session_id
+    ) REFERENCES public.sessions (id) ON DELETE RESTRICT,
+    CONSTRAINT enrollment_attempts_token_fkey FOREIGN KEY (
+        token_digest, user_id, credential_version
+    ) REFERENCES public.onboarding_tokens (
+        digest, user_id, credential_version
+    ) ON DELETE RESTRICT,
+    CONSTRAINT enrollment_attempts_shape_check CHECK (
+        credential_version > 0 AND key_version > 0
+        AND length(password_hash) BETWEEN 40 AND 512
+        AND password_hash LIKE '$argon2id$%'
+        AND octet_length(pending_ciphertext) BETWEEN 48 AND 1024
+        AND expires_at > created_at
+        AND expires_at <= created_at + interval '10 minutes'
+        AND (ended_at IS null OR ended_at >= created_at)
+    )
+);
+
+CREATE INDEX enrollment_attempts_token_idx
+ON public.enrollment_attempts (token_digest, user_id, credential_version);
+
+CREATE UNIQUE INDEX enrollment_attempts_active_user_idx
+ON public.enrollment_attempts (user_id) WHERE ended_at IS null;
+
+COMMENT ON TABLE public.onboarding_tokens IS
+'Single-use SHA-256 onboarding digests bound to the pending credential '
+'version.';
+
+COMMENT ON COLUMN public.onboarding_tokens.consumed_at IS
+'Set when enrollment starts or the issuer invalidates an earlier token.';
+
+COMMENT ON TABLE public.enrollment_attempts IS
+'Restricted own-account enrollment; completion leaves the account disabled.';
+
+COMMENT ON COLUMN public.enrollment_attempts.pending_ciphertext IS
+'AEAD-encrypted TOTP seed; confirmation is required before factors are '
+'installed.';
+
+COMMENT ON COLUMN public.enrollment_attempts.password_hash IS
+'Pending Argon2id PHC; never used by login before enrollment completion.';
+
 CREATE TABLE public.auth_attempts (
     bucket_start timestamptz NOT NULL,
     kind text NOT NULL,
@@ -333,6 +412,9 @@ CREATE TABLE public.security_audit (
             'auth.logout',
             'auth.sessions_revoked',
             'auth.step_up',
+            'users.created', 'users.onboarding_issued',
+            'auth.enrollment_started', 'auth.enrollment_completed',
+            'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
             'mfa.recovery_expired', 'mfa.recovery_completed'
         )
@@ -585,6 +667,14 @@ ON public.security_audit
 FOR EACH STATEMENT
 EXECUTE FUNCTION public.cms_write_mutex();
 
+CREATE TRIGGER onboarding_tokens_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.onboarding_tokens
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+
+CREATE TRIGGER enrollment_attempts_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.enrollment_attempts
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+
 CREATE TRIGGER grant_fields_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.grant_fields
@@ -603,6 +693,8 @@ public.permission_operations,
 public.role_grants,
 public.sessions,
 public.recovery_attempts,
+public.onboarding_tokens,
+public.enrollment_attempts,
 public.auth_attempts FROM public,
 sp_publisher,
 sp_language_importer;
@@ -611,15 +703,20 @@ GRANT USAGE ON SCHEMA public TO sp_security;
 GRANT SELECT ON public.users, public.roles, public.user_roles,
 public.permission_operations, public.role_grants, public.grant_fields,
 public.security_state, public.mfa_totp, public.recovery_codes,
-public.sessions, public.recovery_attempts, public.auth_attempts TO sp_security;
+public.sessions, public.recovery_attempts, public.auth_attempts,
+public.onboarding_tokens, public.enrollment_attempts TO sp_security;
 GRANT UPDATE ON public.users, public.mfa_totp, public.recovery_codes,
-public.sessions, public.recovery_attempts, public.auth_attempts TO sp_security;
+public.sessions, public.recovery_attempts, public.auth_attempts,
+public.onboarding_tokens, public.enrollment_attempts TO sp_security;
 GRANT INSERT ON public.sessions, public.recovery_attempts,
-public.auth_attempts, public.recovery_codes TO sp_security;
+public.auth_attempts, public.recovery_codes, public.users, public.mfa_totp,
+public.onboarding_tokens, public.enrollment_attempts TO sp_security;
 GRANT DELETE ON public.auth_attempts, public.sessions TO sp_security;
 GRANT INSERT ON public.security_audit TO sp_security;
 
 -- +goose Down
+DROP TABLE public.enrollment_attempts;
+DROP TABLE public.onboarding_tokens;
 DROP TABLE public.auth_attempts;
 DROP TABLE public.recovery_attempts;
 DROP TABLE public.security_audit;

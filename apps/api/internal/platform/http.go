@@ -39,6 +39,8 @@ func healthy() *healthOutput {
 
 const requestIDField = "request_id"
 
+const requestIDHeader = "X-Request-ID"
+
 type requestIDKey struct{}
 
 func Handler(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) http.Handler {
@@ -60,6 +62,8 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
+		mux.Handle("/api/v1/admin/users", auth)
+		mux.Handle("/api/v1/admin/users/", auth)
 	}
 	if docs {
 		registerDocumentation(mux, api, auth != nil)
@@ -67,12 +71,12 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := rand.Text()
-		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set(requestIDHeader, requestID)
 		w.Header().Set("Cache-Control", "no-store")
 		response := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID))
 		mux.ServeHTTP(response, r)
-		logger.Info("http_request", requestIDField, requestID, "method", r.Method,
+		logger.Info("http_request", requestIDField, response.Header().Get(requestIDHeader), "method", r.Method,
 			"path", r.URL.Path, "status", response.status,
 			"duration_ms", time.Since(start).Milliseconds())
 	})

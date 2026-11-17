@@ -64,9 +64,9 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  AND pg_catalog.has_any_column_privilege(r.oid,e.oid,e.privilege))) <>
  CASE e.privilege
  WHEN 'SELECT' THEN e.relname IN ('users','roles','user_roles','permission_operations','role_grants',
- 'grant_fields','security_state','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts')
- WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempts','recovery_codes','security_audit')
- WHEN 'UPDATE' THEN e.relname IN ('users','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts')
+ 'grant_fields','security_state','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts','onboarding_tokens','enrollment_attempts')
+ WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempts','recovery_codes','security_audit','users','mfa_totp','onboarding_tokens','enrollment_attempts')
+ WHEN 'UPDATE' THEN e.relname IN ('users','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts','onboarding_tokens','enrollment_attempts')
  WHEN 'DELETE' THEN e.relname IN ('auth_attempts','sessions')
  ELSE false END)
  FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login).Scan(&safe)
