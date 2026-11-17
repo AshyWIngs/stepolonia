@@ -13,11 +13,11 @@ export function createPublicClient(options: { baseUrl: string; fetch?: typeof gl
     listLanguages() {
       return client.GET('/api/v1/languages')
     },
-    listArticles(params: operations['listArticles']['parameters']) {
-      return client.GET('/api/v1/articles', { params })
+    listContent(params: operations['listContent']['parameters']) {
+      return client.GET('/api/v1/content/{type_key}', { params })
     },
-    async getArticle(params: operations['getArticle']['parameters']) {
-      const result = await client.GET('/api/v1/articles/{slug}', { params })
+    async getContent(params: operations['getContent']['parameters']) {
+      const result = await client.GET('/api/v1/content/{type_key}/{slug}', { params })
       // openapi-fetch разбирает 301 как error, но его ErrorStatus включает только 4xx/5xx.
       // Явная ветка сохраняет фактический JSON null в публичном типе результата.
       if (result.response.status === 301) {

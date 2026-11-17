@@ -50,6 +50,34 @@ linters:
         linters: [gosec]
         text: '^G(304|703):'
         source: 'f, err := os\.Open\(path\)'
+      # FP: shared operator configuration selects a local credential, never HTTP input.
+      # O_NOFOLLOW + fstat enforce private regular file/UID; reads are size-capped.
+      - path: ^apps/api/internal/config/auth\.go$
+        linters: [gosec]
+        text: '^G(304|703):'
+        source: 'f, err := os\.OpenFile\(path, os\.O_RDONLY\|syscall\.O_NOFOLLOW\|syscall\.O_NONBLOCK, 0\)'
+      # FP: own temporary password file is deliberately made readable to assert rejection.
+      - path: ^apps/api/internal/config/auth_test\.go$
+        linters: [gosec]
+        text: '^G302:'
+        source: 'if err := os\.Chmod\(password, 0644\); err != nil'
+      # FP: exact ACL negative tests target a UUID-derived, Identifier.Sanitize-quoted
+      # disposable login. No request data reaches these owner-only statements.
+      - path: ^apps/api/internal/database/auth_schema_integration_test\.go$
+        linters: [gosec]
+        text: '^G202:'
+        source: '^\s*_, err = db\.Exec\("(GRANT DELETE ON public\.users TO |REVOKE DELETE ON public\.users FROM |GRANT sp_publisher TO |REVOKE sp_publisher FROM )" \+ quoted\)$'
+      # FP: disposable PostgreSQL fixture credential, never a shipped account.
+      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+        linters: [gosec]
+        text: '^G101:'
+        source: '^const bootstrapTestPassphrase = '
+      # FP: fixed security-table inventory in a disposable ACL negative test;
+      # pgx.Identifier quotes both schema and table before execution.
+      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+        linters: [gosec]
+        text: '^G202:'
+        source: '_, err = tx\.ExecContext\(ctx, "SELECT \* FROM "\+pgx\.Identifier\{"public", table\}\.Sanitize\(\)\)'
       # FP: путь secret задаётся Compose, файл читается non-root процессом.
       - path: ^apps/api/internal/config/config\.go$
         linters: [gosec]

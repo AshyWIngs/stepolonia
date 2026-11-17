@@ -9,7 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"stepolonia/apps/api/internal/publishing"
+	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/siteconfig"
 )
 
@@ -35,8 +35,17 @@ const requestIDField = "request_id"
 
 type requestIDKey struct{}
 
-func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) http.Handler {
+func Handler(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) http.Handler {
+	return HandlerWithAuth(db, reader, logger, nil, site...)
+}
+
+// HandlerWithAuth mounts an independently configured private authentication boundary.
+// Authentication routes never enter the public OpenAPI/SDK contract.
+func HandlerWithAuth(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, site ...*siteconfig.Reader) http.Handler {
 	mux, _ := newAPI(db, reader, logger, site...)
+	if auth != nil {
+		mux.Handle("/api/v1/admin/auth/", auth)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := rand.Text()
@@ -51,7 +60,7 @@ func Handler(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, si
 	})
 }
 
-func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) (*http.ServeMux, huma.API) {
+func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) (*http.ServeMux, huma.API) {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
 	// Контракт генерируется из операций вне HTTP; служебные маршруты закрыты.
@@ -75,7 +84,7 @@ func newAPI(db Pinger, reader *publishing.PublicReader, logger *slog.Logger, sit
 		}
 		return healthy(), nil
 	})
-	registerPublishing(api, reader, logger)
+	registerContent(api, reader, logger)
 	var siteReader *siteconfig.Reader
 	if len(site) > 0 {
 		siteReader = site[0]

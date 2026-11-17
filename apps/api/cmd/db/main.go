@@ -23,7 +23,11 @@ const commandImportLanguages = "import-languages"
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	timeout := 2 * time.Minute
+	if len(os.Args) > 1 && os.Args[1] == bootstrapCommand {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil {
 		// Ошибки соединения и запросов могут содержать SQL и параметры подключения.
@@ -52,6 +56,9 @@ func safeError(err error) string {
 func run(ctx context.Context, args []string) error {
 	if err := validateCommand(args); err != nil {
 		return err
+	}
+	if args[0] == bootstrapCommand {
+		return runBootstrap(ctx)
 	}
 	var rows []database.Language
 	if args[0] == commandImportLanguages {
@@ -86,10 +93,10 @@ func run(ctx context.Context, args []string) error {
 
 func validateCommand(args []string) error {
 	if len(args) == 0 {
-		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE"}
+		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin"}
 	}
 	switch args[0] {
-	case "prepare-roles", "seed":
+	case "prepare-roles", "seed", bootstrapCommand:
 		if len(args) == 1 {
 			return nil
 		}
@@ -98,7 +105,11 @@ func validateCommand(args []string) error {
 			return nil
 		}
 	case "migrate":
-		if len(args) == 2 && (args[1] == "up" || args[1] == "down" || args[1] == "status") {
+		if len(args) != 2 {
+			break
+		}
+		action := args[len(args)-1]
+		if action == "up" || action == "down" || action == "status" {
 			return nil
 		}
 	}

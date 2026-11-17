@@ -121,21 +121,21 @@ def check_publishing(base):
     """Проверяем Publishing через Caddy на подготовленной одноразовой установке."""
     verify("entry serves the configured content language", public_entry(base)[0] == 200)
     publishing_sdk(base)
-    status, _, body = request(base + "/api/v1/articles?lang=en")
-    verify("Caddy: enabled empty language returns 200 []", status == 200 and json.loads(body) == [])
+    status, _, body = request(base + "/api/v1/content/article?language=en")
+    verify("Caddy: enabled empty language returns 200 []", status == 200 and json.loads(body)["items"] == [])
     for language in ("pl", "de"):
-        status, _, _ = request(base + "/api/v1/articles?lang=" + language)
+        status, _, _ = request(base + "/api/v1/content/article?language=" + language)
         verify(f"Caddy: unavailable language {language} has no fallback (HTTP {status})", status == 404)
     for path in ("/docs", "/openapi.json", "/schemas", "/schemas/Article.json"):
         status, _, _ = request(base + path)
         verify(f"Caddy: publishing contract route {path} is private (HTTP {status})", status == 404)
     verify("Caddy: public article write endpoint is absent",
-           request(base + "/api/v1/articles", method="POST")[0] in (404, 405))
+           request(base + "/api/v1/content/article", method="POST")[0] in (404, 405))
 
 
 def check_publishing_recovery(base):
     """Остановка разрешена вызывающим harness только после проверки ownership-маркеров."""
-    target = base + "/api/v1/articles/stage15-fr-current?lang=fr"
+    target = base + "/api/v1/content/article/stage15-fr-current?language=fr"
     before = request(target)
     verify("Caddy: imported fifth language is published", before[0] == 200)
     identifier = compose("ps", "-q", "api").stdout.strip()
@@ -160,7 +160,7 @@ def check_publishing_recovery(base):
 
 def check_ssr_api_recovery(base):
     """SSR должен различать отсутствие материала и недоступность контейнера API."""
-    target = base + "/api/v1/articles/stage15-fr-current?lang=fr"
+    target = base + "/api/v1/content/article/stage15-fr-current?language=fr"
     snapshot = request(target)[2]
     try:
         compose("stop", "api")

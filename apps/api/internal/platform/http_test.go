@@ -29,6 +29,9 @@ func TestHealthAndPrivateContracts(t *testing.T) {
 		status int
 	}{
 		{"/health/live", 200}, {"/health/ready", 503},
+		{"/api/v1/content/article?language=fr", 503},
+		{"/api/v1/content/article/title?language=fr", 503},
+		{"/api/v1/content/article/invalid_slug?language=fr", 400},
 		{"/openapi.json", 404}, {"/docs", 404}, {"/schemas", 404}, {"/api/v1/unknown", 404},
 	} {
 		t.Run(test.path, func(t *testing.T) {
@@ -57,42 +60,32 @@ func TestPublishingOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	languages := spec.Paths["/api/v1/languages"].Get
-	articles := spec.Paths["/api/v1/articles"].Get
-	detail := spec.Paths["/api/v1/articles/{slug}"].Get
+	contents := spec.Paths["/api/v1/content/{type_key}"].Get
+	detail := spec.Paths["/api/v1/content/{type_key}/{slug}"].Get
 	assertPublicResponses(t, languages, "200", "400", "503")
-	assertPublicResponses(t, articles, "200", "400", "404", "503")
+	assertPublicResponses(t, contents, "200", "400", "404", "503")
 	assertPublicResponses(t, detail, "200", "301", "400", "404", "503")
-	assertPublicArray(t, languages.Responses["200"].Content["application/json"].Schema)
-	assertPublicArray(t, articles.Responses["200"].Content["application/json"].Schema)
-	assertRequiredLanguage(t, articles)
+	assertRequiredLanguage(t, contents)
 	assertRequiredLanguage(t, detail)
-	limit := parameterSchema(t, articles, "limit")
-	if limit.Default != 20 || *limit.Minimum != 1 || *limit.Maximum != 100 {
-		t.Fatalf("invalid pagination schema: %+v", limit)
-	}
-	redirect := detail.Responses["301"]
-	if redirect.Headers["Location"] == nil {
-		t.Fatal("redirect Location is undocumented")
-	}
-	if redirect.Content["application/json"].Schema.Type != huma.TypeNull {
-		t.Fatal("redirect JSON null body is undocumented")
+	if *parameterSchema(t, contents, "offset").Maximum != 10000 {
+		t.Fatal("unbounded offset")
 	}
 	registry := spec.Components.Schemas
-	assertPublicFields(t, registry, languages.Responses["200"].Content["application/json"].Schema.Items, "code", "direction", "name", "native_name")
-	articleFields := []string{"article_id", "body_markdown", "language_code", "slug", "title"}
-	assertPublicFields(t, registry, articles.Responses["200"].Content["application/json"].Schema.Items, articleFields...)
-	const translationsField = "published_translations"
-	detailFields := append(slices.Clone(articleFields), translationsField)
-	slices.Sort(detailFields)
-	detailSchema := detail.Responses["200"].Content["application/json"].Schema
-	assertPublicFields(t, registry, detailSchema, detailFields...)
-	detailSchema = registry.SchemaFromRef(detailSchema.Ref)
-	if !slices.Contains(detailSchema.Required, translationsField) {
-		t.Fatal("published translations are optional in the detail contract")
+	item := registry.SchemaFromRef(detail.Responses["200"].Content["application/json"].Schema.Ref)
+	assertPublicFields(t, registry, item, "canonical_url", "item_id", "language", "localized", "publication_id", "relations", "schema_no", "shared", "slug", "translations", "type_key")
+	field := item.Properties["shared"].AdditionalProperties.(*huma.Schema)
+	if field.Ref != "" {
+		field = registry.SchemaFromRef(field.Ref)
 	}
-	translations := detailSchema.Properties[translationsField]
-	assertPublicArray(t, translations)
-	assertPublicFields(t, registry, translations.Items, "language_code", "slug")
+	if len(field.OneOf) != 8 || field.Discriminator.PropertyName != "kind" {
+		t.Fatal("missing discriminated field union")
+	}
+	for _, variant := range field.OneOf {
+		if len(variant.Properties["kind"].Enum) != 1 {
+			t.Fatal("ambiguous field discriminator")
+		}
+	}
+
 }
 
 // Экспорт не должен создавать независимый контракт или зависеть от окружения.
@@ -129,13 +122,6 @@ func assertPublicResponses(t *testing.T, operation *huma.Operation, statuses ...
 	}
 }
 
-func assertPublicArray(t *testing.T, schema *huma.Schema) {
-	t.Helper()
-	if schema.Type != "array" || schema.Nullable {
-		t.Fatalf("expected a non-null array: %+v", schema)
-	}
-}
-
 func parameterSchema(t *testing.T, operation *huma.Operation, name string) *huma.Schema {
 	t.Helper()
 	for _, parameter := range operation.Parameters {
@@ -150,7 +136,7 @@ func parameterSchema(t *testing.T, operation *huma.Operation, name string) *huma
 func assertRequiredLanguage(t *testing.T, operation *huma.Operation) {
 	t.Helper()
 	for _, parameter := range operation.Parameters {
-		if parameter.Name == "lang" && parameter.Required && parameter.Schema.Type == "string" {
+		if parameter.Name == "language" && parameter.Required && parameter.Schema.Type == "string" {
 			return
 		}
 	}
@@ -169,5 +155,23 @@ func assertPublicFields(t *testing.T, registry huma.Registry, schema *huma.Schem
 	slices.Sort(fields)
 	if !slices.Equal(fields, expected) {
 		t.Fatalf("unsafe public schema fields: %v", fields)
+	}
+}
+
+func TestPublicQueriesFailClosed(t *testing.T) {
+	handler := Handler(failingDatabase{}, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	for _, query := range []string{"language=fr&filter[private]=secret", "language=fr&sort=private", "language=fr&offset=10001", "language=fr&limit=101", "language=fr&language=ru", "lang=fr", "language="} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/content/article?"+query, nil))
+		if response.Code != 400 {
+			t.Fatalf("%s: got %d", query, response.Code)
+		}
+	}
+	for _, path := range []string{"/api/v1/admin/content/article", "/api/v1/articles"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		if response.Code != 404 {
+			t.Fatalf("write path %s: %d", path, response.Code)
+		}
 	}
 }

@@ -50,6 +50,14 @@ function publishedHTML(html) {
 }
 
 async function checkSSR() {
+  const event = await documentResponse('/fr/events/stage32-event', 200)
+  assert.ok(event.html.includes('Stage 3.2 Event'))
+  assert.ok(event.html.includes('data-field="featured"'))
+  assert.ok(!event.html.includes('private-event-secret'))
+  const eventList = await documentResponse('/fr/events', 200)
+  assert.ok(eventList.html.includes('/fr/events/stage32-event'))
+  await documentResponse('/fr/arbitrary/stage32-event', 404)
+  await documentResponse('/fr/articles?page=502', 400)
   const listed = await documentResponse('/fr/articles', 200)
   assert.ok(listed.html.includes(articleTitle))
   const { html, response } = await documentResponse(currentPath, 200, {
@@ -174,6 +182,13 @@ async function checkLanguageSelection() {
   publishedHTML(direct.html)
 }
 
+async function selectContentLanguage(page, language) {
+  // SSR markup is clickable before Nuxt installs the cookie click handler.
+  await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
+  await page.locator(`[data-testid="content-languages"] a[data-language="${language}"]`).click()
+  await page.waitForFunction(language => document.cookie.split(';').some(cookie => cookie.trim() === `sp_content_language=${language}`), language)
+}
+
 async function checkLanguageBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
@@ -197,7 +212,7 @@ async function checkLanguageBrowser() {
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
     assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
     await page.goto(`${base}/en/articles`)
-    await page.locator('[data-testid="content-languages"] a[data-language="en"]').click()
+    await selectContentLanguage(page, 'en')
     await page.reload()
     assert.equal(await page.locator('html').getAttribute('lang'), 'en')
     const saved = (await context.cookies()).find(cookie => cookie.name === 'sp_content_language')
@@ -253,7 +268,7 @@ async function checkOtherInstallation() {
     await page.waitForURL(`${otherHost.origin}/pl/articles`)
     assert.equal(await page.locator('html').getAttribute('lang'), 'pl')
     assert.ok(!(await page.content()).includes(articleTitle))
-    await page.locator('[data-testid="content-languages"] a[data-language="pl"]').click()
+    await selectContentLanguage(page, 'pl')
     const saved = await context.cookies()
     assert.equal(saved.find(cookie => cookie.domain === 'localhost')?.value, 'pl')
     assert.equal(saved.find(cookie => cookie.domain === '127.0.0.1')?.value, 'en')
@@ -387,10 +402,10 @@ async function checkSeo() {
     await browserSeo(page, articleSeo(seoOrigin))
     // Обрыв браузерного API-запроса проверяет очистку head при клиентской 503.
     // Реальную остановку API/БД отдельно выполняет recovery-сценарий harness.
-    await page.route('**/api/v1/articles/**', route => route.abort('connectionrefused'))
+    await page.route('**/api/v1/content/**', route => route.abort('connectionrefused'))
     await routeTo(page, '/ru/articles/stage22-ru-current')
     await browserSeo(page, [])
-    await page.unroute('**/api/v1/articles/**')
+    await page.unroute('**/api/v1/content/**')
     await page.goto(`${base}${currentPath}`)
     await browserSeo(page, articleSeo(seoOrigin))
     assert.deepEqual(errors, [])

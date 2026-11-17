@@ -4,7 +4,7 @@ import { usePublicContent } from '~/composables/usePublicContent'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { useContentLanguageCookie } from '~/composables/useContentLanguageCookie'
 import { preferredContentLanguage } from '~/utils/language'
-import { articlesPath, publicError } from '~/utils/public-content'
+import { contentPath, publicError } from '~/utils/public-content'
 
 defineOptions({ name: 'PortalHomePage' })
 
@@ -20,7 +20,7 @@ const { data, error } = await useAsyncData('entry-languages', () => content.list
 if (error.value) throw publicError(error.value.status ?? 503)
 if (!data.value) throw publicError(503)
 const language = preferredContentLanguage(data.value.map(item => item.code), publication.value.settings.default_language, saved.value, accepted.value)
-await navigateTo(articlesPath(language), { redirectCode: 302 })
+await navigateTo(contentPath('articles', language), { redirectCode: 302 })
 </script>
 
 <template>

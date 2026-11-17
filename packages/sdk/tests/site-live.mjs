@@ -37,7 +37,7 @@ function assertPublication(result, version, language, requestedLanguage) {
   for (const item of [site.language, ...site.languages]) {
     assert.deepEqual(new Set(Object.keys(item)), new Set(['code', 'direction', 'name', 'native_name']))
   }
-  const keys = ['articles', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home']
+  const keys = ['articles', 'events', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home']
   assert.deepEqual(new Set(Object.keys(site.messages)), new Set(keys))
   for (const key of keys) {
     assert.equal(site.messages[key], `Fixture ${language} ${key}`)

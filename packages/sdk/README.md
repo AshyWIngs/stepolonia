@@ -11,7 +11,7 @@ import { createPublicClient } from '@stepolonia/sdk'
 
 const client = createPublicClient({ baseUrl: 'https://portal.example' })
 const site = await client.getSite({ query: { lang: 'pl' } })
-const articles = await client.listArticles({ query: { lang: 'pl', limit: 20 } })
+const articles = await client.listContent({ path: { type_key: 'article' }, query: { language: 'pl', limit: 20 } })
 ```
 
 `getSite()` возвращает опубликованные настройки и полный UI-каталог настроенного fallback. Необязательный `lang` выбирает опубликованный каталог; если его нет, ответ содержит fallback и `requested_language`. Для согласованной публикации передайте `query.version` из предыдущего ответа: при смене публикации API вернёт 409 в `error`. Отсутствующая публикация возвращает 503.
