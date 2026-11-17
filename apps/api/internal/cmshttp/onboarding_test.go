@@ -124,7 +124,7 @@ func TestOnboardingTLSBoundary(t *testing.T) {
 		{"cross-user enrollment", authPrefix + enrollmentCompletePath, `{"code":"012345","user_id":"other"}`, enrollmentKind, 400},
 		{"token URL", authPrefix + enrollmentPath + "?token=secret", `{}`, preauthKind, 400},
 		{"extra route segment", usersPath + "/one/two/onboarding-token", `{}`, fullKind, 404},
-		{"lifecycle unavailable", usersPath + "/" + syntheticUserID + "/activate", `{}`, fullKind, 404},
+		{"unknown lifecycle command", usersPath + "/" + syntheticUserID + "/delete", `{}`, fullKind, 404},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

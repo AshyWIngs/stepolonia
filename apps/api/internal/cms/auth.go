@@ -98,7 +98,7 @@ func authError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, ErrPermissionDenied, ErrStepUpRequired, ErrVersionConflict, ErrInvalidTransition, ErrNotFound, ErrValidation, context.Canceled, context.DeadlineExceeded} {
+	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, ErrPermissionDenied, ErrStepUpRequired, ErrVersionConflict, ErrInvalidTransition, ErrLastAdminRequired, ErrNotFound, ErrValidation, context.Canceled, context.DeadlineExceeded} {
 		if errors.Is(err, known) {
 			return err
 		}

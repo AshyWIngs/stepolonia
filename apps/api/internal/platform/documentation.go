@@ -39,7 +39,7 @@ func registerDocumentation(mux *http.ServeMux, api huma.API, private bool) {
 		mux.HandleFunc("GET /openapi-auth.json", func(w http.ResponseWriter, _ *http.Request) {
 			writeSpecification(w, cmshttp.OpenAPIJSON)
 		})
-		urls = `[{url:"/openapi.json",name:"Public API"},{url:"/openapi-auth.json",name:"Private authentication"}]`
+		urls = `[{url:"/openapi.json",name:"Public API"},{url:"/openapi-auth.json",name:"Private CMS API"}]`
 	}
 	mux.HandleFunc("GET /docs/init.js", func(w http.ResponseWriter, _ *http.Request) {
 		documentationHeaders(w)

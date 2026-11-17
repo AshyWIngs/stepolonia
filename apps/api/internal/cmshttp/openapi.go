@@ -20,37 +20,41 @@ func OpenAPIJSON() ([]byte, error) {
 		registry.Map()[name] = schema
 	}
 	paths := map[string]*huma.PathItem{}
-	for path, rt := range privateRoutes() {
-		op := &huma.Operation{
-			OperationID: rt.operationID, Summary: rt.summary,
-			Description: rt.description + " " + boundaryDescription,
-			Tags:        []string{authTag(rt)},
-			Parameters:  authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt),
-		}
-		item := &huma.PathItem{}
-		if rt.method == http.MethodGet {
-			item.Get = op
-		} else {
-			name := rt.operationID + "Request"
-			schema, example := credentialSchema(rt)
-			registry.Map()[name] = schema
-			op.RequestBody = &huma.RequestBody{
-				Required:    true,
-				Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic.",
-				Content:     map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
+	for path, methods := range privateRoutes() {
+		for _, rt := range methods {
+			op := &huma.Operation{
+				OperationID: rt.operationID, Summary: rt.summary,
+				Description: rt.description + " " + boundaryDescription,
+				Tags:        []string{authTag(rt)},
+				Parameters:  authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt),
 			}
-			if rt.operationID == issueOnboardingOperation {
-				op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true,
-					Description: "Pending user UUID; cannot select the actor or grant permissions.",
-					Schema:      uuidSchema(syntheticUserID)})
+			item := paths[path]
+			if item == nil {
+				item = &huma.PathItem{}
 			}
-			item.Post = op
+			if rt.method == http.MethodGet {
+				item.Get = op
+			} else {
+				name := rt.operationID + "Request"
+				schema, example := credentialSchema(rt)
+				registry.Map()[name] = schema
+				op.RequestBody = &huma.RequestBody{
+					Required:    true,
+					Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic.",
+					Content:     map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
+				}
+
+				item.Post = op
+			}
+			if strings.Contains(path, "{id}") {
+				op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target account UUID; never selects the actor or grants permissions.", Schema: uuidSchema(syntheticUserID)})
+			}
+			paths[path] = item
 		}
-		paths[path] = item
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private authentication", Version: "1.0.0", Description: "Implemented private session and pending-user onboarding operations only. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads and versioned activation and disable operations. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -64,7 +68,7 @@ func authSecurity(rt route) []map[string][]string {
 			security = append(security, map[string][]string{cookieNames[kind]: {}})
 		}
 	}
-	if rt.method == http.MethodGet {
+	if rt.operationID == csrfOperation {
 		security = append(security, map[string][]string{})
 	}
 	return security
@@ -79,7 +83,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST requires exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET csrf accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST requires exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users accepts query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -104,7 +108,7 @@ func credentialSchema(rt route) (*huma.Schema, map[string]any) {
 	if rt.fields != "" {
 		required = strings.Split(rt.fields, ",")
 	}
-	return closedObjectSchema("Private command input accepted by "+rt.operationID+". All listed fields are necessary for a successful command. expected_version is required for token mutations; empty objects are intentional only for cancellation and logout.", props, required, example), example
+	return closedObjectSchema("Private command input accepted by "+rt.operationID+". All listed fields are necessary for a successful command. expected_version is required for existing-account mutations; empty objects are intentional only for cancellation and logout.", props, required, example), example
 }
 
 func credentialProperty(rt route, field string) *huma.Schema {
@@ -123,7 +127,7 @@ func credentialProperty(rt route, field string) *huma.Schema {
 		property.Pattern = "^[A-Za-z0-9_-]{43}$"
 		property.WriteOnly = true
 	case expectedVersionField:
-		property = &huma.Schema{Type: "integer", Format: "int64", Description: "Required positive current user version; checked under the write mutex to reject stale issuance or reissue.", Minimum: floatPointer(1), Examples: []any{1}}
+		property = &huma.Schema{Type: huma.TypeInteger, Format: "int64", Description: "Required positive current user version; checked under the write mutex to reject stale token or lifecycle mutations.", Minimum: floatPointer(1), Examples: []any{1}}
 	case "password":
 		property = stringSchema("Current account password; case-sensitive UTF-8, at most 512 bytes, and never returned. Synthetic example only. Empty or incorrect values do not authenticate.", "Synthetic example password 42!")
 		property.WriteOnly = true
@@ -152,6 +156,8 @@ const (
 	csrfResponseSchema  = "CSRFResponse"
 	pendingUserSchema   = "PendingUser"
 	recoveryCodesSchema = "RecoveryCodes"
+	safeUserSchema      = "SafeUser"
+	userListSchema      = "UserList"
 )
 
 const syntheticOnboardingToken = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"
@@ -182,7 +188,7 @@ func privateSchemas() map[string]*huma.Schema {
 	recoverySchema := *enrollmentSchema
 	recoverySchema.Description = "Restricted pending recovery enrollment, not an authenticated full session. The real seed must not be logged or cached."
 
-	return map[string]*huma.Schema{
+	schemas := map[string]*huma.Schema{
 		pendingUserSchema: userSchema,
 		"OnboardingToken": tokenSchema,
 		"Enrollment":      enrollmentSchema,
@@ -199,6 +205,8 @@ func privateSchemas() map[string]*huma.Schema {
 			authProblem{Status: 401, Code: authenticationCode, Title: "Unauthorized"}),
 	}
 
+	addLifecycleSchemas(schemas)
+	return schemas
 }
 
 func closedObjectSchema(description string, properties map[string]*huma.Schema, required []string, example any) *huma.Schema {
@@ -211,13 +219,16 @@ func floatPointer(value float64) *float64 { return &value }
 
 func authParameters(rt route) []*huma.Param {
 	params := []*huma.Param{{Name: originHeader, In: "header", Required: rt.method == http.MethodPost,
-		Description: "Exactly the configured canonical HTTPS origin. Browser-controlled; GET csrf may instead use same-origin Fetch Metadata and Referer.",
+		Description: "Exactly the configured canonical HTTPS origin. Browser-controlled; GET may instead use same-origin Fetch Metadata and Referer.",
 		Schema:      stringSchema("Canonical installation origin without path.", "https://cms.example.test")}}
 	if rt.method == http.MethodPost {
 		schema := stringSchema("Session-bound anti-CSRF token.", syntheticCSRF)
 		schema.MinLength, schema.MaxLength = intPointer(43), intPointer(43)
 		params = append(params, &huma.Param{Name: "X-CSRF-Token", In: "header", Required: true,
 			Description: "Latest token returned by csrf or a successful session transition; must match the accompanying session. The synthetic example is not a credential.", Schema: schema})
+	}
+	if rt.operationID == listUsersOperation {
+		params = append(params, userPageParameters()...)
 	}
 	return params
 }
@@ -230,7 +241,7 @@ func constantStringSchema(value string, examples ...any) *huma.Schema {
 
 func authResponseHeaders() map[string]*huma.Param {
 	return map[string]*huma.Param{
-		"X-Request-ID":           {Description: "Server-generated correlation identifier; new onboarding commands use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
+		"X-Request-ID":           {Description: "Server-generated correlation identifier; user and enrollment operations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
 		"Cache-Control":          {Description: "Authentication data must never be cached.", Schema: constantStringSchema("no-store")},
 		"X-Content-Type-Options": {Description: "Disables content sniffing.", Schema: constantStringSchema("nosniff")},
 	}
@@ -243,7 +254,7 @@ func sessionCookieHeader() *huma.Param {
 func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
-	if rt.operationID != createUserOperation && rt.operationID != issueOnboardingOperation {
+	if authTag(rt) != usersTag {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -264,17 +275,26 @@ func authErrorCodes(rt route) map[int][]string {
 		codes[401] = []string{authenticationCode}
 		codes[403] = []string{originCode}
 	} else {
-		codes[405] = []string{"method_not_allowed"}
+		codes[405] = []string{methodNotAllowedCode}
 		codes[413] = []string{"body_too_large"}
 	}
-	if rt.operationID == createUserOperation || rt.operationID == issueOnboardingOperation {
+	if authTag(rt) == usersTag {
 		codes[401] = []string{authenticationCode}
-		codes[403] = []string{originCode, csrfCode, "permission_denied", "step_up_required"}
+		codes[403] = []string{originCode, csrfCode, permissionCode, "step_up_required"}
 		codes[409] = []string{"version_conflict", "invalid_transition"}
-		if rt.operationID == issueOnboardingOperation {
+		if rt.operationID != createUserOperation && rt.operationID != listUsersOperation {
 			codes[404] = []string{notFoundCode}
 		}
 	}
+	if isUserRead(rt) {
+		codes[405] = []string{methodNotAllowedCode}
+		codes[403] = []string{originCode, permissionCode}
+		delete(codes, 409)
+		delete(codes, 429)
+	} else if rt.operationID == activateUserOperation || rt.operationID == disableUserOperation {
+		codes[409] = append(codes[409], "last_admin_required")
+	}
+
 	if rt.operationID == cancelRecoveryOperation || rt.operationID == logoutOperation {
 		codes[401] = []string{authenticationCode}
 		delete(codes, 429)
@@ -313,7 +333,7 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 }
 
 func authRateDescription(rt route) string {
-	if rt.operationID == createUserOperation || rt.operationID == issueOnboardingOperation {
+	if authTag(rt) == usersTag {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -334,13 +354,13 @@ func sortedCookieKinds() []string {
 	return kinds
 }
 
-func privateRoutes() map[string]route {
-	all := make(map[string]route, len(routes)+len(userRoutes))
+func privateRoutes() map[string][]route {
+	all := make(map[string][]route, len(routes)+len(userRoutes))
 	for path, rt := range routes {
-		all[authPrefix+path] = rt
+		all[authPrefix+path] = []route{rt}
 	}
-	for path, rt := range userRoutes {
-		all[path] = rt
+	for path, methods := range userRoutes {
+		all[path] = methods
 	}
 	return all
 }
@@ -353,24 +373,26 @@ func responseDTOSchema(description string, example any) *huma.Schema {
 }
 
 func uuidSchema(example string) *huma.Schema {
-	schema := stringSchema("Pending account UUID.", example)
+	schema := stringSchema("Account UUID.", example)
 	schema.Format = "uuid"
 	return schema
 }
+
+const usersTag = "users"
 
 func authTags() []*huma.Tag {
 	return []*huma.Tag{
 		{Name: "authentication-sessions", Description: "Session initiation, password and TOTP verification, CSRF rotation, strong authentication and logout."},
 		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
-		{Name: "users", Description: "Authorized pending-account creation and one-time onboarding token issuance."},
+		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation and disable."},
 	}
 }
 
 func authTag(rt route) string {
 	switch rt.operationID {
-	case createUserOperation, issueOnboardingOperation:
-		return "users"
+	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation:
+		return usersTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
 	case startEnrollmentOperation, completeEnrollmentOperation:
@@ -381,8 +403,11 @@ func authTag(rt route) string {
 }
 
 func authSuccessDescription(rt route) string {
+	if isLifecycleOperation(rt.operationID) {
+		return lifecycleSuccessDescription(rt)
+	}
 	switch rt.operationID {
-	case "authCSRF":
+	case csrfOperation:
 		return "Preauth session created or existing session CSRF rotated; use the returned token on the next POST."
 	case "authLogin":
 		return "Password accepted; restricted login session replaces preauth. Verify a fresh TOTP with the returned CSRF token."

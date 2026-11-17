@@ -13,6 +13,11 @@ import (
 
 const opUsersCreate = "users.create"
 
+const (
+	userStateActive   = "active"
+	userStateDisabled = "disabled"
+)
+
 type auditRequestKey struct{}
 
 func auditRequestContext(ctx context.Context, req AuthRequest) (context.Context, error) {
@@ -68,17 +73,17 @@ func securityAudit(ctx context.Context, tx *sql.Tx, operation, actor, target, re
 // securityCommand authorizes from current grants after the shared mutex. Denials
 // are audited after rollback, so an audit outage never permits a partial command.
 func (s *AuthService) securityCommand(ctx context.Context, req AuthRequest, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
+	return s.authorizedCommand(ctx, req, opUsersCreate, operation, fn)
+}
+
+func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, permission, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
 	ctx, err := auditRequestContext(ctx, req)
 	if err != nil {
 		return err
 	}
 	err = s.WithSession(ctx, req, true, func(ctx context.Context, tx *sql.Tx, x Session) error {
-		var allowed bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.user_roles ur JOIN public.roles r ON r.id=ur.role_id JOIN public.role_grants g ON g.role_id=r.id JOIN public.permission_operations o ON o.key=g.operation WHERE ur.user_id=$1 AND r.state='active' AND g.operation=$2 AND g.scope='installation' AND o.scope='installation')`, x.user, opUsersCreate).Scan(&allowed); err != nil {
+		if err := requirePermission(ctx, tx, x.user, permission); err != nil {
 			return err
-		}
-		if !allowed {
-			return ErrPermissionDenied
 		}
 		if !x.FreshStepUp() {
 			return ErrStepUpRequired
@@ -89,6 +94,17 @@ func (s *AuthService) securityCommand(ctx context.Context, req AuthRequest, oper
 		return err
 	}
 	return s.auditCommandDenial(ctx, req, operation, err)
+}
+
+func requirePermission(ctx context.Context, tx *sql.Tx, user, operation string) error {
+	var allowed bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.user_roles ur JOIN public.roles r ON r.id=ur.role_id JOIN public.role_grants g ON g.role_id=r.id JOIN public.permission_operations o ON o.key=g.operation WHERE ur.user_id=$1 AND r.state='active' AND g.operation=$2 AND g.scope='installation' AND o.scope='installation')`, user, operation).Scan(&allowed); err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrPermissionDenied
+	}
+	return nil
 }
 
 func (s *AuthService) auditCommandDenial(ctx context.Context, req AuthRequest, operation string, denied error) error {
