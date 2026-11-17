@@ -182,6 +182,13 @@ async function checkLanguageSelection() {
   publishedHTML(direct.html)
 }
 
+async function selectContentLanguage(page, language) {
+  // SSR markup is clickable before Nuxt installs the cookie click handler.
+  await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
+  await page.locator(`[data-testid="content-languages"] a[data-language="${language}"]`).click()
+  await page.waitForFunction(language => document.cookie.split(';').some(cookie => cookie.trim() === `sp_content_language=${language}`), language)
+}
+
 async function checkLanguageBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
@@ -205,7 +212,7 @@ async function checkLanguageBrowser() {
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
     assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
     await page.goto(`${base}/en/articles`)
-    await page.locator('[data-testid="content-languages"] a[data-language="en"]').click()
+    await selectContentLanguage(page, 'en')
     await page.reload()
     assert.equal(await page.locator('html').getAttribute('lang'), 'en')
     const saved = (await context.cookies()).find(cookie => cookie.name === 'sp_content_language')
@@ -261,7 +268,7 @@ async function checkOtherInstallation() {
     await page.waitForURL(`${otherHost.origin}/pl/articles`)
     assert.equal(await page.locator('html').getAttribute('lang'), 'pl')
     assert.ok(!(await page.content()).includes(articleTitle))
-    await page.locator('[data-testid="content-languages"] a[data-language="pl"]').click()
+    await selectContentLanguage(page, 'pl')
     const saved = await context.cookies()
     assert.equal(saved.find(cookie => cookie.domain === 'localhost')?.value, 'pl')
     assert.equal(saved.find(cookie => cookie.domain === '127.0.0.1')?.value, 'en')
