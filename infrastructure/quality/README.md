@@ -115,9 +115,9 @@ Nuxt typecheck и production build сохранены. Собственный а
 
 SonarCloud остаётся независимым облачным Gate с прежними порогами. Локальный
 PASS не означает cloud PASS. Benchmarks и сетевой npm audit остаются отдельными командами;
-образные CVE проверяет обязательный image-audit. npm audit
-показал существующие 7 low в цепочке deepmerge/Rollup/Nitro; обновление runtime
-зависимостей в этот инфраструктурный PR не входит.
+образные CVE проверяет обязательный image-audit. Актуальные npm advisories,
+затронутые dependency chains и результаты их разбора относятся к отчёту
+конкретного запуска; прежние counts не доказывают состояние текущего lockfile.
 
 `make image-audit` входит в `verify` один раз после lint/build и проверяет
 реальное содержимое одиннадцати образов через Grype 0.121.3. High/Critical

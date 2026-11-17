@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 )
 
@@ -13,6 +14,23 @@ func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	_, err = provider.UpTo(ctx, 3)
 	requireNoError(t, err)
 
+	testDomainRegistryStep(t, ctx, db)
+
+	_, err = provider.UpTo(ctx, 4)
+	requireNoError(t, err)
+	testDomainEngineStep(t, ctx, db)
+
+	_, err = provider.UpTo(ctx, 5)
+	requireNoError(t, err)
+	testDomainIdentityStep(t, ctx, db)
+
+	_, err = provider.Up(ctx)
+	requireNoError(t, err)
+	requireNoError(t, CheckSchema(ctx, db))
+}
+
+func testDomainRegistryStep(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
 	// Registry identity and sealing already work before engine tables exist.
 	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, `INSERT INTO public.content_types(id,key,route_namespace)
@@ -44,10 +62,11 @@ AND to_regclass('public.users') IS NULL`).Scan(&missing))
 	if !missing {
 		t.Fatal("registry step created later domains")
 	}
+}
 
-	_, err = provider.UpTo(ctx, 4)
-	requireNoError(t, err)
-	_, err = db.Exec(`INSERT INTO public.content_items(id,type_id) VALUES
+func testDomainEngineStep(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO public.content_items(id,type_id) VALUES
 ('d1000000-0000-0000-0000-000000000003','d1000000-0000-0000-0000-000000000001'),
 ('d1000000-0000-0000-0000-000000000004','d1000000-0000-0000-0000-000000000001')`)
 	requireNoError(t, err)
@@ -62,7 +81,7 @@ AND to_regclass('public.users') IS NULL`).Scan(&missing))
 	_, err = db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
 VALUES ('en','English','English','ltr',true)`)
 	requireNoError(t, err)
-	tx = beginRoleTx(t, ctx, db, publisherTestRole)
+	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq)
 VALUES ('d1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-000000000003','d1000000-0000-0000-0000-000000000001',1,1,1)`)
 	_, err = tx.ExecContext(ctx, `UPDATE public.content_items SET published_id='d1000000-0000-0000-0000-000000000005'
@@ -83,10 +102,11 @@ WHERE id='d1000000-0000-0000-0000-000000000003'`)
 	rejectSQL(t, ctx, db, publisherTestRole, `UPDATE public.content_items
 SET published_id='d1000000-0000-0000-0000-000000000005'
 WHERE id='d1000000-0000-0000-0000-000000000004'`, "23514")
+}
 
-	_, err = provider.UpTo(ctx, 5)
-	requireNoError(t, err)
-	tx = beginRoleTx(t, ctx, db, "sp_security")
+func testDomainIdentityStep(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	tx := beginRoleTx(t, ctx, db, "sp_security")
 	execSQL(t, ctx, tx, `INSERT INTO public.users(id,login_key)
 VALUES ('d1000000-0000-0000-0000-000000000006','domain-step-pending');
 INSERT INTO public.sessions(id,token_digest,csrf_digest,kind,expires_at)
@@ -95,19 +115,16 @@ INSERT INTO public.security_audit(id,operation,reason)
 VALUES (gen_random_uuid(),'auth.denied','invalid_credentials')`)
 	requireNoError(t, tx.Commit())
 	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.users`, "42501")
-	rejectSQL(t, ctx, db, "sp_security", `SELECT * FROM public.security_audit`, "42501")
+	rejectSQL(t, ctx, db, "sp_security", `SELECT operation,result,reason FROM public.security_audit`, "42501")
 	rejectSQL(t, ctx, db, "", `UPDATE public.security_audit SET reason=''`, "23514")
 	rejectSQL(t, ctx, db, "", `DELETE FROM public.security_state`, "23514")
 	rejectSQL(t, ctx, db, "", `UPDATE public.users SET state='active'`, "23514")
+	var missing bool
 	requireNoError(t, db.QueryRow(`SELECT to_regclass('public.roles') IS NULL
 AND to_regclass('public.role_grants') IS NULL`).Scan(&missing))
 	if !missing {
 		t.Fatal("identity step created RBAC domain")
 	}
-
-	_, err = provider.Up(ctx)
-	requireNoError(t, err)
-	requireNoError(t, CheckSchema(ctx, db))
 }
 
 func TestDomainMigrationsSQLPreflightIntegration(t *testing.T) {
