@@ -3,7 +3,10 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test auth-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
+.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test auth-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
+
+swagger:
+	python3 scripts/dev-swagger.py
 
 setup:
 	python3 scripts/setup-local.py --site "$(SITE)"
@@ -155,5 +158,12 @@ ci-publishing-test:
 sdk:
 	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run generate
 
-sdk-check:
+swagger-assets-check:
+	cd apps/api/internal/platform/docsassets && npm ci --ignore-scripts --no-audit && \
+		cmp swagger-ui.css node_modules/swagger-ui-dist/swagger-ui.css && \
+		cmp swagger-ui-bundle.js node_modules/swagger-ui-dist/swagger-ui-bundle.js && \
+		cmp swagger-ui-standalone-preset.js node_modules/swagger-ui-dist/swagger-ui-standalone-preset.js && \
+		npm audit --package-lock-only --omit=dev --audit-level=high
+
+sdk-check: swagger-assets-check
 	cd packages/sdk && npm ci --ignore-scripts && STEPOLONIA_GO_EXECUTABLE="$$(command -v go)" npm run check

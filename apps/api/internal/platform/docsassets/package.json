@@ -1,0 +1,6 @@
+{
+  "name": "stepolonia-swagger-assets",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": { "swagger-ui-dist": "5.35.0" }
+}

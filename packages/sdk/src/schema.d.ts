@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * List published collection content
-         * @description Publication time and item ID descending. No content language fallback or field predicates.
+         * @description Lists public published items in an active content language, ordered by publication time descending and then item UUID descending. language is required. limit defaults to 20 and offset to zero. Follow next_offset until null, subject to the maximum offset of 10000. A valid empty collection returns items []. Content language fallback and field predicates are unavailable. Private fields are excluded before pagination. Unknown, repeated and empty query parameters return 400. No session is required.
          */
         get: operations["listContent"];
         put?: never;
@@ -31,7 +31,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get published content or its canonical address */
+        /**
+         * Get published content or its canonical address
+         * @description Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.
+         */
         get: operations["getContent"];
         put?: never;
         post?: never;
@@ -48,7 +51,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List active content languages */
+        /**
+         * List active content languages
+         * @description Returns active content languages ordered by language code. The array may be empty. This endpoint accepts no query parameters and requires no session. UI catalog availability is reported separately by getSite.
+         */
         get: operations["listLanguages"];
         put?: never;
         post?: never;
@@ -67,7 +73,7 @@ export interface paths {
         };
         /**
          * Read published site settings and one complete UI catalog
-         * @description One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private.
+         * @description One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.
          */
         get: operations["getSite"];
         put?: never;
@@ -85,6 +91,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Check whether the API process is responding
+         * @description Returns 200 without querying PostgreSQL. This probe does not establish database readiness or the presence of published content. Use the readiness probe before routing application traffic.
+         */
         get: operations["liveness"];
         put?: never;
         post?: never;
@@ -101,6 +111,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Check whether the API can reach PostgreSQL
+         * @description Pings the configured runtime database with a one-second deadline. Returns 503 when the database is unavailable; a successful probe does not establish that site settings or content have been published.
+         */
         get: operations["readiness"];
         put?: never;
         post?: never;
@@ -114,14 +128,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One structured framework error identifying a failed input location and its rejected value when available. */
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
-            /** @description Error message text */
+            /** @description Human-readable explanation of this individual HTTP processing error. */
             message?: string;
             /** @description The value at the given location */
             value?: unknown;
         };
+        /** @description A framework-generated HTTP problem for an unexpected processing failure. Public application failures use PublicProblem instead. */
         ErrorModel: {
             /**
              * @description A human-readable explanation specific to this occurrence of the problem.
@@ -138,7 +154,7 @@ export interface components {
             instance?: string;
             /**
              * Format: int64
-             * @description HTTP status code
+             * @description HTTP response status for the failed transport operation.
              * @example 400
              */
             status?: number;
@@ -155,153 +171,480 @@ export interface components {
              */
             type: string;
         };
+        /** @description A successful operational probe result identifying the responding API service. Liveness and readiness check different dependencies. */
         HealthOutputBody: {
+            /**
+             * @description Stable identifier of the responding API service.
+             * @example sp-api
+             */
             service: string;
+            /**
+             * @description Probe outcome; ok means this probe succeeded.
+             * @example ok
+             */
             status: string;
         };
+        /** @description Published UI language metadata used for catalog selection and text direction. */
         Language: {
+            /**
+             * @description Normalized BCP 47 language code.
+             * @example pl
+             */
             code: string;
-            /** @enum {string} */
+            /**
+             * @description Text direction for this language.
+             * @example ltr
+             * @enum {string}
+             */
             direction: "ltr" | "rtl";
+            /**
+             * @description Human-readable display name of the language.
+             * @example Polish
+             */
             name: string;
+            /**
+             * @description Language name in its own language.
+             * @example Polski
+             */
             native_name: string;
         };
+        /** @description An active content language. Content availability and complete UI catalog availability are independent. */
         LanguageDTO: {
+            /**
+             * @description Normalized BCP 47 content language code.
+             * @example pl
+             */
             code: string;
-            /** @enum {string} */
+            /**
+             * @description Writing direction used when rendering this language.
+             * @example ltr
+             * @enum {string}
+             */
             direction: "ltr" | "rtl";
+            /**
+             * @description Human-readable display name of the language.
+             * @example Polish
+             */
             name: string;
+            /**
+             * @description Language name in its own language.
+             * @example Polski
+             */
             native_name: string;
         };
+        /**
+         * @description A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Optional absent scalar values are omitted from maps, and values never use JSON null.
+         * @example {
+         *       "item_id": "11111111-1111-4111-8111-111111111111",
+         *       "type_key": "article",
+         *       "schema_no": "1",
+         *       "publication_id": "22222222-2222-4222-8222-222222222222",
+         *       "language": "pl",
+         *       "slug": "welcome-to-stepolonia",
+         *       "canonical_url": "/pl/articles/welcome-to-stepolonia",
+         *       "translations": [
+         *         {
+         *           "language": "pl",
+         *           "slug": "welcome-to-stepolonia",
+         *           "canonical_url": "/pl/articles/welcome-to-stepolonia"
+         *         }
+         *       ],
+         *       "shared": {},
+         *       "localized": {
+         *         "body": {
+         *           "kind": "markdown",
+         *           "value": "Community stories and **events**."
+         *         },
+         *         "slug": {
+         *           "kind": "string",
+         *           "value": "welcome-to-stepolonia"
+         *         },
+         *         "title": {
+         *           "kind": "string",
+         *           "value": "Welcome to Stepolonia"
+         *         }
+         *       },
+         *       "relations": []
+         *     }
+         */
         PublicItem: {
+            /** @description Relative public website path, including language and route namespace. */
             canonical_url: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Stable item UUID shared by all translations.
+             */
             item_id: string;
+            /**
+             * @description Normalized BCP 47 content language. Only published translations in active languages are exposed.
+             * @example pl
+             */
             language: string;
+            /** @description Public scalar values for this exact language, keyed by pinned Registry field key. No language fallback. Absent optional values have no entry. */
             localized: {
                 [key: string]: {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example string
+                     * @enum {string}
+                     */
                     kind: "string";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example text
+                     * @enum {string}
+                     */
                     kind: "text";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example markdown
+                     * @enum {string}
+                     */
                     kind: "markdown";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example enum
+                     * @enum {string}
+                     */
                     kind: "enum";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example integer
+                     * @enum {string}
+                     */
                     kind: "integer";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example decimal
+                     * @enum {string}
+                     */
                     kind: "decimal";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example datetime
+                     * @enum {string}
+                     */
                     kind: "datetime";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example boolean
+                     * @enum {string}
+                     */
                     kind: "boolean";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: boolean;
                 };
             };
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description UUID of the immutable publication supplying this response.
+             */
             publication_id: string;
+            /** @description Public relations with a published target in this language, ordered by field key. Unavailable targets are omitted. Empty arrays are serialized as []. */
             relations: components["schemas"]["PublicRelation"][];
+            /**
+             * @description Pinned Registry schema version as a positive base-10 string, preserving int64 precision.
+             * @example 1
+             */
             schema_no: string;
+            /** @description Public scalar values shared across languages, keyed by pinned Registry field key. Absent optional values have no entry. An empty map is {}. */
             shared: {
                 [key: string]: {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example string
+                     * @enum {string}
+                     */
                     kind: "string";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example text
+                     * @enum {string}
+                     */
                     kind: "text";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example markdown
+                     * @enum {string}
+                     */
                     kind: "markdown";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example enum
+                     * @enum {string}
+                     */
                     kind: "enum";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example integer
+                     * @enum {string}
+                     */
                     kind: "integer";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example decimal
+                     * @enum {string}
+                     */
                     kind: "decimal";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example datetime
+                     * @enum {string}
+                     */
                     kind: "datetime";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: string;
                 } | {
-                    /** @enum {string} */
+                    /**
+                     * @description Registry scalar kind selecting this variant.
+                     * @example boolean
+                     * @enum {string}
+                     */
                     kind: "boolean";
+                    /** @description Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset. */
                     value: boolean;
                 };
             };
+            /** @description Current canonical slug in this language. */
             slug: string;
+            /** @description Available published translations, including the current language, ordered by language code. Empty arrays are serialized as []. */
             translations: components["schemas"]["PublicTranslation"][];
+            /**
+             * @description Public collection key from the Registry.
+             * @example article
+             */
             type_key: string;
         };
+        /**
+         * @description An offset-paginated collection of published content. next_offset is null at the end or when the next offset would exceed 10000.
+         * @example {
+         *       "items": [
+         *         {
+         *           "item_id": "11111111-1111-4111-8111-111111111111",
+         *           "type_key": "article",
+         *           "schema_no": "1",
+         *           "publication_id": "22222222-2222-4222-8222-222222222222",
+         *           "language": "pl",
+         *           "slug": "welcome-to-stepolonia",
+         *           "canonical_url": "/pl/articles/welcome-to-stepolonia",
+         *           "translations": [
+         *             {
+         *               "language": "pl",
+         *               "slug": "welcome-to-stepolonia",
+         *               "canonical_url": "/pl/articles/welcome-to-stepolonia"
+         *             }
+         *           ],
+         *           "shared": {},
+         *           "localized": {
+         *             "body": {
+         *               "kind": "markdown",
+         *               "value": "Community stories and **events**."
+         *             },
+         *             "slug": {
+         *               "kind": "string",
+         *               "value": "welcome-to-stepolonia"
+         *             },
+         *             "title": {
+         *               "kind": "string",
+         *               "value": "Welcome to Stepolonia"
+         *             }
+         *           },
+         *           "relations": []
+         *         }
+         *       ],
+         *       "next_offset": null
+         *     }
+         */
         PublicPage: {
+            /** @description Published items ordered by publication time descending, then item UUID descending. An empty collection is []. */
             items: components["schemas"]["PublicItem"][];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Offset for the next page, or null when no further page is available within the maximum offset of 10000.
+             */
             next_offset: number | null;
         };
+        /** @description Public application/problem+json failure. status matches the HTTP status, code is machine-readable, and detail contains a safe generic explanation. All properties are present. */
         PublicProblem: {
+            /**
+             * @description Machine-readable failure code. See the operation response for supported codes.
+             * @example invalid_parameters
+             */
             code: string;
+            /**
+             * @description Safe human-readable explanation without dependency details.
+             * @example The request parameters are invalid.
+             */
             detail: string;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description HTTP response status code.
+             * @example 400
+             */
             status: number;
+            /**
+             * @description HTTP reason phrase for status.
+             * @example Bad Request
+             */
             title: string;
+            /**
+             * @description Problem type URI. Currently about:blank.
+             * @example about:blank
+             */
             type: string;
         };
+        /**
+         * @description A visible Registry relation with its single published same-language target. Relations with unavailable targets are omitted.
+         * @example {
+         *       "field_key": "related",
+         *       "targets": [
+         *         {
+         *           "item_id": "11111111-1111-4111-8111-111111111111",
+         *           "canonical_url": "/pl/articles/welcome-to-stepolonia"
+         *         }
+         *       ]
+         *     }
+         */
         PublicRelation: {
+            /**
+             * @description Registry relation field key from the pinned schema.
+             * @example related
+             */
             field_key: string;
+            /** @description Published target in the source language. Exactly one target is exposed for each returned relation. */
             targets: components["schemas"]["PublicTarget"][];
         };
+        /**
+         * @description A public relation target resolved in the source item language. The URL points to the current canonical website route.
+         * @example {
+         *       "item_id": "11111111-1111-4111-8111-111111111111",
+         *       "canonical_url": "/pl/articles/welcome-to-stepolonia"
+         *     }
+         */
         PublicTarget: {
+            /** @description Relative public website path, including language and route namespace. */
             canonical_url: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Stable item UUID shared by all translations.
+             */
             item_id: string;
         };
+        /**
+         * @description A published translation link for the same item. Only currently public languages and publications are returned.
+         * @example {
+         *       "language": "pl",
+         *       "slug": "welcome-to-stepolonia",
+         *       "canonical_url": "/pl/articles/welcome-to-stepolonia"
+         *     }
+         */
         PublicTranslation: {
+            /** @description Relative public website path, including language and route namespace. */
             canonical_url: string;
+            /**
+             * @description Normalized BCP 47 content language. Only published translations in active languages are exposed.
+             * @example pl
+             */
             language: string;
+            /** @description Current canonical slug in this language. */
             slug: string;
         };
+        /** @description One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed. */
         Publication: {
+            /** @description Language of the complete returned UI catalog, after fallback. */
             language: components["schemas"]["Language"];
+            /** @description Published active UI languages ordered by code. Each has a complete catalog in this publication. */
             languages: components["schemas"]["Language"][];
+            /** @description Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code. */
             messages: {
                 [key: string]: string;
             };
             /** @description Normalized requested UI language; empty when omitted. */
             requested_language: string;
+            /** @description Site settings from the same atomic publication as messages. */
             settings: components["schemas"]["Settings"];
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes.
+             * @example 33333333-3333-4333-8333-333333333333
+             */
             version: string;
         };
+        /** @description Published installation settings. Every property is present. Optional display text uses empty strings. */
         Settings: {
+            /**
+             * @description Six-digit hexadecimal accent color, including the leading #.
+             * @example #2563eb
+             */
             accent: string;
+            /**
+             * @description Configured default content language. This does not select the UI catalog.
+             * @example pl
+             */
             default_language: string;
+            /**
+             * @description Published site description as plain text.
+             * @example Discover community stories and events.
+             */
             description: string;
+            /**
+             * @description UI catalog used when lang is omitted or its complete published catalog is unavailable.
+             * @example pl
+             */
             fallback_language: string;
+            /**
+             * @description Optional site notice as plain text. An empty string means no notice.
+             * @example
+             */
             notice: string;
+            /**
+             * @description Short site tagline. An empty string means no tagline.
+             * @example Stories and events from our community
+             */
             tagline: string;
+            /**
+             * @description Human-readable title of this installation.
+             * @example Stepolonia
+             */
             title: string;
         };
     };
@@ -316,20 +659,23 @@ export interface operations {
     listContent: {
         parameters: {
             query: {
-                /** @description Content language (BCP 47). */
+                /** @description Required BCP 47 content language, normalized by the server. No content fallback is performed. */
                 language: string;
+                /** @description Maximum number of items returned. Defaults to 20. */
                 limit?: number;
+                /** @description Number of ordered items to skip. Follow next_offset for subsequent pages. Defaults to zero. */
                 offset?: number;
             };
             header?: never;
             path: {
+                /** @description Public Registry collection key. Unknown or non-public collections return 404. */
                 type_key: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Published public content from the current publication in the exact requested language. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -338,39 +684,75 @@ export interface operations {
                     "application/json": components["schemas"]["PublicPage"];
                 };
             };
-            /** @description Bad Request */
+            /** @description Invalid, missing, repeated, empty or unsupported query parameters, malformed language, type key, slug or pagination. Codes include invalid_parameters, invalid_language, invalid_type_key, invalid_slug, invalid_page and invalid_value. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Bad Request",
+                     *       "status": 400,
+                     *       "detail": "The request parameters are invalid.",
+                     *       "code": "invalid_parameters"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Not Found */
+            /** @description The collection, language or published translation is unavailable. Code content_not_found. */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Not Found",
+                     *       "status": 404,
+                     *       "detail": "The requested resource was not found.",
+                     *       "code": "content_not_found"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Conflict */
+            /** @description A database serialization, deadlock or lock conflict interrupted the read. Codes version_conflict and route_conflict. Retry the request. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "The published version has changed.",
+                     *       "code": "version_conflict"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Service Unavailable */
+            /** @description A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "detail": "A required dependency is unavailable.",
+                     *       "code": "database_unavailable"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
@@ -379,18 +761,21 @@ export interface operations {
     getContent: {
         parameters: {
             query: {
+                /** @description Required BCP 47 content language. The exact published translation is resolved, with no fallback. */
                 language: string;
             };
             header?: never;
             path: {
+                /** @description Public Registry collection key. Unknown or non-public collections return 404. */
                 type_key: string;
+                /** @description Current or historical slug in the requested language, at most 200 characters. Historical slugs return a canonical redirect. */
                 slug: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Published public content from the current publication in the exact requested language. */
             200: {
                 headers: {
                     Location?: string;
@@ -403,6 +788,7 @@ export interface operations {
             /** @description Historical slug; direct canonical API address in the same language. */
             301: {
                 headers: {
+                    /** @description Direct canonical API address in the same language. */
                     Location: string;
                     [name: string]: unknown;
                 };
@@ -410,39 +796,75 @@ export interface operations {
                     "application/json": null;
                 };
             };
-            /** @description Bad Request */
+            /** @description Invalid, missing, repeated, empty or unsupported query parameters, malformed language, type key, slug or pagination. Codes include invalid_parameters, invalid_language, invalid_type_key, invalid_slug, invalid_page and invalid_value. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Bad Request",
+                     *       "status": 400,
+                     *       "detail": "The request parameters are invalid.",
+                     *       "code": "invalid_parameters"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Not Found */
+            /** @description The collection, language or published translation is unavailable. Code content_not_found. */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Not Found",
+                     *       "status": 404,
+                     *       "detail": "The requested resource was not found.",
+                     *       "code": "content_not_found"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Conflict */
+            /** @description A database serialization, deadlock or lock conflict interrupted the read. Codes version_conflict and route_conflict. Retry the request. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "The published version has changed.",
+                     *       "code": "version_conflict"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Service Unavailable */
+            /** @description A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "detail": "A required dependency is unavailable.",
+                     *       "code": "database_unavailable"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
@@ -457,7 +879,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Active content languages ordered by code, including an empty array when none are active. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -466,21 +888,39 @@ export interface operations {
                     "application/json": components["schemas"]["LanguageDTO"][];
                 };
             };
-            /** @description Bad Request */
+            /** @description This operation accepts no query parameters. Unknown, repeated, empty or malformed parameters return code invalid_parameters. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Bad Request",
+                     *       "status": 400,
+                     *       "detail": "The request parameters are invalid.",
+                     *       "code": "invalid_parameters"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Service Unavailable */
+            /** @description A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "detail": "A required dependency is unavailable.",
+                     *       "code": "database_unavailable"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
@@ -489,9 +929,9 @@ export interface operations {
     getSite: {
         parameters: {
             query?: {
-                /** @description Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback. */
+                /** @description Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback. Matching is by normalized exact code. */
                 lang?: string;
-                /** @description Optional opaque UUID from a previous response; a different current publication returns 409. */
+                /** @description Optional opaque UUID from a previous response; a different current publication returns 409. Historical publications cannot be requested. */
                 version?: string;
             };
             header?: never;
@@ -500,7 +940,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description One atomic publication with settings and a complete UI catalog, possibly using the configured fallback. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -509,30 +949,57 @@ export interface operations {
                     "application/json": components["schemas"]["Publication"];
                 };
             };
-            /** @description Bad Request */
+            /** @description Invalid or ambiguous query parameters. Codes invalid_parameters, invalid_language and invalid_version. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Bad Request",
+                     *       "status": 400,
+                     *       "detail": "The request parameters are invalid.",
+                     *       "code": "invalid_parameters"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Conflict */
+            /** @description The supplied version differs from the current publication, or a database read conflict occurred. Code site_version_conflict. Read again without version to obtain the current publication. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "The published version has changed.",
+                     *       "code": "site_version_conflict"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
-            /** @description Service Unavailable */
+            /** @description No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "detail": "A required dependency is unavailable.",
+                     *       "code": "site_configuration_unavailable"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };
@@ -547,21 +1014,35 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The probe succeeded; inspect this operation's description for the dependencies it checks. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "ok",
+                     *       "service": "sp-api"
+                     *     }
+                     */
                     "application/json": components["schemas"]["HealthOutputBody"];
                 };
             };
-            /** @description Error */
+            /** @description An unexpected HTTP processing error; this is distinct from the documented database readiness failure. */
             default: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Internal Server Error",
+                     *       "status": 500,
+                     *       "detail": "An unexpected HTTP processing error occurred."
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
@@ -576,21 +1057,36 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The probe succeeded; inspect this operation's description for the dependencies it checks. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "ok",
+                     *       "service": "sp-api"
+                     *     }
+                     */
                     "application/json": components["schemas"]["HealthOutputBody"];
                 };
             };
-            /** @description Service Unavailable */
+            /** @description The database ping failed or exceeded its deadline; this API instance is not ready. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "detail": "A required dependency is unavailable.",
+                     *       "code": "database_unavailable"
+                     *     }
+                     */
                     "application/problem+json": components["schemas"]["PublicProblem"];
                 };
             };

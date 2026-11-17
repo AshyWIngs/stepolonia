@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/text/language"
@@ -19,27 +20,27 @@ const (
 )
 
 type Settings struct {
-	Tagline          string `json:"tagline" maxLength:"300"`
-	Notice           string `json:"notice" maxLength:"2000"`
-	Accent           string `json:"accent" pattern:"^#[0-9a-fA-F]{6}$"`
-	Title            string `json:"title" maxLength:"200"`
-	Description      string `json:"description" maxLength:"2000"`
-	DefaultLanguage  string `json:"default_language"`
-	FallbackLanguage string `json:"fallback_language"`
+	Tagline          string `json:"tagline" maxLength:"300" doc:"Short site tagline. An empty string means no tagline." example:"Stories and events from our community"`
+	Notice           string `json:"notice" maxLength:"2000" doc:"Optional site notice as plain text. An empty string means no notice." example:""`
+	Accent           string `json:"accent" pattern:"^#[0-9a-fA-F]{6}$" doc:"Six-digit hexadecimal accent color, including the leading #." example:"#2563eb"`
+	Title            string `json:"title" maxLength:"200" doc:"Human-readable title of this installation." example:"Stepolonia"`
+	Description      string `json:"description" maxLength:"2000" doc:"Published site description as plain text." example:"Discover community stories and events."`
+	DefaultLanguage  string `json:"default_language" doc:"Configured default content language. This does not select the UI catalog." example:"pl"`
+	FallbackLanguage string `json:"fallback_language" doc:"UI catalog used when lang is omitted or its complete published catalog is unavailable." example:"pl"`
 }
 type Language struct {
-	Code       string `json:"code"`
-	Name       string `json:"name"`
-	NativeName string `json:"native_name"`
-	Direction  string `json:"direction" enum:"ltr,rtl"`
+	Code       string `json:"code" doc:"Normalized BCP 47 language code." example:"pl"`
+	Name       string `json:"name" doc:"Human-readable display name of the language." example:"Polish"`
+	NativeName string `json:"native_name" doc:"Language name in its own language." example:"Polski"`
+	Direction  string `json:"direction" enum:"ltr,rtl" doc:"Text direction for this language." example:"ltr"`
 }
 type Publication struct {
-	Version           string            `json:"version" format:"uuid"`
-	Settings          Settings          `json:"settings"`
+	Version           string            `json:"version" format:"uuid" doc:"Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes." example:"33333333-3333-4333-8333-333333333333"`
+	Settings          Settings          `json:"settings" doc:"Site settings from the same atomic publication as messages."`
 	RequestedLanguage string            `json:"requested_language" doc:"Normalized requested UI language; empty when omitted."`
-	Language          Language          `json:"language"`
-	Languages         []Language        `json:"languages" nullable:"false"`
-	Messages          map[string]string `json:"messages"`
+	Language          Language          `json:"language" doc:"Language of the complete returned UI catalog, after fallback."`
+	Languages         []Language        `json:"languages" nullable:"false" doc:"Published active UI languages ordered by code. Each has a complete catalog in this publication."`
+	Messages          map[string]string `json:"messages" doc:"Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code."`
 }
 type Draft struct {
 	Settings Settings
@@ -386,4 +387,22 @@ func readMessages(ctx context.Context, tx *sql.Tx, version, code string) (map[st
 		result[key] = value
 	}
 	return result, dbError(rows.Err())
+}
+
+// TransformSchema documents the public Settings contract without changing validation.
+func (Settings) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Description = "Published installation settings. Every property is present. Optional display text uses empty strings."
+	return schema
+}
+
+// TransformSchema documents the public Language contract without changing validation.
+func (Language) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Description = "Published UI language metadata used for catalog selection and text direction."
+	return schema
+}
+
+// TransformSchema documents the public Publication contract without changing validation.
+func (Publication) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Description = "One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
+	return schema
 }

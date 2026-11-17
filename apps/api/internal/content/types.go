@@ -36,13 +36,19 @@ const (
 
 const (
 	initialArticleKey = "article"
-	slugFieldKey      = "slug"
-	titleFieldKey     = "title"
-	bodyFieldKey      = "body"
-	testEventKey      = "event"
-	eventsNamespace   = "events"
+	eventTypeKey      = "event"
+)
+
+const (
 	articlesNamespace = "articles"
-	featuredFieldKey  = "featured"
+	eventsNamespace   = "events"
+)
+
+const (
+	slugFieldKey     = "slug"
+	titleFieldKey    = "title"
+	bodyFieldKey     = "body"
+	featuredFieldKey = "featured"
 )
 
 const visibilityPrivate = "private"
@@ -226,7 +232,7 @@ func rendererTypeKey(namespace string) string {
 	case articlesNamespace:
 		return initialArticleKey
 	case eventsNamespace:
-		return testEventKey
+		return eventTypeKey
 	default:
 		return ""
 	}

@@ -17,6 +17,12 @@ import (
 )
 
 const (
+	loginKind          = "login"
+	secretField        = "secret"
+	recoveryCodesField = "recovery_codes"
+	statusField        = "status"
+	titleField         = "title"
+	authenticationCode = "authentication_required"
 	originCode         = "origin_denied"
 	validationCode     = "validation_failed"
 	preauthKind        = "preauth"
@@ -73,18 +79,33 @@ type credentials struct {
 }
 
 type route struct {
-	kind   string
-	fields string
+	kind        string
+	fields      string
+	method      string
+	operationID string
+	summary     string
+	description string
+	response    string
 }
 
+// Route metadata is shared by dispatch and the private OpenAPI generator.
 var routes = map[string]route{
-	loginPath:            {preauthKind, "login,password"},
-	"/mfa/verify":        {"login", codeField},
-	"/step-up":           {fullKind, "password,code"},
-	"/recovery":          {preauthKind, "login,password,code"},
-	"/recovery/complete": {recoveryKind, codeField},
-	"/recovery/cancel":   {recoveryKind, ""},
-	logoutPath:           {"", ""},
+	"/csrf": {kind: "", method: http.MethodGet, operationID: "authCSRF", summary: "Create or rotate a CSRF token", response: csrfResponseSchema,
+		description: "Without session cookies, creates a five-minute preauth session. With exactly one valid session cookie, rotates its CSRF token while retaining its session kind. Start here before login or recovery; use the returned token in the next POST and retain the browser-managed cookie."},
+	loginPath: {kind: preauthKind, fields: "login,password", method: http.MethodPost, operationID: "authLogin", summary: "Verify the password and begin MFA", response: csrfResponseSchema,
+		description: "Requires a preauth session and its CSRF token. A successful password check replaces preauth with a five-minute restricted login session; it does not grant full access. Submit a fresh TOTP to MFA verification with the returned CSRF token."},
+	"/mfa/verify": {kind: loginKind, fields: codeField, method: http.MethodPost, operationID: "authVerifyMFA", summary: "Complete login with a TOTP", response: csrfResponseSchema,
+		description: "Requires a restricted login session. A valid unused TOTP replaces it with a full session and rotates CSRF. Full sessions have a 12-hour absolute lifetime, a 30-minute idle timeout and five-minute strong-authentication freshness from this successful MFA. Invalid, expired or replayed factors do not grant access."},
+	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: "authStepUp", summary: "Refresh strong authentication", response: csrfResponseSchema,
+		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute session expiry."},
+	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: "authRecover", summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
+		description: "Requires preauth, password and an unused recovery code. Returns a pending TOTP seed and a ten-minute restricted recovery session, not full access. Enroll the seed locally, then confirm a fresh TOTP through recovery completion. A pending reservation prevents concurrent use; cancellation releases it."},
+	"/recovery/complete": {kind: recoveryKind, fields: codeField, method: http.MethodPost, operationID: "authCompleteRecovery", summary: "Confirm the replacement factor", response: "RecoveryCodes",
+		description: "Requires the restricted recovery session and a TOTP from its pending seed. Atomically replaces factors, consumes the reserved recovery code, revokes sessions and returns ten new recovery codes once. Store them securely; browser cookies are cleared and a new login is required."},
+	"/recovery/cancel": {kind: recoveryKind, method: http.MethodPost, operationID: "authCancelRecovery", summary: "Cancel pending factor recovery",
+		description: "Requires the restricted recovery session and CSRF token. Send an empty JSON object. Ends the reservation without replacing factors, revokes the recovery session and clears browser session cookies."},
+	logoutPath: {method: http.MethodPost, operationID: logoutOperation, summary: "Revoke the current session",
+		description: "Requires exactly one session cookie of any supported kind and its CSRF token. Send an empty JSON object. Revokes that session and clears browser cookies; expired credentials return 401 and clear cookies only after the POST, JSON and CSRF-header boundary succeeds."},
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,16 +125,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
-	if path == "/csrf" && r.Method == http.MethodGet {
+	rt, ok := routes[path]
+	if ok && rt.method == http.MethodGet && r.Method == rt.method {
 		h.csrf(w, r, ip)
 		return
 	}
-	rt, ok := routes[path]
-	if !ok {
+	if !ok || rt.method == http.MethodGet {
 		problem(w, http.StatusNotFound, "not_found")
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != rt.method {
 		problem(w, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
@@ -211,7 +232,7 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request, path, kind str
 		out, err = h.service.Recover(r.Context(), req, input.Login, input.Password, input.Code)
 		if err == nil {
 			setSession(w, out.SessionTokens)
-			respond(w, map[string]string{csrfField: out.CSRF, "secret": out.Secret})
+			respond(w, map[string]string{csrfField: out.CSRF, secretField: out.Secret})
 			return
 		}
 	case "/recovery/complete":
@@ -219,7 +240,7 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request, path, kind str
 		codes, err = h.service.CompleteRecovery(r.Context(), req, input.Code)
 		if err == nil {
 			clearCookies(w)
-			respond(w, map[string][]string{"recovery_codes": codes})
+			respond(w, map[string][]string{recoveryCodesField: codes})
 			return
 		}
 	case "/recovery/cancel":
@@ -266,7 +287,7 @@ func (h *handler) csrf(w http.ResponseWriter, r *http.Request, ip string) {
 	respond(w, map[string]string{csrfField: out.CSRF})
 }
 
-var cookieNames = map[string]string{fullKind: "__Host-sp_session", preauthKind: "__Host-sp_preauth", "login": "__Host-sp_login", recoveryKind: "__Host-sp_recovery"}
+var cookieNames = map[string]string{fullKind: "__Host-sp_session", preauthKind: "__Host-sp_preauth", loginKind: "__Host-sp_login", recoveryKind: "__Host-sp_recovery"}
 
 func noSessionCookies(r *http.Request) bool {
 	for _, cookie := range r.Cookies() {
@@ -315,7 +336,7 @@ func respond(w http.ResponseWriter, value any) {
 func problem(w http.ResponseWriter, status int, code string) {
 	w.Header().Set(contentTypeHeader, "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, codeField: code, "title": http.StatusText(status)})
+	_ = json.NewEncoder(w).Encode(map[string]any{statusField: status, codeField: code, titleField: http.StatusText(status)})
 }
 func writeError(w http.ResponseWriter, err error) {
 	status, code := http.StatusServiceUnavailable, "security_unavailable"
@@ -323,7 +344,7 @@ func writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, cms.ErrInvalidCredentials):
 		status, code = http.StatusUnauthorized, "invalid_credentials"
 	case errors.Is(err, cms.ErrAuthenticationRequired):
-		status, code = http.StatusUnauthorized, "authentication_required"
+		status, code = http.StatusUnauthorized, authenticationCode
 	case errors.Is(err, cms.ErrCSRF):
 		status, code = http.StatusForbidden, csrfCode
 	case errors.Is(err, cms.ErrRateLimited):

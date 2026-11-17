@@ -3,13 +3,14 @@
     "schemas": {
       "ErrorDetail": {
         "additionalProperties": false,
+        "description": "One structured framework error identifying a failed input location and its rejected value when available.",
         "properties": {
           "location": {
             "description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
             "type": "string"
           },
           "message": {
-            "description": "Error message text",
+            "description": "Human-readable explanation of this individual HTTP processing error.",
             "type": "string"
           },
           "value": {
@@ -20,6 +21,7 @@
       },
       "ErrorModel": {
         "additionalProperties": false,
+        "description": "A framework-generated HTTP problem for an unexpected processing failure. Public application failures use PublicProblem instead.",
         "properties": {
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
@@ -47,7 +49,7 @@
             "type": "string"
           },
           "status": {
-            "description": "HTTP status code",
+            "description": "HTTP response status for the failed transport operation.",
             "examples": [
               400
             ],
@@ -75,11 +77,20 @@
       },
       "HealthOutputBody": {
         "additionalProperties": false,
+        "description": "A successful operational probe result identifying the responding API service. Liveness and readiness check different dependencies.",
         "properties": {
           "service": {
+            "description": "Stable identifier of the responding API service.",
+            "examples": [
+              "sp-api"
+            ],
             "type": "string"
           },
           "status": {
+            "description": "Probe outcome; ok means this probe succeeded.",
+            "examples": [
+              "ok"
+            ],
             "type": "string"
           }
         },
@@ -91,21 +102,38 @@
       },
       "Language": {
         "additionalProperties": false,
+        "description": "Published UI language metadata used for catalog selection and text direction.",
         "properties": {
           "code": {
+            "description": "Normalized BCP 47 language code.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "direction": {
+            "description": "Text direction for this language.",
             "enum": [
               "ltr",
               "rtl"
             ],
+            "examples": [
+              "ltr"
+            ],
             "type": "string"
           },
           "name": {
+            "description": "Human-readable display name of the language.",
+            "examples": [
+              "Polish"
+            ],
             "type": "string"
           },
           "native_name": {
+            "description": "Language name in its own language.",
+            "examples": [
+              "Polski"
+            ],
             "type": "string"
           }
         },
@@ -119,21 +147,38 @@
       },
       "LanguageDTO": {
         "additionalProperties": false,
+        "description": "An active content language. Content availability and complete UI catalog availability are independent.",
         "properties": {
           "code": {
+            "description": "Normalized BCP 47 content language code.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "direction": {
+            "description": "Writing direction used when rendering this language.",
             "enum": [
               "ltr",
               "rtl"
             ],
+            "examples": [
+              "ltr"
+            ],
             "type": "string"
           },
           "name": {
+            "description": "Human-readable display name of the language.",
+            "examples": [
+              "Polish"
+            ],
             "type": "string"
           },
           "native_name": {
+            "description": "Language name in its own language.",
+            "examples": [
+              "Polski"
+            ],
             "type": "string"
           }
         },
@@ -147,33 +192,81 @@
       },
       "PublicItem": {
         "additionalProperties": false,
+        "description": "A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Optional absent scalar values are omitted from maps, and values never use JSON null.",
+        "examples": [
+          {
+            "item_id": "11111111-1111-4111-8111-111111111111",
+            "type_key": "article",
+            "schema_no": "1",
+            "publication_id": "22222222-2222-4222-8222-222222222222",
+            "language": "pl",
+            "slug": "welcome-to-stepolonia",
+            "canonical_url": "/pl/articles/welcome-to-stepolonia",
+            "translations": [
+              {
+                "language": "pl",
+                "slug": "welcome-to-stepolonia",
+                "canonical_url": "/pl/articles/welcome-to-stepolonia"
+              }
+            ],
+            "shared": {},
+            "localized": {
+              "body": {
+                "kind": "markdown",
+                "value": "Community stories and **events**."
+              },
+              "slug": {
+                "kind": "string",
+                "value": "welcome-to-stepolonia"
+              },
+              "title": {
+                "kind": "string",
+                "value": "Welcome to Stepolonia"
+              }
+            },
+            "relations": []
+          }
+        ],
         "properties": {
           "canonical_url": {
+            "description": "Relative public website path, including language and route namespace.",
             "type": "string"
           },
           "item_id": {
+            "description": "Stable item UUID shared by all translations.",
             "format": "uuid",
             "type": "string"
           },
           "language": {
+            "description": "Normalized BCP 47 content language. Only published translations in active languages are exposed.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "localized": {
             "additionalProperties": {
+              "description": "One public scalar value tagged by Registry kind. Each variant has exactly kind and value. Field-specific constraints come from the pinned Registry schema. Markdown remains source text and must be rendered safely.",
               "discriminator": {
                 "propertyName": "kind"
               },
               "oneOf": [
                 {
                   "additionalProperties": false,
+                  "description": "A public string value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "string"
+                      ],
+                      "examples": [
                         "string"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -185,14 +278,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public text value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "text"
+                      ],
+                      "examples": [
                         "text"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -204,14 +303,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public markdown value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "markdown"
+                      ],
+                      "examples": [
                         "markdown"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -223,14 +328,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public enum value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "enum"
+                      ],
+                      "examples": [
                         "enum"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -242,14 +353,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public integer value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "integer"
+                      ],
+                      "examples": [
                         "integer"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -261,14 +378,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public decimal value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "decimal"
+                      ],
+                      "examples": [
                         "decimal"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -280,14 +403,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public datetime value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "datetime"
+                      ],
+                      "examples": [
                         "datetime"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -299,14 +428,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public boolean value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "boolean"
+                      ],
+                      "examples": [
                         "boolean"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "boolean"
                     }
                   },
@@ -318,38 +453,52 @@
                 }
               ]
             },
+            "description": "Public scalar values for this exact language, keyed by pinned Registry field key. No language fallback. Absent optional values have no entry.",
             "type": "object"
           },
           "publication_id": {
+            "description": "UUID of the immutable publication supplying this response.",
             "format": "uuid",
             "type": "string"
           },
           "relations": {
+            "description": "Public relations with a published target in this language, ordered by field key. Unavailable targets are omitted. Empty arrays are serialized as [].",
             "items": {
               "$ref": "#/components/schemas/PublicRelation"
             },
             "type": "array"
           },
           "schema_no": {
+            "description": "Pinned Registry schema version as a positive base-10 string, preserving int64 precision.",
+            "examples": [
+              "1"
+            ],
             "pattern": "^[1-9][0-9]*$",
             "type": "string"
           },
           "shared": {
             "additionalProperties": {
+              "description": "One public scalar value tagged by Registry kind. Each variant has exactly kind and value. Field-specific constraints come from the pinned Registry schema. Markdown remains source text and must be rendered safely.",
               "discriminator": {
                 "propertyName": "kind"
               },
               "oneOf": [
                 {
                   "additionalProperties": false,
+                  "description": "A public string value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "string"
+                      ],
+                      "examples": [
                         "string"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -361,14 +510,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public text value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "text"
+                      ],
+                      "examples": [
                         "text"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -380,14 +535,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public markdown value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "markdown"
+                      ],
+                      "examples": [
                         "markdown"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -399,14 +560,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public enum value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "enum"
+                      ],
+                      "examples": [
                         "enum"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -418,14 +585,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public integer value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "integer"
+                      ],
+                      "examples": [
                         "integer"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -437,14 +610,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public decimal value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "decimal"
+                      ],
+                      "examples": [
                         "decimal"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -456,14 +635,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public datetime value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "datetime"
+                      ],
+                      "examples": [
                         "datetime"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "string"
                     }
                   },
@@ -475,14 +660,20 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "A public boolean value encoded according to the pinned Registry field definition.",
                   "properties": {
                     "kind": {
+                      "description": "Registry scalar kind selecting this variant.",
                       "enum": [
+                        "boolean"
+                      ],
+                      "examples": [
                         "boolean"
                       ],
                       "type": "string"
                     },
                     "value": {
+                      "description": "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset.",
                       "type": "boolean"
                     }
                   },
@@ -494,18 +685,25 @@
                 }
               ]
             },
+            "description": "Public scalar values shared across languages, keyed by pinned Registry field key. Absent optional values have no entry. An empty map is {}.",
             "type": "object"
           },
           "slug": {
+            "description": "Current canonical slug in this language.",
             "type": "string"
           },
           "translations": {
+            "description": "Available published translations, including the current language, ordered by language code. Empty arrays are serialized as [].",
             "items": {
               "$ref": "#/components/schemas/PublicTranslation"
             },
             "type": "array"
           },
           "type_key": {
+            "description": "Public collection key from the Registry.",
+            "examples": [
+              "article"
+            ],
             "type": "string"
           }
         },
@@ -526,14 +724,56 @@
       },
       "PublicPage": {
         "additionalProperties": false,
+        "description": "An offset-paginated collection of published content. next_offset is null at the end or when the next offset would exceed 10000.",
+        "examples": [
+          {
+            "items": [
+              {
+                "item_id": "11111111-1111-4111-8111-111111111111",
+                "type_key": "article",
+                "schema_no": "1",
+                "publication_id": "22222222-2222-4222-8222-222222222222",
+                "language": "pl",
+                "slug": "welcome-to-stepolonia",
+                "canonical_url": "/pl/articles/welcome-to-stepolonia",
+                "translations": [
+                  {
+                    "language": "pl",
+                    "slug": "welcome-to-stepolonia",
+                    "canonical_url": "/pl/articles/welcome-to-stepolonia"
+                  }
+                ],
+                "shared": {},
+                "localized": {
+                  "body": {
+                    "kind": "markdown",
+                    "value": "Community stories and **events**."
+                  },
+                  "slug": {
+                    "kind": "string",
+                    "value": "welcome-to-stepolonia"
+                  },
+                  "title": {
+                    "kind": "string",
+                    "value": "Welcome to Stepolonia"
+                  }
+                },
+                "relations": []
+              }
+            ],
+            "next_offset": null
+          }
+        ],
         "properties": {
           "items": {
+            "description": "Published items ordered by publication time descending, then item UUID descending. An empty collection is [].",
             "items": {
               "$ref": "#/components/schemas/PublicItem"
             },
             "type": "array"
           },
           "next_offset": {
+            "description": "Offset for the next page, or null when no further page is available within the maximum offset of 10000.",
             "format": "int64",
             "type": [
               "integer",
@@ -549,21 +789,42 @@
       },
       "PublicProblem": {
         "additionalProperties": false,
+        "description": "Public application/problem+json failure. status matches the HTTP status, code is machine-readable, and detail contains a safe generic explanation. All properties are present.",
         "properties": {
           "code": {
+            "description": "Machine-readable failure code. See the operation response for supported codes.",
+            "examples": [
+              "invalid_parameters"
+            ],
             "type": "string"
           },
           "detail": {
+            "description": "Safe human-readable explanation without dependency details.",
+            "examples": [
+              "The request parameters are invalid."
+            ],
             "type": "string"
           },
           "status": {
+            "description": "HTTP response status code.",
+            "examples": [
+              400
+            ],
             "format": "int64",
             "type": "integer"
           },
           "title": {
+            "description": "HTTP reason phrase for status.",
+            "examples": [
+              "Bad Request"
+            ],
             "type": "string"
           },
           "type": {
+            "description": "Problem type URI. Currently about:blank.",
+            "examples": [
+              "about:blank"
+            ],
             "type": "string"
           }
         },
@@ -578,11 +839,28 @@
       },
       "PublicRelation": {
         "additionalProperties": false,
+        "description": "A visible Registry relation with its single published same-language target. Relations with unavailable targets are omitted.",
+        "examples": [
+          {
+            "field_key": "related",
+            "targets": [
+              {
+                "item_id": "11111111-1111-4111-8111-111111111111",
+                "canonical_url": "/pl/articles/welcome-to-stepolonia"
+              }
+            ]
+          }
+        ],
         "properties": {
           "field_key": {
+            "description": "Registry relation field key from the pinned schema.",
+            "examples": [
+              "related"
+            ],
             "type": "string"
           },
           "targets": {
+            "description": "Published target in the source language. Exactly one target is exposed for each returned relation.",
             "items": {
               "$ref": "#/components/schemas/PublicTarget"
             },
@@ -599,11 +877,20 @@
       },
       "PublicTarget": {
         "additionalProperties": false,
+        "description": "A public relation target resolved in the source item language. The URL points to the current canonical website route.",
+        "examples": [
+          {
+            "item_id": "11111111-1111-4111-8111-111111111111",
+            "canonical_url": "/pl/articles/welcome-to-stepolonia"
+          }
+        ],
         "properties": {
           "canonical_url": {
+            "description": "Relative public website path, including language and route namespace.",
             "type": "string"
           },
           "item_id": {
+            "description": "Stable item UUID shared by all translations.",
             "format": "uuid",
             "type": "string"
           }
@@ -616,14 +903,28 @@
       },
       "PublicTranslation": {
         "additionalProperties": false,
+        "description": "A published translation link for the same item. Only currently public languages and publications are returned.",
+        "examples": [
+          {
+            "language": "pl",
+            "slug": "welcome-to-stepolonia",
+            "canonical_url": "/pl/articles/welcome-to-stepolonia"
+          }
+        ],
         "properties": {
           "canonical_url": {
+            "description": "Relative public website path, including language and route namespace.",
             "type": "string"
           },
           "language": {
+            "description": "Normalized BCP 47 content language. Only published translations in active languages are exposed.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "slug": {
+            "description": "Current canonical slug in this language.",
             "type": "string"
           }
         },
@@ -636,11 +937,14 @@
       },
       "Publication": {
         "additionalProperties": false,
+        "description": "One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed.",
         "properties": {
           "language": {
-            "$ref": "#/components/schemas/Language"
+            "$ref": "#/components/schemas/Language",
+            "description": "Language of the complete returned UI catalog, after fallback."
           },
           "languages": {
+            "description": "Published active UI languages ordered by code. Each has a complete catalog in this publication.",
             "items": {
               "$ref": "#/components/schemas/Language"
             },
@@ -650,6 +954,7 @@
             "additionalProperties": {
               "type": "string"
             },
+            "description": "Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code.",
             "type": "object"
           },
           "requested_language": {
@@ -657,9 +962,14 @@
             "type": "string"
           },
           "settings": {
-            "$ref": "#/components/schemas/Settings"
+            "$ref": "#/components/schemas/Settings",
+            "description": "Site settings from the same atomic publication as messages."
           },
           "version": {
+            "description": "Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes.",
+            "examples": [
+              "33333333-3333-4333-8333-333333333333"
+            ],
             "format": "uuid",
             "type": "string"
           }
@@ -676,30 +986,59 @@
       },
       "Settings": {
         "additionalProperties": false,
+        "description": "Published installation settings. Every property is present. Optional display text uses empty strings.",
         "properties": {
           "accent": {
+            "description": "Six-digit hexadecimal accent color, including the leading #.",
+            "examples": [
+              "#2563eb"
+            ],
             "pattern": "^#[0-9a-fA-F]{6}$",
             "type": "string"
           },
           "default_language": {
+            "description": "Configured default content language. This does not select the UI catalog.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "description": {
+            "description": "Published site description as plain text.",
+            "examples": [
+              "Discover community stories and events."
+            ],
             "maxLength": 2000,
             "type": "string"
           },
           "fallback_language": {
+            "description": "UI catalog used when lang is omitted or its complete published catalog is unavailable.",
+            "examples": [
+              "pl"
+            ],
             "type": "string"
           },
           "notice": {
+            "description": "Optional site notice as plain text. An empty string means no notice.",
+            "examples": [
+              ""
+            ],
             "maxLength": 2000,
             "type": "string"
           },
           "tagline": {
+            "description": "Short site tagline. An empty string means no tagline.",
+            "examples": [
+              "Stories and events from our community"
+            ],
             "maxLength": 300,
             "type": "string"
           },
           "title": {
+            "description": "Human-readable title of this installation.",
+            "examples": [
+              "Stepolonia"
+            ],
             "maxLength": 200,
             "type": "string"
           }
@@ -725,34 +1064,47 @@
   "paths": {
     "/api/v1/content/{type_key}": {
       "get": {
-        "description": "Publication time and item ID descending. No content language fallback or field predicates.",
+        "description": "Lists public published items in an active content language, ordered by publication time descending and then item UUID descending. language is required. limit defaults to 20 and offset to zero. Follow next_offset until null, subject to the maximum offset of 10000. A valid empty collection returns items []. Content language fallback and field predicates are unavailable. Private fields are excluded before pagination. Unknown, repeated and empty query parameters return 400. No session is required.",
         "operationId": "listContent",
         "parameters": [
           {
+            "description": "Public Registry collection key. Unknown or non-public collections return 404.",
             "in": "path",
             "name": "type_key",
             "required": true,
             "schema": {
+              "description": "Public Registry collection key. Unknown or non-public collections return 404.",
+              "examples": [
+                "article"
+              ],
               "type": "string"
             }
           },
           {
-            "description": "Content language (BCP 47).",
+            "description": "Required BCP 47 content language, normalized by the server. No content fallback is performed.",
             "explode": false,
             "in": "query",
             "name": "language",
             "required": true,
             "schema": {
-              "description": "Content language (BCP 47).",
+              "description": "Required BCP 47 content language, normalized by the server. No content fallback is performed.",
+              "examples": [
+                "pl"
+              ],
               "type": "string"
             }
           },
           {
+            "description": "Maximum number of items returned. Defaults to 20.",
             "explode": false,
             "in": "query",
             "name": "limit",
             "schema": {
               "default": 20,
+              "description": "Maximum number of items returned. Defaults to 20.",
+              "examples": [
+                20
+              ],
               "format": "int64",
               "maximum": 100,
               "minimum": 1,
@@ -760,11 +1112,16 @@
             }
           },
           {
+            "description": "Number of ordered items to skip. Follow next_offset for subsequent pages. Defaults to zero.",
             "explode": false,
             "in": "query",
             "name": "offset",
             "schema": {
               "default": 0,
+              "description": "Number of ordered items to skip. Follow next_offset for subsequent pages. Defaults to zero.",
+              "examples": [
+                0
+              ],
               "format": "int64",
               "maximum": 10000,
               "minimum": 0,
@@ -776,52 +1133,228 @@
           "200": {
             "content": {
               "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "Empty published collection",
+                    "value": {
+                      "items": [],
+                      "next_offset": null
+                    }
+                  },
+                  "events": {
+                    "summary": "Event collection with a public relation to an Article",
+                    "value": {
+                      "items": [
+                        {
+                          "item_id": "44444444-4444-4444-8444-444444444444",
+                          "type_key": "event",
+                          "schema_no": "1",
+                          "publication_id": "55555555-5555-4555-8555-555555555555",
+                          "language": "pl",
+                          "slug": "community-meetup",
+                          "canonical_url": "/pl/events/community-meetup",
+                          "translations": [
+                            {
+                              "language": "pl",
+                              "slug": "community-meetup",
+                              "canonical_url": "/pl/events/community-meetup"
+                            }
+                          ],
+                          "shared": {
+                            "featured": {
+                              "kind": "boolean",
+                              "value": true
+                            },
+                            "price": {
+                              "kind": "decimal",
+                              "value": "12.5"
+                            }
+                          },
+                          "localized": {
+                            "body": {
+                              "kind": "markdown",
+                              "value": "Meet the **Stepolonia** community."
+                            },
+                            "slug": {
+                              "kind": "string",
+                              "value": "community-meetup"
+                            },
+                            "title": {
+                              "kind": "string",
+                              "value": "Community meetup"
+                            }
+                          },
+                          "relations": [
+                            {
+                              "field_key": "related",
+                              "targets": [
+                                {
+                                  "item_id": "11111111-1111-4111-8111-111111111111",
+                                  "canonical_url": "/pl/articles/welcome-to-stepolonia"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "next_offset": null
+                    }
+                  },
+                  "last": {
+                    "summary": "Final page with next_offset null",
+                    "value": {
+                      "items": [
+                        {
+                          "item_id": "11111111-1111-4111-8111-111111111111",
+                          "type_key": "article",
+                          "schema_no": "1",
+                          "publication_id": "22222222-2222-4222-8222-222222222222",
+                          "language": "pl",
+                          "slug": "welcome-to-stepolonia",
+                          "canonical_url": "/pl/articles/welcome-to-stepolonia",
+                          "translations": [
+                            {
+                              "language": "pl",
+                              "slug": "welcome-to-stepolonia",
+                              "canonical_url": "/pl/articles/welcome-to-stepolonia"
+                            }
+                          ],
+                          "shared": {},
+                          "localized": {
+                            "body": {
+                              "kind": "markdown",
+                              "value": "Community stories and **events**."
+                            },
+                            "slug": {
+                              "kind": "string",
+                              "value": "welcome-to-stepolonia"
+                            },
+                            "title": {
+                              "kind": "string",
+                              "value": "Welcome to Stepolonia"
+                            }
+                          },
+                          "relations": []
+                        }
+                      ],
+                      "next_offset": null
+                    }
+                  },
+                  "page": {
+                    "summary": "First page with limit=1 and another item available",
+                    "value": {
+                      "items": [
+                        {
+                          "item_id": "88888888-8888-4888-8888-888888888888",
+                          "type_key": "article",
+                          "schema_no": "1",
+                          "publication_id": "99999999-9999-4999-8999-999999999999",
+                          "language": "pl",
+                          "slug": "community-news",
+                          "canonical_url": "/pl/articles/community-news",
+                          "translations": [
+                            {
+                              "language": "pl",
+                              "slug": "community-news",
+                              "canonical_url": "/pl/articles/community-news"
+                            }
+                          ],
+                          "shared": {},
+                          "localized": {
+                            "body": {
+                              "kind": "markdown",
+                              "value": "Read the latest community news."
+                            },
+                            "slug": {
+                              "kind": "string",
+                              "value": "community-news"
+                            },
+                            "title": {
+                              "kind": "string",
+                              "value": "Community news"
+                            }
+                          },
+                          "relations": []
+                        }
+                      ],
+                      "next_offset": 1
+                    }
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicPage"
                 }
               }
             },
-            "description": "OK"
+            "description": "Published public content from the current publication in the exact requested language."
           },
           "400": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "The request parameters are invalid.",
+                  "code": "invalid_parameters"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "Invalid, missing, repeated, empty or unsupported query parameters, malformed language, type key, slug or pagination. Codes include invalid_parameters, invalid_language, invalid_type_key, invalid_slug, invalid_page and invalid_value."
           },
           "404": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "The requested resource was not found.",
+                  "code": "content_not_found"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Not Found"
+            "description": "The collection, language or published translation is unavailable. Code content_not_found."
           },
           "409": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "The published version has changed.",
+                  "code": "version_conflict"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Conflict"
+            "description": "A database serialization, deadlock or lock conflict interrupted the read. Codes version_conflict and route_conflict. Retry the request."
           },
           "503": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Service Unavailable",
+                  "status": 503,
+                  "detail": "A required dependency is unavailable.",
+                  "code": "database_unavailable"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
         "summary": "List published collection content"
@@ -829,30 +1362,46 @@
     },
     "/api/v1/content/{type_key}/{slug}": {
       "get": {
+        "description": "Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.",
         "operationId": "getContent",
         "parameters": [
           {
+            "description": "Public Registry collection key. Unknown or non-public collections return 404.",
             "in": "path",
             "name": "type_key",
             "required": true,
             "schema": {
+              "description": "Public Registry collection key. Unknown or non-public collections return 404.",
+              "examples": [
+                "article"
+              ],
               "type": "string"
             }
           },
           {
+            "description": "Current or historical slug in the requested language, at most 200 characters. Historical slugs return a canonical redirect.",
             "in": "path",
             "name": "slug",
             "required": true,
             "schema": {
+              "description": "Current or historical slug in the requested language, at most 200 characters. Historical slugs return a canonical redirect.",
+              "examples": [
+                "welcome-to-stepolonia"
+              ],
               "type": "string"
             }
           },
           {
+            "description": "Required BCP 47 content language. The exact published translation is resolved, with no fallback.",
             "explode": false,
             "in": "query",
             "name": "language",
             "required": true,
             "schema": {
+              "description": "Required BCP 47 content language. The exact published translation is resolved, with no fallback.",
+              "examples": [
+                "pl"
+              ],
               "type": "string"
             }
           }
@@ -861,15 +1410,107 @@
           "200": {
             "content": {
               "application/json": {
+                "examples": {
+                  "article": {
+                    "summary": "Published Article with exact-language public fields",
+                    "value": {
+                      "item_id": "11111111-1111-4111-8111-111111111111",
+                      "type_key": "article",
+                      "schema_no": "1",
+                      "publication_id": "22222222-2222-4222-8222-222222222222",
+                      "language": "pl",
+                      "slug": "welcome-to-stepolonia",
+                      "canonical_url": "/pl/articles/welcome-to-stepolonia",
+                      "translations": [
+                        {
+                          "language": "pl",
+                          "slug": "welcome-to-stepolonia",
+                          "canonical_url": "/pl/articles/welcome-to-stepolonia"
+                        }
+                      ],
+                      "shared": {},
+                      "localized": {
+                        "body": {
+                          "kind": "markdown",
+                          "value": "Community stories and **events**."
+                        },
+                        "slug": {
+                          "kind": "string",
+                          "value": "welcome-to-stepolonia"
+                        },
+                        "title": {
+                          "kind": "string",
+                          "value": "Welcome to Stepolonia"
+                        }
+                      },
+                      "relations": []
+                    }
+                  },
+                  "event": {
+                    "summary": "Published Event with boolean, exact decimal and same-language Article relation",
+                    "value": {
+                      "item_id": "44444444-4444-4444-8444-444444444444",
+                      "type_key": "event",
+                      "schema_no": "1",
+                      "publication_id": "55555555-5555-4555-8555-555555555555",
+                      "language": "pl",
+                      "slug": "community-meetup",
+                      "canonical_url": "/pl/events/community-meetup",
+                      "translations": [
+                        {
+                          "language": "pl",
+                          "slug": "community-meetup",
+                          "canonical_url": "/pl/events/community-meetup"
+                        }
+                      ],
+                      "shared": {
+                        "featured": {
+                          "kind": "boolean",
+                          "value": true
+                        },
+                        "price": {
+                          "kind": "decimal",
+                          "value": "12.5"
+                        }
+                      },
+                      "localized": {
+                        "body": {
+                          "kind": "markdown",
+                          "value": "Meet the **Stepolonia** community."
+                        },
+                        "slug": {
+                          "kind": "string",
+                          "value": "community-meetup"
+                        },
+                        "title": {
+                          "kind": "string",
+                          "value": "Community meetup"
+                        }
+                      },
+                      "relations": [
+                        {
+                          "field_key": "related",
+                          "targets": [
+                            {
+                              "item_id": "11111111-1111-4111-8111-111111111111",
+                              "canonical_url": "/pl/articles/welcome-to-stepolonia"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicItem"
                 }
               }
             },
-            "description": "OK",
+            "description": "Published public content from the current publication in the exact requested language.",
             "headers": {
               "Location": {
                 "schema": {
+                  "description": "Canonical API address in the same content language, present on historical-slug 301 responses.",
                   "type": "string"
                 }
               }
@@ -878,6 +1519,12 @@
           "301": {
             "content": {
               "application/json": {
+                "examples": {
+                  "redirect": {
+                    "summary": "Historical slug resolved by the Location header",
+                    "value": null
+                  }
+                },
                 "schema": {
                   "type": "null"
                 }
@@ -886,8 +1533,12 @@
             "description": "Historical slug; direct canonical API address in the same language.",
             "headers": {
               "Location": {
+                "description": "Direct canonical API address in the same language.",
                 "required": true,
                 "schema": {
+                  "examples": [
+                    "/api/v1/content/article/welcome-to-stepolonia?language=pl"
+                  ],
                   "type": "string"
                 }
               }
@@ -896,42 +1547,70 @@
           "400": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "The request parameters are invalid.",
+                  "code": "invalid_parameters"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "Invalid, missing, repeated, empty or unsupported query parameters, malformed language, type key, slug or pagination. Codes include invalid_parameters, invalid_language, invalid_type_key, invalid_slug, invalid_page and invalid_value."
           },
           "404": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Not Found",
+                  "status": 404,
+                  "detail": "The requested resource was not found.",
+                  "code": "content_not_found"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Not Found"
+            "description": "The collection, language or published translation is unavailable. Code content_not_found."
           },
           "409": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "The published version has changed.",
+                  "code": "version_conflict"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Conflict"
+            "description": "A database serialization, deadlock or lock conflict interrupted the read. Codes version_conflict and route_conflict. Retry the request."
           },
           "503": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Service Unavailable",
+                  "status": 503,
+                  "detail": "A required dependency is unavailable.",
+                  "code": "database_unavailable"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
         "summary": "Get published content or its canonical address"
@@ -939,11 +1618,35 @@
     },
     "/api/v1/languages": {
       "get": {
+        "description": "Returns active content languages ordered by language code. The array may be empty. This endpoint accepts no query parameters and requires no session. UI catalog availability is reported separately by getSite.",
         "operationId": "listLanguages",
         "responses": {
           "200": {
             "content": {
               "application/json": {
+                "examples": {
+                  "active": {
+                    "summary": "Two active content languages",
+                    "value": [
+                      {
+                        "code": "pl",
+                        "name": "Polish",
+                        "native_name": "Polski",
+                        "direction": "ltr"
+                      },
+                      {
+                        "code": "ru",
+                        "name": "Russian",
+                        "native_name": "Русский",
+                        "direction": "ltr"
+                      }
+                    ]
+                  },
+                  "empty": {
+                    "summary": "No active content languages",
+                    "value": []
+                  }
+                },
                 "schema": {
                   "items": {
                     "$ref": "#/components/schemas/LanguageDTO"
@@ -952,27 +1655,41 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Active content languages ordered by code, including an empty array when none are active."
           },
           "400": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "The request parameters are invalid.",
+                  "code": "invalid_parameters"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "This operation accepts no query parameters. Unknown, repeated, empty or malformed parameters return code invalid_parameters."
           },
           "503": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Service Unavailable",
+                  "status": 503,
+                  "detail": "A required dependency is unavailable.",
+                  "code": "database_unavailable"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
         "summary": "List active content languages"
@@ -980,26 +1697,32 @@
     },
     "/api/v1/site": {
       "get": {
-        "description": "One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private.",
+        "description": "One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
         "operationId": "getSite",
         "parameters": [
           {
-            "description": "Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback.",
+            "description": "Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback. Matching is by normalized exact code.",
             "explode": false,
             "in": "query",
             "name": "lang",
             "schema": {
-              "description": "Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback.",
+              "description": "Optional requested UI language (BCP 47); unavailable catalogs use the configured fallback. Matching is by normalized exact code.",
+              "examples": [
+                "pl"
+              ],
               "type": "string"
             }
           },
           {
-            "description": "Optional opaque UUID from a previous response; a different current publication returns 409.",
+            "description": "Optional opaque UUID from a previous response; a different current publication returns 409. Historical publications cannot be requested.",
             "explode": false,
             "in": "query",
             "name": "version",
             "schema": {
-              "description": "Optional opaque UUID from a previous response; a different current publication returns 409.",
+              "description": "Optional opaque UUID from a previous response; a different current publication returns 409. Historical publications cannot be requested.",
+              "examples": [
+                "33333333-3333-4333-8333-333333333333"
+              ],
               "type": "string"
             }
           }
@@ -1008,42 +1731,159 @@
           "200": {
             "content": {
               "application/json": {
+                "examples": {
+                  "fallback": {
+                    "summary": "French requested, Polish complete catalog selected by fallback",
+                    "value": {
+                      "version": "33333333-3333-4333-8333-333333333333",
+                      "settings": {
+                        "tagline": "Stories from our community",
+                        "notice": "",
+                        "accent": "#2563eb",
+                        "title": "Stepolonia",
+                        "description": "Discover community stories and events.",
+                        "default_language": "pl",
+                        "fallback_language": "pl"
+                      },
+                      "requested_language": "fr",
+                      "language": {
+                        "code": "pl",
+                        "name": "Polish",
+                        "native_name": "Polski",
+                        "direction": "ltr"
+                      },
+                      "languages": [
+                        {
+                          "code": "pl",
+                          "name": "Polish",
+                          "native_name": "Polski",
+                          "direction": "ltr"
+                        }
+                      ],
+                      "messages": {
+                        "all": "Wszystkie",
+                        "articles": "Artykuły",
+                        "empty": "Brak wyników",
+                        "errors.400": "Nieprawidłowe żądanie",
+                        "errors.404": "Nie znaleziono",
+                        "errors.503": "Usługa niedostępna",
+                        "errors.home": "Strona główna",
+                        "errors.other": "Wystąpił błąd",
+                        "errors.retry": "Spróbuj ponownie",
+                        "events": "Wydarzenia",
+                        "languages": "Języki",
+                        "navigation": "Nawigacja",
+                        "next": "Następna",
+                        "pagination": "Strony",
+                        "previous": "Poprzednia"
+                      }
+                    }
+                  },
+                  "omitted": {
+                    "summary": "lang omitted, requested_language empty and fallback catalog selected",
+                    "value": {
+                      "version": "33333333-3333-4333-8333-333333333333",
+                      "settings": {
+                        "tagline": "Stories from our community",
+                        "notice": "",
+                        "accent": "#2563eb",
+                        "title": "Stepolonia",
+                        "description": "Discover community stories and events.",
+                        "default_language": "pl",
+                        "fallback_language": "pl"
+                      },
+                      "requested_language": "",
+                      "language": {
+                        "code": "pl",
+                        "name": "Polish",
+                        "native_name": "Polski",
+                        "direction": "ltr"
+                      },
+                      "languages": [
+                        {
+                          "code": "pl",
+                          "name": "Polish",
+                          "native_name": "Polski",
+                          "direction": "ltr"
+                        }
+                      ],
+                      "messages": {
+                        "all": "Wszystkie",
+                        "articles": "Artykuły",
+                        "empty": "Brak wyników",
+                        "errors.400": "Nieprawidłowe żądanie",
+                        "errors.404": "Nie znaleziono",
+                        "errors.503": "Usługa niedostępna",
+                        "errors.home": "Strona główna",
+                        "errors.other": "Wystąpił błąd",
+                        "errors.retry": "Spróbuj ponownie",
+                        "events": "Wydarzenia",
+                        "languages": "Języki",
+                        "navigation": "Nawigacja",
+                        "next": "Następna",
+                        "pagination": "Strony",
+                        "previous": "Poprzednia"
+                      }
+                    }
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/Publication"
                 }
               }
             },
-            "description": "OK"
+            "description": "One atomic publication with settings and a complete UI catalog, possibly using the configured fallback."
           },
           "400": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "detail": "The request parameters are invalid.",
+                  "code": "invalid_parameters"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "Invalid or ambiguous query parameters. Codes invalid_parameters, invalid_language and invalid_version."
           },
           "409": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "The published version has changed.",
+                  "code": "site_version_conflict"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Conflict"
+            "description": "The supplied version differs from the current publication, or a database read conflict occurred. Code site_version_conflict. Read again without version to obtain the current publication."
           },
           "503": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Service Unavailable",
+                  "status": 503,
+                  "detail": "A required dependency is unavailable.",
+                  "code": "site_configuration_unavailable"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
           }
         },
         "summary": "Read published site settings and one complete UI catalog"
@@ -1051,56 +1891,81 @@
     },
     "/health/live": {
       "get": {
+        "description": "Returns 200 without querying PostgreSQL. This probe does not establish database readiness or the presence of published content. Use the readiness probe before routing application traffic.",
         "operationId": "liveness",
         "responses": {
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "status": "ok",
+                  "service": "sp-api"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/HealthOutputBody"
                 }
               }
             },
-            "description": "OK"
+            "description": "The probe succeeded; inspect this operation's description for the dependencies it checks."
           },
           "default": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Internal Server Error",
+                  "status": 500,
+                  "detail": "An unexpected HTTP processing error occurred."
+                },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorModel"
                 }
               }
             },
-            "description": "Error"
+            "description": "An unexpected HTTP processing error; this is distinct from the documented database readiness failure."
           }
-        }
+        },
+        "summary": "Check whether the API process is responding"
       }
     },
     "/health/ready": {
       "get": {
+        "description": "Pings the configured runtime database with a one-second deadline. Returns 503 when the database is unavailable; a successful probe does not establish that site settings or content have been published.",
         "operationId": "readiness",
         "responses": {
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "status": "ok",
+                  "service": "sp-api"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/HealthOutputBody"
                 }
               }
             },
-            "description": "OK"
+            "description": "The probe succeeded; inspect this operation's description for the dependencies it checks."
           },
           "503": {
             "content": {
               "application/problem+json": {
+                "example": {
+                  "type": "about:blank",
+                  "title": "Service Unavailable",
+                  "status": 503,
+                  "detail": "A required dependency is unavailable.",
+                  "code": "database_unavailable"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/PublicProblem"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "The database ping failed or exceeded its deadline; this API instance is not ready."
           }
-        }
+        },
+        "summary": "Check whether the API can reach PostgreSQL"
       }
     }
   }

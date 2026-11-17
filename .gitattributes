@@ -1,0 +1,4 @@
+# Preserve upstream distributions and bundled license formatting verbatim.
+apps/api/internal/platform/docsassets/*.js linguist-vendored
+apps/api/internal/platform/docsassets/*.css linguist-vendored
+apps/api/internal/platform/docsassets/*.LICENSE.txt linguist-vendored -whitespace
