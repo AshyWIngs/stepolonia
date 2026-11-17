@@ -55,7 +55,7 @@ if (process.argv.includes('--unavailable')) {
   assert.equal(event.data.type_key, 'event')
   assert.equal(event.data.shared.featured.kind, 'boolean')
   assert.equal(typeof event.data.shared.featured.value, 'boolean')
-  assert.match(event.data.schema_no, /^[1-9][0-9]*$/u)
+  assert.match(event.data.schema_no, /^[1-9]\d*$/u)
   assert.ok(!JSON.stringify(event.data).includes('private-event-secret'))
   const exact = event.data.shared.price
   assert.equal(exact.kind, 'decimal')

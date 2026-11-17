@@ -70,7 +70,7 @@ func prepareContent(t *testing.T, db *sql.DB) {
 	_, err = provider.Up(context.Background())
 	must(t, err)
 	must(t, SeedInitialRegistry(context.Background(), db))
-	_, err = db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled) VALUES('ru','Russian','Русский','ltr',true),('en','English','English','ltr',true),('pl','Polish','Polski','ltr',true),('fr','French','Français','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
+	_, err = db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled) VALUES('ru','Russian','Русский','ltr',true),('en','English','English','ltr',true),('kk','Kazakh','Қазақша','ltr',true),('pl','Polish','Polski','ltr',true),('fr','French','Français','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
 	must(t, err)
 }
 func typeID(t *testing.T, db *sql.DB, key string) string {
@@ -85,7 +85,7 @@ func stringValue(value string) FieldValue {
 }
 func fullLocale(slug string) ValuePatch {
 	body, _ := json.Marshal("A safe **published** body.")
-	return ValuePatch{Values: map[string]FieldValue{titleFieldKey: stringValue("Published " + slug), slugFieldKey: stringValue(slug), bodyFieldKey: {kindMarkdown, body}}}
+	return ValuePatch{Values: map[string]FieldValue{titleFieldKey: stringValue("Title " + slug), slugFieldKey: stringValue(slug), bodyFieldKey: {kindMarkdown, body}}}
 }
 func createTestDraft(t *testing.T, s *Service, typeID string, locales map[string]ValuePatch) DraftState {
 	t.Helper()

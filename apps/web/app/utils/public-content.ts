@@ -33,7 +33,7 @@ export function contentPath(namespace: ContentNamespace, language: string, slug?
 export function contentRedirect(location: string | null, namespace: ContentNamespace, language: string, original: string): string {
   const prefix = `/api/v1/content/${contentType(namespace)}/`
   if (!location?.startsWith(prefix)) throw publicError(503)
-  const match = location.slice(prefix.length).match(/^([a-z0-9]+(?:-[a-z0-9]+)*)\?language=([^&#]+)$/u)
+  const match = /^([a-z0-9]+(?:-[a-z0-9]+)*)\?language=([^&#]+)$/u.exec(location.slice(prefix.length))
   if (!match?.[1] || match[1].length > 200 || match[2] !== encodeURIComponent(language)) throw publicError(503)
   const destination = contentPath(namespace, language, match[1])
   if (destination === original) throw publicError(503)

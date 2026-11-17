@@ -157,6 +157,7 @@ func qaRawImmutability(t *testing.T, s *Service, state DraftState) {
 	for i, check := range cases {
 		tx, err := s.db.Begin()
 		must(t, err)
+		defer func() { _ = tx.Rollback() }()
 		_, err = tx.Exec(`SET LOCAL ROLE sp_publisher`)
 		must(t, err)
 		_, err = tx.Exec(check.query, check.args...)
@@ -313,6 +314,7 @@ func qaUnsealedCommits(t *testing.T, db *sql.DB, state DraftState) {
 	} {
 		tx, err := db.Begin()
 		must(t, err)
+		defer func() { _ = tx.Rollback() }()
 		_, err = tx.Exec(`SET LOCAL ROLE sp_publisher`)
 		must(t, err)
 		if strings.Contains(query, "$3") {
