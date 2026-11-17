@@ -106,6 +106,7 @@ SITE ?= another.test
 | `make lifecycle` | Проверить остановку и восстановление локального стека |
 | `make isolation` | Проверить отдельную временную установку и PostgreSQL dump/restore |
 | `make db-test` | Создать временную PostgreSQL, проверить схему и инструменты, удалить тестовые ресурсы |
+| `make resource-test` | Проверить одну одноразовую установку на общем CPU с суммой RAM-лимитов 1216 MiB без swap; Linux-хост целиком не моделируется |
 | `make publishing-test` | Проверить SDK/SSR, браузерную навигацию и восстановление после остановки одноразовых API и БД |
 
 Все команды принимают `SITE=...`. `lifecycle` временно останавливает выбранный
@@ -208,6 +209,8 @@ Runtime читает только `public_languages`, `public_article_translatio
 описаний, публичные права и защищённый откат. Локальные файловые ограничения
 дополнительно проверяются командой `python3 -m unittest discover -s scripts/tests -v`.
 GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`.
+
+Для `make resource-test` нужны Docker с доступным CPU 0, Go, Node.js и установленные зависимости `apps/web` с Chromium (`npm ci --ignore-scripts`, затем `node node_modules/playwright/cli.js install chromium` из `apps/web`). Проверка использует небольшой синтетический набор данных и постоянные HTTP-соединения; параметры отдельного запуска: `python3 scripts/test-resources.py --seconds 60 --concurrency 4`. JSON и логи сохраняются в `reports/`; замеры `docker stats` являются дискретными наблюдениями, а не пиком всей памяти Linux-хоста. Сборка и генератор нагрузки работают вне проверяемого контейнерного бюджета.
 
 Монитор [PR CI Watch](.github/workflows/ci-watch.yml) проверяет четыре
 обязательных GitHub Gate примерно раз в 10 минут и оставляет комментарий при
