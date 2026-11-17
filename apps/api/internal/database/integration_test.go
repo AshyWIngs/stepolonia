@@ -30,7 +30,7 @@ const (
 	insertOriginalRussianTranslationSQL = "INSERT INTO public.article_revision_translations(article_id,revision_id,language_code,title,slug,body_markdown)VALUES($1,$2,'ru','Public','original','Body')"
 	setPublishedRevisionSQL             = "UPDATE public.articles SET published_revision_id=$1 WHERE id=$2"
 	sealRevisionSQL                     = "UPDATE public.article_revisions SET sealed=true WHERE id=$1"
-	appliedMigrationVersionSQL          = "SELECT max(version_id) FROM public.goose_db_version WHERE is_applied"
+	appliedMigrationVersionSQL          = "SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM public.goose_db_version ORDER BY version_id,id DESC) latest WHERE is_applied"
 	russianEnabledSQL                   = "SELECT is_enabled FROM public.languages WHERE code='ru'"
 	backendPIDSQL                       = "SELECT pg_backend_pid()"
 )
@@ -160,7 +160,7 @@ func testRuntimeGrantRecovery(t *testing.T, ctx context.Context, db *sql.DB) {
 	assertSQLState(t, Up(ctx, db, runtimeTestRole), "42501")
 	var version int
 	requireNoError(t, db.QueryRowContext(ctx, appliedMigrationVersionSQL).Scan(&version))
-	if version != 1 {
+	if int64(version) != finalMigrationVersion {
 		t.Fatal("grant failure lost the committed goose migration")
 	}
 	requireNoError(t, CheckSchema(ctx, db))
@@ -201,7 +201,7 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	}
 	requireNoError(t, db.QueryRowContext(ctx, defaultACL).Scan(&afterDefaults))
 	var noDDL bool
-	requireNoError(t, db.QueryRowContext(ctx, "SELECT to_regclass('public.languages') IS NULL AND to_regclass('public.articles') IS NULL AND (SELECT max(version_id)=0 FROM public.goose_db_version WHERE is_applied)").Scan(&noDDL))
+	requireNoError(t, db.QueryRowContext(ctx, "SELECT to_regclass('public.languages') IS NULL AND to_regclass('public.articles') IS NULL AND (SELECT COALESCE(max(version_id),0)=0 FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM public.goose_db_version ORDER BY version_id,id DESC) latest WHERE is_applied)").Scan(&noDDL))
 	if !noDDL || beforeDefaults != afterDefaults {
 		t.Fatal("default ACL preflight modified schema or defaults")
 	}
@@ -255,7 +255,7 @@ func testFreshMigrationLifecycle(t *testing.T, ctx context.Context, db *sql.DB) 
 	}
 	var version int
 	requireNoError(t, db.QueryRowContext(ctx, appliedMigrationVersionSQL).Scan(&version))
-	if version != 1 {
+	if int64(version) != finalMigrationVersion {
 		t.Fatal("rejected down changed migration history")
 	}
 	requireNoError(t, Down(ctx, db, os.Getenv(disposableTokenEnv)))

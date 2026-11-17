@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Канонические определения сняты с чистой 00001 на PostgreSQL 18.
+// Canonical definitions describe the complete domain migration set on PostgreSQL 18.
 // Контракт ограничен publishing: сравниваем текст pg_get_* целиком, сохраняя
 // пробелы внутри SQL literals и тел функций. Смена major требует проверки контракта.
 type publishingContract struct {
