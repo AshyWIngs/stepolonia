@@ -9,17 +9,24 @@ import (
 	"testing"
 )
 
+const seoFixtureMode = "seo"
+
 func TestContentRuntimeFixture(t *testing.T) {
 	mode := os.Getenv("STAGE32_CONTENT_FIXTURE")
-	if mode != "primary" && mode != "seo" {
+	if mode != "primary" && mode != seoFixtureMode {
 		t.Skip("NOT RUN: explicit content runtime fixture mode required")
 	}
 	db := contentDatabase(t)
-	prepareContent(t, db)
-	if os.Getenv("STAGE32_CONTENT_FIXTURE") == "seo" {
+	populateRuntimeFixture(t, db, mode)
+}
+
+func populateRuntimeFixture(t *testing.T, db *sql.DB, mode string) {
+	t.Helper()
+	if mode == seoFixtureMode {
 		createSEOFixture(t, db)
 		return
 	}
+	prepareContent(t, db)
 	s := testService(db)
 	ctx := context.Background()
 	article := typeID(t, db, initialArticleKey)
@@ -79,9 +86,31 @@ func createSEOFixture(t *testing.T, db *sql.DB) {
 			locales["qaa"] = fullLocale(slug)
 			intended = append(intended, "qaa")
 		}
+		for code, patch := range locales {
+			patch.Values[titleFieldKey] = stringValue("SEO fixture " + strconv.Itoa(index))
+			locales[code] = patch
+		}
 		state := createTestDraft(t, s, article, locales)
 		state = readyTestDraft(t, s, state, intended...)
 		_, err := s.Publish(context.Background(), Actor{}, state.ItemID, state.Version, state.SchemaNo, intended)
 		must(t, err)
+	}
+}
+
+func TestContentSEOFixtureIsolation(t *testing.T) {
+	db := contentDatabase(t)
+	prepareContent(t, db)
+	_, err := db.Exec(`UPDATE public.languages SET is_enabled=false WHERE code IN ('ru','kk')`)
+	must(t, err)
+	populateRuntimeFixture(t, db, seoFixtureMode)
+	var preserved bool
+	must(t, db.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM public.languages WHERE code IN ('ru','kk') AND is_enabled) AND (SELECT count(*)=21 FROM public.public_content_items WHERE language_code='fr')`).Scan(&preserved))
+	if !preserved {
+		t.Fatal("SEO fixture changed an existing installation's language state")
+	}
+	var title string
+	must(t, db.QueryRow(`SELECT localized_values->>'title' FROM public.public_content_items WHERE slug='seo-fixture-21' AND language_code='fr'`).Scan(&title))
+	if title != "SEO fixture 21" {
+		t.Fatal("SEO fixture did not preserve its content contract")
 	}
 }
