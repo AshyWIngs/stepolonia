@@ -10,12 +10,16 @@ import (
 	"time"
 )
 
+const statusFormat = "status %d"
+const sameTestOrigin = "same"
+
 const testToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 type fakeAuth struct {
 	AuthService
-	calls int
-	req   cms.AuthRequest
+	calls     int
+	logoutErr error
+	req       cms.AuthRequest
 }
 
 func (s *fakeAuth) NewPreauthFor(context.Context, cms.AuthRequest) (cms.SessionTokens, error) {
@@ -88,7 +92,7 @@ func TestTransportRejectsBeforeService(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := request(t, server, http.MethodPost, tc.path, tc.body, tc.origin, tc.media, tc.csrf)
 			if res.StatusCode != tc.status {
-				t.Fatalf("status %d", res.StatusCode)
+				t.Fatalf(statusFormat, res.StatusCode)
 			}
 		})
 	}
@@ -119,11 +123,46 @@ func TestLoginCookieAndUntrustedForwardedIP(t *testing.T) {
 		t.Fatal("missing restricted login cookie")
 	}
 }
-func TestLogoutClearsCookiesOnOriginFailure(t *testing.T) {
-	server := tlsServer(t, &fakeAuth{})
-	res := request(t, server, http.MethodPost, logoutPath, "{}", nullOrigin, jsonType, testToken)
-	if res.StatusCode != 403 {
-		t.Fatal(res.StatusCode)
+func TestLogoutCookieBoundary(t *testing.T) {
+	cases := []struct {
+		name, method, origin, csrf string
+		serviceErr                 error
+		status                     int
+		cleared                    bool
+	}{
+		{"cross origin", http.MethodPost, nullOrigin, testToken, nil, 403, false},
+		{"missing origin GET", http.MethodGet, "", testToken, nil, 403, false},
+		{"same origin GET", http.MethodGet, sameTestOrigin, testToken, nil, 405, false},
+		{"missing CSRF", http.MethodPost, sameTestOrigin, "", nil, 403, false},
+		{"forged CSRF", http.MethodPost, sameTestOrigin, testToken, cms.ErrCSRF, 403, false},
+		{"expired session", http.MethodPost, sameTestOrigin, testToken, cms.ErrAuthenticationRequired, 401, true},
+		{"security unavailable", http.MethodPost, sameTestOrigin, testToken, cms.ErrSecurityUnavailable, 503, false},
+		{"valid logout", http.MethodPost, sameTestOrigin, testToken, nil, 204, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &fakeAuth{logoutErr: tc.serviceErr}
+			server := tlsServer(t, service)
+			origin := tc.origin
+			if origin == sameTestOrigin {
+				origin = server.URL
+			}
+			res := request(t, server, tc.method, logoutPath, "{}", origin, jsonType, tc.csrf)
+			if res.StatusCode != tc.status {
+				t.Fatalf(statusFormat, res.StatusCode)
+			}
+			assertLogoutCookies(t, res, tc.cleared)
+		})
+	}
+}
+
+func assertLogoutCookies(t *testing.T, res *http.Response, cleared bool) {
+	t.Helper()
+	if !cleared {
+		if len(res.Cookies()) != 0 {
+			t.Fatal("denied logout changed browser cookies")
+		}
+		return
 	}
 	if len(res.Cookies()) != len(cookieNames) {
 		t.Fatal("logout did not clear all cookies")
@@ -134,6 +173,12 @@ func TestLogoutClearsCookiesOnOriginFailure(t *testing.T) {
 		}
 	}
 }
+
+func (s *fakeAuth) Logout(context.Context, cms.AuthRequest, string) error {
+	s.calls++
+	return s.logoutErr
+}
+
 func TestCanonicalOriginAndProxyTrust(t *testing.T) {
 	for _, origin := range []string{"http://cms.test", "https://cms.test/", "https://user@cms.test", "https://cms.test?", "https://cms.test#x", "https://CMS.test", "https://cms.test:", "https://cms.test:65536"} {
 		if _, err := NewHandler(Config{CanonicalOrigin: origin}, &fakeAuth{}); err == nil {
@@ -252,7 +297,7 @@ func TestBrowserCSRFMetadata(t *testing.T) {
 			}
 			_ = res.Body.Close()
 			if res.StatusCode != tc.status {
-				t.Fatalf("status %d", res.StatusCode)
+				t.Fatalf(statusFormat, res.StatusCode)
 			}
 		})
 	}

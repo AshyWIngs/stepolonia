@@ -4,18 +4,46 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // CheckSecurity verifies the dedicated authentication login and effective privileges.
 func CheckSecurity(ctx context.Context, db *sql.DB) error {
+	connection, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = connection.Close() }()
+	var login string
+	if err = connection.Raw(func(driver any) error {
+		postgres, ok := driver.(*stdlib.Conn)
+		if !ok {
+			return fmt.Errorf("authentication pool requires the PostgreSQL driver")
+		}
+		login = postgres.Conn().Config().User
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err = checkSecurityConnection(ctx, connection, login); err != nil {
+		return err
+	}
+	if err = connection.Close(); err != nil {
+		return err
+	}
+	return checkSecurityDefinitions(ctx, db)
+}
+
+func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login string) error {
 	var safe bool
-	err := db.QueryRowContext(ctx, `WITH effective AS (
+	err := connection.QueryRowContext(ctx, `WITH effective AS (
  SELECT c.oid,c.relname,p.privilege
  FROM pg_catalog.pg_class c
  CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(privilege)
  WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','v')
  ) SELECT
- r.rolcanlogin AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
+ current_user=session_user AND session_user=$1 AND r.rolcanlogin AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
  AND r.oid<>(SELECT datdba FROM pg_catalog.pg_database WHERE datname=current_database())
  AND pg_catalog.pg_has_role(r.oid,'sp_security','USAGE')
  AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolname='sp_security'
@@ -41,14 +69,14 @@ func CheckSecurity(ctx context.Context, db *sql.DB) error {
  WHEN 'UPDATE' THEN e.relname IN ('users','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts')
  WHEN 'DELETE' THEN e.relname IN ('auth_attempts','sessions')
  ELSE false END)
- FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`).Scan(&safe)
+ FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login).Scan(&safe)
 	if err != nil {
 		return fmt.Errorf("check authentication pool privileges: %w", err)
 	}
 	if !safe {
 		return fmt.Errorf("authentication pool requires an isolated login inheriting only sp_security")
 	}
-	return checkSecurityDefinitions(ctx, db)
+	return nil
 }
 
 func checkSecurityDefinitions(ctx context.Context, db *sql.DB) error {

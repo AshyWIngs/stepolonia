@@ -95,9 +95,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, authPrefix)
-	if path == logoutPath {
-		clearCookies(w)
-	}
 	ip, code := h.boundary.check(r)
 	if code != "" {
 		status := http.StatusForbidden
@@ -231,6 +228,11 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request, path, kind str
 		err = h.service.Logout(r.Context(), req, kind)
 	}
 	if err != nil {
+		// Expired credentials may clear browser state only after the request
+		// passed the same-origin POST, JSON and CSRF header boundary.
+		if path == logoutPath && errors.Is(err, cms.ErrAuthenticationRequired) {
+			clearCookies(w)
+		}
 		writeError(w, err)
 		return
 	}

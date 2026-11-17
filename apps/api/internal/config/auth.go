@@ -48,8 +48,10 @@ func Authentication(runtime *pgxpool.Config) (*AuthenticationConfig, error) {
 	}
 	db := runtime.Copy()
 	db.ConnConfig.User, db.ConnConfig.Password = user, strings.TrimSpace(string(password))
-	db.ConnConfig.RuntimeParams["application_name"] = "sp-cms-auth"
-	db.ConnConfig.RuntimeParams["statement_timeout"] = "15000"
+	// Public pool startup options and hooks must never change the private login.
+	db.ConnConfig.RuntimeParams = map[string]string{"application_name": "sp-cms-auth", "statement_timeout": "15000"}
+	db.AfterConnect, db.BeforeConnect = nil, nil
+	db.ConnConfig.AfterConnect = nil
 	db.MaxConns = 4
 	var peers []string
 	if raw := os.Getenv("CMS_AUTH_PROXY_CIDRS"); raw != "" {

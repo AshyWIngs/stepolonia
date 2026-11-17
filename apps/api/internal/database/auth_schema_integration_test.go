@@ -41,6 +41,7 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	security := Open(cfg)
 	defer func() { _ = security.Close() }()
 	requireNoError(t, CheckSecurity(ctx, security))
+	testSecurityLoginIdentity(t, cfg)
 	for _, query := range []string{
 		`SELECT * FROM public.public_content_items`,
 		`SELECT * FROM public.security_audit`,
@@ -70,6 +71,27 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	_, err = db.Exec("REVOKE sp_publisher FROM " + quoted)
 	requireNoError(t, err)
 	requireNoError(t, CheckSecurity(ctx, security))
+}
+
+func testSecurityLoginIdentity(t *testing.T, safe *pgx.ConnConfig) {
+	t.Helper()
+	for _, option := range []string{"role", "session_authorization", "options"} {
+		t.Run(option, func(t *testing.T) {
+			owner := cmsDisposableDatabaseConfig(t)
+			owner.Database = safe.Database
+			value := safe.User
+			if option == "options" {
+				value = "-c session_authorization=" + safe.User
+			}
+			owner.RuntimeParams[option] = value
+			masked := Open(owner)
+			defer func() { _ = masked.Close() }()
+			requireNoError(t, masked.PingContext(context.Background()))
+			if err := CheckSecurity(context.Background(), masked); err == nil {
+				t.Fatal("authentication pool accepted privileged authenticated login hidden by startup options")
+			}
+		})
+	}
 }
 
 func testAuthRecoveryReservation(t *testing.T, db *sql.DB) {

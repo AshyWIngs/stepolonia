@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"stepolonia/apps/api/internal/cms"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestBrowserCSRF(t *testing.T) {
 	}))
 	defer server.Close()
 	var err error
-	auth, err = NewHandler(Config{CanonicalOrigin: server.URL}, &fakeAuth{})
+	auth, err = NewHandler(Config{CanonicalOrigin: server.URL}, &fakeAuth{logoutErr: cms.ErrCSRF})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,13 @@ const { chromium } = require('../../../web/node_modules/playwright');
   if (result.status !== 200 || !result.body.csrf_token) throw new Error(JSON.stringify(result));
   const cookies = await context.cookies();
   if (!cookies.some(c => c.name === '__Host-sp_preauth' && c.secure && c.httpOnly && c.sameSite === 'Strict')) throw new Error('restricted cookie missing');
+  await page.goto(process.env.CMS_BROWSER_ORIGIN + '/api/v1/admin/auth/logout');
+  if (!(await context.cookies()).some(c => c.name === '__Host-sp_preauth')) throw new Error('GET logout deleted cookie');
+  const denied = await page.evaluate(async () => (await fetch('/api/v1/admin/auth/logout', {
+   method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(43) }, body: '{}'
+  })).status);
+  if (denied !== 403 || !(await context.cookies()).some(c => c.name === '__Host-sp_preauth')) throw new Error('forged CSRF logout changed cookie');
+
  } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `

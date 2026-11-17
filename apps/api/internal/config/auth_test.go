@@ -93,3 +93,20 @@ func TestPrivateCredentialFileSafety(t *testing.T) {
 		t.Fatal("followed key symlink")
 	}
 }
+
+func TestAuthenticationDoesNotInheritRoleSwitch(t *testing.T) {
+	for _, option := range []string{"role", "session_authorization", "options"} {
+		t.Run(option, func(t *testing.T) {
+			runtime, _, _ := authEnvironment(t)
+			runtime.ConnConfig.RuntimeParams[option] = "masked_owner"
+			cfg, err := Authentication(runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer clear(cfg.Service.EncryptionKey)
+			if len(cfg.Database.ConnConfig.RuntimeParams) != 2 || cfg.Database.ConnConfig.RuntimeParams[option] != "" {
+				t.Fatal("private pool inherited a role-switching option")
+			}
+		})
+	}
+}
