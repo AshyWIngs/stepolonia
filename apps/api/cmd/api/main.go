@@ -58,8 +58,16 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer closeAuth()
+	docs, err := config.DocumentationEnabled()
+	if err != nil {
+		return err
+	}
+	handler := platform.HandlerWithAuth(pool, content.NewPublicReader(runtimeDB), logger, auth, siteconfig.NewReader(runtimeDB))
+	if docs {
+		handler = platform.HandlerWithDocumentation(pool, content.NewPublicReader(runtimeDB), logger, auth, siteconfig.NewReader(runtimeDB))
+	}
 	server := &http.Server{
-		Addr: ":8080", Handler: platform.HandlerWithAuth(pool, content.NewPublicReader(runtimeDB), logger, auth, siteconfig.NewReader(runtimeDB)),
+		Addr: ":8080", Handler: handler,
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 		MaxHeaderBytes: 16 << 10,

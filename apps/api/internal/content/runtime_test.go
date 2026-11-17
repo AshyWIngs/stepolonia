@@ -58,7 +58,7 @@ func createEventRuntimeFixture(t *testing.T, s *Service) {
 	t.Helper()
 	ctx := context.Background()
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	input.Fields = append(input.Fields, Definition{Key: featuredFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "price", Kind: kindDecimal, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "secret", Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate})
 	schema, err := s.CreateType(ctx, Actor{}, input)

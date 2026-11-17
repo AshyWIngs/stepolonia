@@ -19,8 +19,8 @@ type Pinger interface {
 
 type healthOutput struct {
 	Body struct {
-		Status  string `json:"status"`
-		Service string `json:"service"`
+		Status  string `json:"status" doc:"Probe outcome; ok means this probe succeeded." example:"ok"`
+		Service string `json:"service" doc:"Stable identifier of the responding API service." example:"sp-api"`
 	}
 }
 
@@ -42,9 +42,21 @@ func Handler(db Pinger, reader *content.PublicReader, logger *slog.Logger, site 
 // HandlerWithAuth mounts an independently configured private authentication boundary.
 // Authentication routes never enter the public OpenAPI/SDK contract.
 func HandlerWithAuth(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, site ...*siteconfig.Reader) http.Handler {
-	mux, _ := newAPI(db, reader, logger, site...)
+	return handlerWithDocumentation(db, reader, logger, auth, false, site...)
+}
+
+// HandlerWithDocumentation enables same-origin development documentation.
+func HandlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, site ...*siteconfig.Reader) http.Handler {
+	return handlerWithDocumentation(db, reader, logger, auth, true, site...)
+}
+
+func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, docs bool, site ...*siteconfig.Reader) http.Handler {
+	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
+	}
+	if docs {
+		registerDocumentation(mux, api, auth != nil)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -69,12 +81,16 @@ func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site .
 	api := humago.New(mux, cfg)
 	huma.Register(api, huma.Operation{
 		OperationID: "liveness", Method: http.MethodGet, Path: "/health/live",
+		Summary:     "Check whether the API process is responding",
+		Description: "Returns 200 without querying PostgreSQL. This probe does not establish database readiness or the presence of published content. Use the readiness probe before routing application traffic.",
 	}, func(context.Context, *struct{}) (*healthOutput, error) {
 		return healthy(), nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "readiness", Method: http.MethodGet, Path: "/health/ready",
-		Responses: problemResponses(api, http.StatusServiceUnavailable),
+		Summary:     "Check whether the API can reach PostgreSQL",
+		Description: "Pings the configured runtime database with a one-second deadline. Returns 503 when the database is unavailable; a successful probe does not establish that site settings or content have been published.",
+		Responses:   problemResponses(api, http.StatusServiceUnavailable),
 	}, func(ctx context.Context, _ *struct{}) (*healthOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
@@ -90,6 +106,8 @@ func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site .
 		siteReader = site[0]
 	}
 	registerSite(api, siteReader, logger)
+	documentHealth(api)
+	documentContentExamples(api)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(contentTypeHeader, problemJSONMediaType)
 		w.WriteHeader(http.StatusNotFound)

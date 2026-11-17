@@ -32,6 +32,23 @@ Markdown преобразуется в разрешённые Vue-узлы. Из
 
 ## Локальный запуск
 
+Для публичного API и Swagger UI выполните `make swagger` из корня `code/`.
+Нужны Docker, Go из `apps/api/go.mod` и Python из `.python-version`.
+Команда создаёт собственную одноразовую PostgreSQL и запускает API на
+[http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs). Спецификация доступна
+по `/openapi.json`. `Ctrl-C` останавливает API и удаляет созданную БД.
+Для другого HTTP-порта используйте `python3 scripts/dev-swagger.py --port 8081`.
+
+Fixture содержит опубликованные `article` и `event` на языке `pl`. В Swagger
+используйте `welcome-to-stepolonia` и `community-meetup` для чтения по slug,
+`limit=1` для pagination, `welcome-old` для 301 с `Location`, `/api/v1/site?lang=fr`
+для fallback на полный польский UI-каталог. `lang` и `language` принадлежат разным
+контрактам. Runtime-подключение имеет только чтение публичных представлений.
+Private auth-маршруты в этом запуске выключены. Подготовка fixture выполняется
+отдельным owner-подключением до запуска HTTP. Данные синтетические и исчезают
+при остановке. Основной запуск установки описан далее.
+
+
 Нужны Docker с Compose/BuildKit, CPython из `.python-version` и Make. Go и Node.js на хосте
 не требуются. Первые сборки требуют доступа к интернету.
 

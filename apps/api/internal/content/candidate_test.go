@@ -13,7 +13,7 @@ func TestContentD4Integration(t *testing.T) {
 	s := testService(db)
 	ctx := context.Background()
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	input.Fields = append(input.Fields, Definition{Key: featuredFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic})
 	schema, err := s.CreateType(ctx, Actor{}, input)
@@ -85,7 +85,7 @@ func TestContentRelationsIntegration(t *testing.T) {
 	target, err := s.Publish(ctx, Actor{}, target.ItemID, target.Version, 1, []string{"ru"})
 	must(t, err)
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	input.Fields = append(input.Fields, Definition{Key: "related", Kind: kindRelation, Scope: scopeShared, Visibility: visibilityPublic, TargetTypeID: article})
 	schema, err := s.CreateType(ctx, Actor{}, input)

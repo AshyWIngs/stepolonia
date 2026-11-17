@@ -22,7 +22,7 @@ func testCommandProjection(t *testing.T, command string) {
 	s := testService(db)
 	ctx := context.Background()
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	target := createTestDraft(t, s, typeID(t, db, initialArticleKey), map[string]ValuePatch{"ru": fullLocale("hidden-target")})
 	input.Fields = append(input.Fields, Definition{Key: privateNoteKey, Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate}, Definition{Key: hiddenLinkKey, Kind: kindRelation, Scope: scopeShared, Visibility: visibilityPrivate, TargetTypeID: target.TypeID})

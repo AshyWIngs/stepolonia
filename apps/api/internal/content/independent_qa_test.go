@@ -73,7 +73,7 @@ func TestContentIndependentDisplayAndSemanticIntegration(t *testing.T) {
 	article, err := s.GetSchema(context.Background(), Actor{}, typeID(t, db, initialArticleKey), 1)
 	must(t, err)
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	event, err := s.CreateType(context.Background(), Actor{}, input)
 	must(t, err)
@@ -219,7 +219,7 @@ func TestContentIndependentRuntimePrivacyAndAliasesIntegration(t *testing.T) {
 func qaRelationType(t *testing.T, s *Service, targetType string) TypeSchema {
 	t.Helper()
 	input := initialType()
-	input.Key = testEventKey
+	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
 	input.Fields = append(input.Fields, Definition{Key: "qa_relation", Kind: kindRelation, Scope: scopeShared, Visibility: visibilityPublic, TargetTypeID: targetType}, Definition{Key: qaSecretField, Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate})
 	schema, err := s.CreateType(context.Background(), Actor{}, input)
