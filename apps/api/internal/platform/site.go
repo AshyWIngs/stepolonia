@@ -85,7 +85,7 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 		Language:          language,
 		Languages:         []siteconfig.Language{language},
 		Messages: map[string]string{
-			"articles": "Artykuły", "events": "Wydarzenia", emptyMessageKey: "Brak wyników", "pagination": "Strony",
+			"articles": "Artykuły", "events": "Wydarzenia", "empty": "Brak wyników", "pagination": "Strony",
 			"previous": "Poprzednia", "next": "Następna", "navigation": "Nawigacja", "all": "Wszystkie", "languages": "Języki",
 			"errors.400": "Nieprawidłowe żądanie", "errors.404": "Nie znaleziono", "errors.503": "Usługa niedostępna",
 			"errors.other": "Wystąpił błąd", "errors.retry": "Spróbuj ponownie", "errors.home": "Strona główna",

@@ -11,7 +11,7 @@ func TestContentAuthorizationIntegration(t *testing.T) {
 	prepareContent(t, db)
 	s := testService(db)
 	ctx := context.Background()
-	article := typeID(t, db, initialArticleKey)
+	article := typeID(t, db, articleTypeKey)
 	state := createTestDraft(t, s, article, map[string]ValuePatch{"ru": fullLocale("authorized")})
 	other := createTestDraft(t, s, article, map[string]ValuePatch{"ru": fullLocale("hidden")})
 	s.authorize = func(_ context.Context, _ *sql.Tx, _ Actor, operation, typeID, item string, fields []string) error {

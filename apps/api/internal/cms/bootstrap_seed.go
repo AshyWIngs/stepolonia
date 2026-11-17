@@ -6,18 +6,10 @@ import (
 	"fmt"
 )
 
-const (
-	opContentCreate   = "content.items.create"
-	opContentRead     = "content.items.read"
-	opContentUpdate   = "content.items.update"
-	opContentReady    = "content.items.ready"
-	opContentPublish  = "content.items.publish"
-	opContentDelegate = "content.permissions.delegate"
-	seedAdminName     = "Site Admin"
-)
+const seedAdminName = "Site Admin"
 
-var bootstrapContentOperations = []string{opContentCreate, opContentRead, opContentUpdate, opContentReady, opContentPublish, "content.items.unpublish", "content.items.assign"}
-var bootstrapInstallationOperations = []string{"content_types.manage", "content_types.initialize_access", opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage"}
+var bootstrapContentOperations = []string{opContentCreate, string(OpContentRead), string(OpContentUpdate), opContentReady, opContentPublish, "content.items.unpublish", "content.items.assign"}
+var bootstrapInstallationOperations = []string{string(OpContentTypesManage), "content_types.initialize_access", opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage"}
 
 func seedBootstrapRoles(ctx context.Context, tx *sql.Tx) error {
 	if err := checkBootstrapOperations(ctx, tx); err != nil {
@@ -149,7 +141,7 @@ func seedContentGrant(ctx context.Context, tx *sql.Tx, role, article, op, scope 
 	if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate) VALUES($1,$2,$3,'content',$4,$5,$6)`, id, role, op, article, objectScope, delegable); err != nil {
 		return err
 	}
-	if op == opContentCreate || op == opContentRead || op == opContentUpdate || op == opContentReady || op == opContentPublish {
+	if op == opContentCreate || op == string(OpContentRead) || op == string(OpContentUpdate) || op == opContentReady || op == opContentPublish {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,type_id,field_id FROM public.content_fields WHERE type_id=$2`, id, article); err != nil {
 			return err
 		}

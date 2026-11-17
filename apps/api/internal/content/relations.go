@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"reflect"
 	"sort"
+	"stepolonia/apps/api/internal/cms"
 )
 
 func replaceRelations(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, relations []Relation) (bool, error) {
@@ -99,7 +100,7 @@ func (s *Service) authorizeRelations(ctx context.Context, tx *sql.Tx, actor Acto
 		if relation.Locale != "" && relation.Locale != locale {
 			continue
 		}
-		if err := s.authorize(ctx, tx, actor, readOperation, relation.TargetTypeID, relation.TargetItemID, nil); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil); err != nil {
 			return problem(Conflict, "relation_unavailable")
 		}
 		field := fields[relation.FieldID]

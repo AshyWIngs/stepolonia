@@ -106,7 +106,7 @@ func TestAuthLoginSessionRotationIntegration(t *testing.T) {
 	if stepped.Token == full.Token || stepped.CSRF == full.CSRF {
 		t.Fatal("step up fixation")
 	}
-	requireNoError(t, f.service.Logout(ctx, authReq(stepped), authKindFull))
+	requireNoError(t, f.service.Logout(ctx, authReq(stepped), "full"))
 	authDenied(t, f.service.WithSession(ctx, authReq(stepped), false, authAllow))
 	var text string
 	requireNoError(t, f.db.QueryRow(`SELECT string_agg(row_to_json(a)::text,' ') FROM public.security_audit a`).Scan(&text))
@@ -318,5 +318,3 @@ func TestAuthPreauthIssuanceIntegration(t *testing.T) {
 		t.Fatal("issuance polluted failure counters")
 	}
 }
-
-const authKindFull = "full"

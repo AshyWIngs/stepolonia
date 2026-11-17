@@ -6,96 +6,35 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/text/language"
 	"stepolonia/apps/api/internal/cms"
 )
 
 const (
-	schemaConflictCode     = "schema_conflict"
-	versionConflictCode    = "version_conflict"
-	readOperation          = "content.items.read"
-	updateOperation        = "content.items.update"
-	manageTypesOperation   = "content_types.manage"
-	invalidFieldCode       = "invalid_field"
-	notReadyCode           = "not_ready"
-	incompatibleSchemaCode = "incompatible_schema"
-	invalidLanguageCode    = "invalid_language"
-	invalidValueCode       = "invalid_value"
-	invalidOptionsCode     = "invalid_options"
-	invalidEnumCode        = "invalid_enum"
-	invalidLengthCode      = "invalid_length"
-	invalidRangeCode       = "invalid_range"
-	invalidDecimalCode     = "invalid_decimal"
+	scopeShared    = "shared"
+	scopeLocalized = "localized"
 )
 
 const (
-	initialArticleKey = "article"
-	eventTypeKey      = "event"
+	visibilityPublic  = "public"
+	visibilityPrivate = "private"
 )
 
 const (
-	articlesNamespace = "articles"
-	eventsNamespace   = "events"
+	kindString   = "string"
+	kindText     = "text"
+	kindMarkdown = "markdown"
+	kindBoolean  = "boolean"
+	kindInteger  = "integer"
+	kindDecimal  = "decimal"
+	kindDatetime = "datetime"
+	kindEnum     = "enum"
+	kindRelation = "relation"
 )
-
-const (
-	slugFieldKey     = "slug"
-	titleFieldKey    = "title"
-	bodyFieldKey     = "body"
-	featuredFieldKey = "featured"
-)
-
-const visibilityPrivate = "private"
-
-const invalidSlugCode = "invalid_slug"
-
-type ErrorKind string
-
-const (
-	Validation  ErrorKind = "validation"
-	Forbidden   ErrorKind = "forbidden"
-	NotFound    ErrorKind = "not_found"
-	Conflict    ErrorKind = "conflict"
-	Unavailable ErrorKind = "unavailable"
-)
-
-type Error struct {
-	Kind ErrorKind
-	Code string
-}
-
-func (e *Error) Error() string                  { return e.Code }
-func problem(kind ErrorKind, code string) error { return &Error{kind, code} }
-func databaseError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var domain *Error
-	if errors.As(err, &domain) {
-		return err
-	}
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) {
-		switch pg.Code {
-		case "22P02", "23514", "23503":
-			return problem(Validation, "invalid_value")
-		case "23505":
-			return problem(Conflict, "route_conflict")
-		case "40001", "40P01", "55P03":
-			return problem(Conflict, versionConflictCode)
-		}
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return problem(NotFound, "not_found")
-	}
-	return fmt.Errorf("%w: %w", problem(Unavailable, "dependency_unavailable"), err)
-}
 
 var typeKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -225,17 +164,6 @@ func fieldKeys(schema TypeSchema) []string {
 		keys = append(keys, f.Key)
 	}
 	return keys
-}
-func registeredNamespace(namespace string) bool { return rendererTypeKey(namespace) != "" }
-func rendererTypeKey(namespace string) string {
-	switch namespace {
-	case articlesNamespace:
-		return initialArticleKey
-	case eventsNamespace:
-		return eventTypeKey
-	default:
-		return ""
-	}
 }
 
 func plainText(s string) bool { return !strings.ContainsAny(s, "<>\x00") }

@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const passwordMemory = 19456
+const passwordMemoryKiB = 19456
 
 func validatePassword(password string) error {
 	if !utf8.ValidString(password) || len(password) > 512 || utf8.RuneCountInString(password) < 15 || utf8.RuneCountInString(password) > 128 {
@@ -42,7 +42,7 @@ func hashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	hash := argon2.IDKey([]byte(password), salt, 2, passwordMemory, 1, 32)
+	hash := argon2.IDKey([]byte(password), salt, 2, passwordMemoryKiB, 1, 32)
 	return fmt.Sprintf("$argon2id$v=19$m=19456,t=2,p=1$%s$%s", base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
 
@@ -62,7 +62,7 @@ func verifyPassword(password, phc string) bool {
 	if err != nil || len(expected) != 32 {
 		return false
 	}
-	actual := argon2.IDKey([]byte(password), salt, 2, passwordMemory, 1, 32)
+	actual := argon2.IDKey([]byte(password), salt, 2, passwordMemoryKiB, 1, 32)
 	return subtle.ConstantTimeCompare(actual, expected) == 1
 }
 

@@ -17,8 +17,6 @@ const (
 	sessionLogin    = "login"
 	sessionPreauth  = "preauth"
 	sessionRecovery = "recovery"
-	auditAuthDenied = "auth.denied"
-	authLoginSQL    = `SELECT login_key FROM public.users WHERE id=$1`
 )
 
 var (
@@ -110,6 +108,9 @@ func (s *AuthService) transaction(ctx context.Context, fn func(context.Context, 
 		return fn(ctx, tx)
 	}))
 }
+
+const auditAuthDenied = "auth.denied"
+
 func authAudit(ctx context.Context, tx *sql.Tx, op, user string, denied bool) error {
 	id, err := randomID()
 	if err != nil {

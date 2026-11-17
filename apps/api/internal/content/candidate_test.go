@@ -15,14 +15,14 @@ func TestContentD4Integration(t *testing.T) {
 	input := initialType()
 	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
-	input.Fields = append(input.Fields, Definition{Key: featuredFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic})
+	input.Fields = append(input.Fields, Definition{Key: fixtureFeaturedFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic})
 	schema, err := s.CreateType(ctx, Actor{}, input)
 	must(t, err)
 	state := createTestDraft(t, s, schema.TypeID, map[string]ValuePatch{"ru": fullLocale("d4-ru"), "pl": fullLocale("d4-pl")})
 	state = readyTestDraft(t, s, state, "ru", "pl")
 	state, err = s.Publish(ctx, Actor{}, state.ItemID, state.Version, 1, []string{"ru", "pl"})
 	must(t, err)
-	state, err = s.SaveDraft(ctx, Actor{}, state.ItemID, state.Version, DraftPatch{SchemaNo: 1, Shared: map[string]FieldValue{featuredFieldKey: {kindBoolean, json.RawMessage(`true`)}}})
+	state, err = s.SaveDraft(ctx, Actor{}, state.ItemID, state.Version, DraftPatch{SchemaNo: 1, Shared: map[string]FieldValue{fixtureFeaturedFieldKey: {kindBoolean, json.RawMessage(`true`)}}})
 	must(t, err)
 	state = readyTestDraft(t, s, state, "ru")
 	_, err = s.Publish(ctx, Actor{}, state.ItemID, state.Version, 1, []string{"ru"})
@@ -56,7 +56,7 @@ func TestContentConcurrentEditsIntegration(t *testing.T) {
 	db := contentDatabase(t)
 	prepareContent(t, db)
 	s := testService(db)
-	state := createTestDraft(t, s, typeID(t, db, initialArticleKey), map[string]ValuePatch{"ru": fullLocale("race")})
+	state := createTestDraft(t, s, typeID(t, db, articleTypeKey), map[string]ValuePatch{"ru": fullLocale("race")})
 	results := make(chan error, 2)
 	for _, title := range []string{"First", "Second"} {
 		go func(value string) {
@@ -79,7 +79,7 @@ func TestContentRelationsIntegration(t *testing.T) {
 	prepareContent(t, db)
 	s := testService(db)
 	ctx := context.Background()
-	article := typeID(t, db, initialArticleKey)
+	article := typeID(t, db, articleTypeKey)
 	target := createTestDraft(t, s, article, map[string]ValuePatch{"ru": fullLocale("relation-target")})
 	target = readyTestDraft(t, s, target, "ru")
 	target, err := s.Publish(ctx, Actor{}, target.ItemID, target.Version, 1, []string{"ru"})

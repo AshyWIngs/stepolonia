@@ -16,6 +16,8 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+const fixtureFeaturedFieldKey = "featured"
+
 const testTokenEnv = "DB_DISPOSABLE_TOKEN"
 
 func contentDatabase(t *testing.T) *sql.DB {
@@ -120,7 +122,7 @@ func TestContentIntegration(t *testing.T) {
 	s := testService(db)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	article := typeID(t, db, initialArticleKey)
+	article := typeID(t, db, articleTypeKey)
 	_, err := NewService(db).Create(ctx, Actor{}, article, 1)
 	errorCode(t, err, string(Forbidden))
 	state := createTestDraft(t, s, article, map[string]ValuePatch{"ru": fullLocale("core-ru"), "pl": fullLocale("core-pl")})

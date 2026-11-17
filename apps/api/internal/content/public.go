@@ -10,8 +10,6 @@ import (
 	"strconv"
 )
 
-const invalidPublicProjectionCode = "invalid_public_projection"
-
 // PublicReader reads only security-barrier views through a dedicated runtime pool.
 type PublicReader struct{ db *sql.DB }
 

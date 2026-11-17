@@ -8,12 +8,12 @@ import (
 )
 
 func TestBootstrapRejectsSecretArguments(t *testing.T) {
-	for _, args := range [][]string{{bootstrapCommand, "password"}, {bootstrapCommand, "--password=secret"}} {
+	for _, args := range [][]string{{commandBootstrapAdmin, "password"}, {commandBootstrapAdmin, "--password=secret"}} {
 		if validateCommand(args) == nil {
 			t.Fatal("bootstrap accepted secret-bearing arguments")
 		}
 	}
-	if err := validateCommand([]string{bootstrapCommand}); err != nil {
+	if err := validateCommand([]string{commandBootstrapAdmin}); err != nil {
 		t.Fatal(err)
 	}
 }

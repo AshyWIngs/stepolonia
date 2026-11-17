@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"stepolonia/apps/api/internal/cms"
 )
 
 func (s *Service) Create(ctx context.Context, actor Actor, typeID string, schemaNo int64) (DraftState, error) {
@@ -34,7 +35,7 @@ func (s *Service) Create(ctx context.Context, actor Actor, typeID string, schema
 }
 func (s *Service) GetDraft(ctx context.Context, actor Actor, item string) (DraftState, error) {
 	var out DraftState
-	err := s.withTx(ctx, actor, readOperation, "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(cms.OpContentRead), "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
 		state, err := loadDraft(ctx, tx, item)
 		if err != nil {
 			return err
@@ -43,7 +44,7 @@ func (s *Service) GetDraft(ctx context.Context, actor Actor, item string) (Draft
 		if err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, actor, readOperation, state.TypeID, item, nil); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), state.TypeID, item, nil); err != nil {
 			return err
 		}
 		out, err = s.projectDraft(ctx, tx, actor, state, schema)
@@ -53,7 +54,7 @@ func (s *Service) GetDraft(ctx context.Context, actor Actor, item string) (Draft
 }
 func (s *Service) SaveDraft(ctx context.Context, actor Actor, item string, expected int64, patch DraftPatch) (DraftState, error) {
 	var out DraftState
-	err := s.withTx(ctx, actor, updateOperation, "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(cms.OpContentUpdate), "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
 		state, err := loadDraft(ctx, tx, item)
 		if err != nil {
 			return err
@@ -65,7 +66,7 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, item string, expec
 		if err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, actor, updateOperation, state.TypeID, item, patchKeys(schema, patch)); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(cms.OpContentUpdate), state.TypeID, item, patchKeys(schema, patch)); err != nil {
 			return err
 		}
 		for _, relation := range patch.Relations {
@@ -195,7 +196,7 @@ func saveLocalePatch(ctx context.Context, tx *sql.Tx, state DraftState, schema T
 }
 func (s *Service) AdoptSchema(ctx context.Context, actor Actor, item string, expected, current int64) (DraftState, error) {
 	var out DraftState
-	err := s.withTx(ctx, actor, updateOperation, "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(cms.OpContentUpdate), "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
 		state, err := loadDraft(ctx, tx, item)
 		if err != nil {
 			return err
@@ -210,7 +211,7 @@ func (s *Service) AdoptSchema(ctx context.Context, actor Actor, item string, exp
 		if schema.SchemaNo != current {
 			return problem(Conflict, schemaConflictCode)
 		}
-		if err := s.authorize(ctx, tx, actor, updateOperation, state.TypeID, item, fieldKeys(schema)); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(cms.OpContentUpdate), state.TypeID, item, fieldKeys(schema)); err != nil {
 			return err
 		}
 		if current == state.SchemaNo {

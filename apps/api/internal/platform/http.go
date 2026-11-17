@@ -13,6 +13,12 @@ import (
 	"stepolonia/apps/api/internal/siteconfig"
 )
 
+const (
+	contentTypeHeader    = "Content-Type"
+	jsonMediaType        = "application/json"
+	problemJSONMediaType = "application/problem+json"
+)
+
 type Pinger interface {
 	Ping(context.Context) error
 }

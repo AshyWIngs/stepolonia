@@ -104,7 +104,7 @@ func TestRegisteredRendererDependencies(t *testing.T) {
 }
 
 func TestRegisteredRendererTypeMapping(t *testing.T) {
-	for _, test := range []struct{ key, namespace string }{{"conference", eventsNamespace}, {initialArticleKey, eventsNamespace}, {eventTypeKey, articlesNamespace}} {
+	for _, test := range []struct{ key, namespace string }{{"conference", eventsNamespace}, {articleTypeKey, eventsNamespace}, {eventTypeKey, articlesNamespace}} {
 		input := initialType()
 		input.Key = test.key
 		input.RouteNamespace = test.namespace

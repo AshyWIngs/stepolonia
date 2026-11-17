@@ -20,8 +20,6 @@ import (
 )
 
 const qaSessionAgeSQL = `UPDATE public.sessions SET created_at=created_at-interval '10 hours',expires_at=expires_at-interval '10 hours' WHERE token_digest=$1`
-const qaLoginField = "login"
-const qaPasswordField = "password"
 const qaContentTypeHeader = "Content-Type"
 const qaUnknownLogin = "unknown@example.test"
 const qaCSRFPath = "/api/v1/admin/auth/csrf"
@@ -132,7 +130,7 @@ func TestAuthIndependentTLSCSRFAndUnknownLimitsIntegration(t *testing.T) {
 	if first["csrf_token"] == second["csrf_token"] {
 		t.Fatal("CSRF GET failed to rotate synchronizer secret")
 	}
-	body, err := json.Marshal(map[string]string{qaLoginField: "UNKNOWN@EXAMPLE.TEST", qaPasswordField: bootstrapTestPassphrase})
+	body, err := qaLoginJSON("UNKNOWN@EXAMPLE.TEST")
 	requireNoError(t, err)
 	f.request(t, http.MethodPost, qaLoginPath, first["csrf_token"], string(body), 403)
 	for i := 0; i < 5; i++ {
@@ -140,7 +138,7 @@ func TestAuthIndependentTLSCSRFAndUnknownLimitsIntegration(t *testing.T) {
 		if i%2 == 0 {
 			login = strings.ToUpper(login)
 		}
-		body, err = json.Marshal(map[string]string{qaLoginField: login, qaPasswordField: bootstrapTestPassphrase})
+		body, err = qaLoginJSON(login)
 		requireNoError(t, err)
 		qaSpoofedLogin(t, f, second["csrf_token"], string(body), http.StatusUnauthorized)
 	}
@@ -155,6 +153,10 @@ func TestAuthIndependentTLSCSRFAndUnknownLimitsIntegration(t *testing.T) {
 	if budgets != 5 {
 		t.Fatal("unknown account failures were not normalized/persisted")
 	}
+}
+
+func qaLoginJSON(login string) ([]byte, error) {
+	return json.Marshal(map[string]string{"login": login, "password": bootstrapTestPassphrase})
 }
 
 func qaSpoofedLogin(t *testing.T, f authHTTPFixture, csrf, body string, status int) {
@@ -195,7 +197,7 @@ func TestAuthIndependentCrossSiteLogoutBrowserIntegration(t *testing.T) {
 	defer attacker.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "node", "-e", qaCrossSiteLogoutScript)
+	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaCrossSiteLogoutScript)
 	command.Env = append(os.Environ(), "QA_AUTH_ORIGIN="+f.server.URL, "QA_ATTACKER_ORIGIN="+attacker.URL, "QA_AUTH_BEARER="+full.Token)
 	output, err := command.CombinedOutput()
 	if err != nil {

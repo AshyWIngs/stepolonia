@@ -11,8 +11,8 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-LABEL = "io.stepolonia.dev-swagger"
-IMAGE = "postgres:18.7-alpine3.24"
+OWNERSHIP_LABEL = "io.stepolonia.dev-swagger"
+POSTGRES_IMAGE = "postgres:18.7-alpine3.24"
 
 
 def command(arguments, *, capture=False):
@@ -35,7 +35,7 @@ def inspect_owned_container(name, token):
         raise RuntimeError(f"Cannot inspect disposable Swagger container: {result.stderr.strip()}")
     items = json.loads(result.stdout)
     if (len(items) != 1 or items[0].get("Name") != f"/{name}"
-            or items[0]["Config"].get("Labels", {}).get(LABEL) != token):
+            or items[0]["Config"].get("Labels", {}).get(OWNERSHIP_LABEL) != token):
         raise RuntimeError("Disposable Swagger container ownership changed")
     return items[0]
 
@@ -94,9 +94,9 @@ def main():
         try:
             # Trust is confined to this disposable, loopback-only database.
             allocation_attempted = True
-            command(["docker", "run", "--detach", "--name", name, "--label", f"{LABEL}={token}",
+            command(["docker", "run", "--detach", "--name", name, "--label", f"{OWNERSHIP_LABEL}={token}",
                      "--publish", "127.0.0.1::5432", "--env", f"POSTGRES_DB={database}",
-                     "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--tmpfs", "/var/lib/postgresql", IMAGE])
+                     "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--tmpfs", "/var/lib/postgresql", POSTGRES_IMAGE])
             port = owned_container(name, token)
             wait_ready(name)
             environment = {**os.environ,

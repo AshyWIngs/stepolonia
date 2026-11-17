@@ -2,11 +2,9 @@ package content
 
 import (
 	"encoding/json"
+
 	"github.com/danielgtaylor/huma/v2"
 )
-
-const fieldKindDiscriminator = "kind"
-const fieldValueProperty = "value"
 
 type Page struct{ Limit, Offset int }
 type Language struct{ Code, Name, NativeName, Direction string }
@@ -18,15 +16,19 @@ type PublicFieldValue struct {
 }
 
 func (PublicFieldValue) Schema(huma.Registry) *huma.Schema {
+	const (
+		kindProperty  = "kind"
+		valueProperty = "value"
+	)
 	variants := make([]*huma.Schema, 0, 8)
 	for _, kind := range []string{kindString, kindText, kindMarkdown, kindEnum, kindInteger, kindDecimal, kindDatetime, kindBoolean} {
 		valueType := kindString
 		if kind == kindBoolean {
 			valueType = kindBoolean
 		}
-		variants = append(variants, &huma.Schema{Description: "A public " + kind + " value encoded according to the pinned Registry field definition.", Type: "object", Required: []string{fieldKindDiscriminator, fieldValueProperty}, Properties: map[string]*huma.Schema{fieldKindDiscriminator: {Type: kindString, Description: "Registry scalar kind selecting this variant.", Enum: []any{kind}, Examples: []any{kind}}, fieldValueProperty: {Type: valueType, Description: "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset."}}, AdditionalProperties: false})
+		variants = append(variants, &huma.Schema{Description: "A public " + kind + " value encoded according to the pinned Registry field definition.", Type: "object", Required: []string{kindProperty, valueProperty}, Properties: map[string]*huma.Schema{kindProperty: {Type: kindString, Description: "Registry scalar kind selecting this variant.", Enum: []any{kind}, Examples: []any{kind}}, valueProperty: {Type: valueType, Description: "Boolean uses a JSON boolean. All other kinds use strings. Integer and decimal preserve exact precision. Datetime uses RFC 3339 with an explicit UTC offset."}}, AdditionalProperties: false})
 	}
-	return &huma.Schema{Description: "One public scalar value tagged by Registry kind. Each variant has exactly kind and value. Field-specific constraints come from the pinned Registry schema. Markdown remains source text and must be rendered safely.", OneOf: variants, Discriminator: &huma.Discriminator{PropertyName: fieldKindDiscriminator}}
+	return &huma.Schema{Description: "One public scalar value tagged by Registry kind. Each variant has exactly kind and value. Field-specific constraints come from the pinned Registry schema. Markdown remains source text and must be rendered safely.", OneOf: variants, Discriminator: &huma.Discriminator{PropertyName: kindProperty}}
 }
 
 type PublicTranslation struct {

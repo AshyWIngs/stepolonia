@@ -12,21 +12,6 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	scopeShared      = "shared"
-	scopeLocalized   = "localized"
-	visibilityPublic = "public"
-	kindString       = "string"
-	kindText         = "text"
-	kindMarkdown     = "markdown"
-	kindBoolean      = "boolean"
-	kindInteger      = "integer"
-	kindDecimal      = "decimal"
-	kindDatetime     = "datetime"
-	kindEnum         = "enum"
-	kindRelation     = "relation"
-)
-
 type fieldConfig struct {
 	MinLength *int     `json:"min_length,omitempty"`
 	MaxLength *int     `json:"max_length,omitempty"`
@@ -78,28 +63,6 @@ func ValidateType(input TypeInput) error {
 	}
 	return validateRendererFields(fields)
 }
-func validateRendererFields(fields map[string]Definition) error {
-	for _, key := range []string{slugFieldKey, titleFieldKey} {
-		field, exists := fields[key]
-		if !exists || field.Kind != kindString || field.Scope != scopeLocalized || field.Visibility != visibilityPublic || !field.Required {
-			return problem(Validation, rendererDependencyCode)
-		}
-		config, err := configFor(field)
-		if err != nil {
-			return err
-		}
-		if key == slugFieldKey && !config.Slug {
-			return problem(Validation, rendererDependencyCode)
-		}
-		if key == titleFieldKey && (config.MinLength == nil || *config.MinLength < 1) {
-			return problem(Validation, rendererDependencyCode)
-		}
-	}
-	return nil
-}
-
-const rendererDependencyCode = "renderer_dependency"
-
 func validateDefinition(field Definition) error {
 	if field.Scope != scopeShared && field.Scope != scopeLocalized {
 		return problem(Validation, "invalid_scope")
@@ -364,8 +327,6 @@ func validateValues(schema TypeSchema, scope string, values ScalarValues, requir
 	}
 	return nil
 }
-
-const invalidLabelsCode = "invalid_labels"
 
 func validateLabelEntry(locale string, values map[string]string) error {
 	if values == nil {

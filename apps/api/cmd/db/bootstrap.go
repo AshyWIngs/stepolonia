@@ -18,7 +18,6 @@ import (
 	"stepolonia/apps/api/internal/database"
 )
 
-const bootstrapCommand = "bootstrap-admin"
 const totpKeyFileEnv = "CMS_TOTP_KEY_FILE"
 
 // Enrollment secrets are written only to the controlling terminal, never to a
