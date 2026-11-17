@@ -73,7 +73,7 @@ func TestTOTPWindowAndReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := acceptedCounter(secret, code, now, -1)
-		checkCounterWindow(t, secret, code, now, current, counter, got, err)
+		checkCounterWindow(t, secret, code, now, counterWindowResult{current, counter, got, err})
 	}
 	if _, err := acceptedCounter(secret, "00000x", now, -1); err == nil {
 		t.Fatal("invalid code accepted")
@@ -118,7 +118,13 @@ func TestBootstrapDomainValidation(t *testing.T) {
 	}
 }
 
-func checkCounterWindow(t *testing.T, secret, code string, now time.Time, current, counter, got int64, err error) {
+type counterWindowResult struct {
+	current, counter, got int64
+	err                   error
+}
+
+func checkCounterWindow(t *testing.T, secret, code string, now time.Time, result counterWindowResult) {
+	current, counter, got, err := result.current, result.counter, result.got, result.err
 	t.Helper()
 	if counter < current-1 || counter > current+1 {
 		if err == nil {
