@@ -15,6 +15,13 @@ import (
 //go:embed docsassets/*.js docsassets/*.css docsassets/LICENSE docsassets/*.LICENSE.txt docsassets/NOTICE
 var documentationAssets embed.FS
 
+const (
+	healthTag           = "health"
+	sitePublicationTag  = "site-publication"
+	contentLanguagesTag = "content-languages"
+	publishedContentTag = "published-content"
+)
+
 const javascriptMediaType = "application/javascript; charset=utf-8"
 
 const documentationPage = `<!doctype html>
@@ -37,7 +44,7 @@ func registerDocumentation(mux *http.ServeMux, api huma.API, private bool) {
 	mux.HandleFunc("GET /docs/init.js", func(w http.ResponseWriter, _ *http.Request) {
 		documentationHeaders(w)
 		w.Header().Set(contentTypeHeader, javascriptMediaType)
-		_, _ = w.Write([]byte(`window.ui=SwaggerUIBundle({dom_id:"#swagger-ui",urls:` + urls + `,presets:[SwaggerUIBundle.presets.apis,SwaggerUIStandalonePreset],layout:"StandaloneLayout",deepLinking:true,validatorUrl:null,queryConfigEnabled:false,persistAuthorization:false,withCredentials:true});`))
+		_, _ = w.Write([]byte(`window.ui=SwaggerUIBundle({dom_id:"#swagger-ui",urls:` + urls + `,presets:[SwaggerUIBundle.presets.apis,SwaggerUIStandalonePreset],layout:"StandaloneLayout",deepLinking:true,filter:true,operationsSorter:"alpha",validatorUrl:null,queryConfigEnabled:false,persistAuthorization:false,withCredentials:true});`))
 	})
 	for _, asset := range []struct{ name, media string }{
 		{"swagger-ui.css", "text/css; charset=utf-8"},

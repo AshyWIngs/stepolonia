@@ -21,7 +21,7 @@ type siteInput struct {
 type siteOutput struct{ Body siteconfig.Publication }
 
 func registerSite(api huma.API, reader *siteconfig.Reader, logger *slog.Logger) {
-	huma.Register(api, huma.Operation{OperationID: "getSite", Method: http.MethodGet, Path: "/api/v1/site", Summary: "Read published site settings and one complete UI catalog",
+	huma.Register(api, huma.Operation{Tags: []string{sitePublicationTag}, OperationID: "getSite", Method: http.MethodGet, Path: "/api/v1/site", Summary: "Read published site settings and one complete UI catalog",
 		Description: "One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
 		Responses:   siteResponses(api), Middlewares: huma.Middlewares{siteQuery(api)}}, func(ctx context.Context, input *siteInput) (*siteOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)

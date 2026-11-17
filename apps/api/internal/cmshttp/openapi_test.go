@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,12 +14,14 @@ import (
 )
 
 type privateDocument struct {
+	Tags       []*huma.Tag
 	Paths      map[string]map[string]privateOperation
 	Components struct{ Schemas map[string]*huma.Schema }
 }
 
 type privateOperation struct {
 	OperationID string `json:"operationId"`
+	Tags        []string
 	Description string
 	RequestBody *struct{ Content map[string]privateMedia } `json:"requestBody"`
 	Responses   map[string]struct {
@@ -27,9 +31,7 @@ type privateOperation struct {
 }
 
 type privateMedia struct {
-	Schema struct {
-		Ref string `json:"$ref"`
-	}
+	Schema   *huma.Schema
 	Example  any
 	Examples map[string]struct{ Value any }
 }
@@ -148,6 +150,11 @@ func validatePrivateExample(t *testing.T, registry huma.Registry, name string, v
 	if schema == nil {
 		t.Fatalf("missing schema %s", name)
 	}
+	validatePrivateValue(t, registry, schema, name, value)
+}
+
+func validatePrivateValue(t *testing.T, registry huma.Registry, schema *huma.Schema, name string, value any) {
+	t.Helper()
 	var result huma.ValidateResult
 	huma.Validate(registry, schema, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, value, &result)
 	if len(result.Errors) != 0 {
@@ -177,10 +184,10 @@ func checkMediaExamples(t *testing.T, registry huma.Registry, path, status strin
 		t.Fatalf("missing %s %s example", path, status)
 	}
 	if media.Example != nil {
-		validatePrivateExample(t, registry, name, media.Example)
+		validatePrivateValue(t, registry, media.Schema, name, media.Example)
 	}
 	for _, example := range media.Examples {
-		validatePrivateExample(t, registry, name, example.Value)
+		validatePrivateValue(t, registry, media.Schema, name, example.Value)
 	}
 }
 
@@ -222,6 +229,174 @@ func TestPrivateOnboardingOpenAPIDenialBudget(t *testing.T) {
 		problem, ok := example.(map[string]any)
 		if !ok || problem["status"] != float64(429) || problem["code"] != "rate_limited" {
 			t.Fatalf("incorrect denial-budget example for %s", path)
+		}
+	}
+}
+
+func TestPrivateDocumentationGroupsOperations(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	expected := map[string][]string{
+		"authentication-sessions": {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
+		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
+		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
+		"users":                   {"usersCreate", "usersIssueOnboardingToken"},
+	}
+	declared := map[string]bool{}
+	for _, tag := range doc.Tags {
+		if _, ok := expected[tag.Name]; !ok || tag.Description == "" || declared[tag.Name] || !regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`).MatchString(tag.Name) {
+			t.Fatalf("invalid root tag: %+v", tag)
+		}
+		declared[tag.Name] = true
+	}
+	if len(declared) != len(expected) {
+		t.Fatal("missing domain tags")
+	}
+	for _, methods := range doc.Paths {
+		for _, op := range methods {
+			if len(op.Tags) != 1 || !declared[op.Tags[0]] || !slices.Contains(expected[op.Tags[0]], op.OperationID) {
+				t.Fatalf("incorrect operation group: %s %v", op.OperationID, op.Tags)
+			}
+		}
+	}
+}
+
+func privateRegistry(doc privateDocument) huma.Registry {
+	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
+	for name, schema := range doc.Components.Schemas {
+		schema.PrecomputeMessages()
+		registry.Map()[name] = schema
+	}
+	return registry
+}
+
+func privateSchemaRejects(t *testing.T, registry huma.Registry, schema *huma.Schema, value any) {
+	t.Helper()
+	var result huma.ValidateResult
+	huma.Validate(registry, schema, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, value, &result)
+	if len(result.Errors) == 0 {
+		t.Fatalf("invalid payload accepted by contract: %#v", value)
+	}
+}
+
+func TestPrivateRequiredCredentials(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	registry := privateRegistry(doc)
+	for _, methods := range doc.Paths {
+		for _, op := range methods {
+			if op.RequestBody == nil {
+				continue
+			}
+			t.Run(op.OperationID, func(t *testing.T) { checkRequiredCredentials(t, registry, op) })
+		}
+	}
+}
+
+func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOperation) {
+	t.Helper()
+	media := op.RequestBody.Content[jsonMediaType]
+	schema := registry.SchemaFromRef(media.Schema.Ref)
+	if op.OperationID == "authLogout" || op.OperationID == "authCancelRecovery" {
+		validatePrivateValue(t, registry, schema, op.OperationID, map[string]any{})
+		return
+	}
+	privateSchemaRejects(t, registry, schema, map[string]any{})
+	example := media.Example.(map[string]any)
+	for field := range schema.Properties {
+		if !slices.Contains(schema.Required, field) {
+			t.Fatalf("missing required field %s", field)
+		}
+		missing := copyWithoutField(example, field)
+		privateSchemaRejects(t, registry, schema, missing)
+		for _, invalid := range []any{nil, false, ""} {
+			missing[field] = invalid
+			privateSchemaRejects(t, registry, schema, missing)
+		}
+	}
+}
+
+func copyWithoutField(example map[string]any, omitted string) map[string]any {
+	result := map[string]any{}
+	for key, value := range example {
+		if key != omitted {
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func TestPrivateCredentialConstraints(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	registry := privateRegistry(doc)
+	for field, cases := range map[string][]struct {
+		path           string
+		valid, invalid []any
+	}{
+		"code": {
+			{"/mfa/verify", []any{"000001"}, []any{"12345", "1234567", "１２３４５６", "abcdef"}},
+			{"/recovery", []any{"0123456789abcdef0123456789abcdef"}, []any{""}},
+		},
+		"token":    {{"/enrollment", []any{syntheticOnboardingToken}, []any{strings.Repeat("a", 42), strings.Repeat("a", 44), strings.Repeat("!", 43)}}},
+		"password": {{"/enrollment", []any{strings.Repeat("界", 15), strings.Repeat("🔐", 128)}, []any{strings.Repeat("a", 14), strings.Repeat("a", 129)}}},
+	} {
+		for _, tc := range cases {
+			op := doc.Paths[authPrefix+tc.path]["post"]
+			schema := registry.SchemaFromRef(op.RequestBody.Content[jsonMediaType].Schema.Ref).Properties[field]
+			for _, valid := range tc.valid {
+				validatePrivateValue(t, registry, schema, tc.path+"/"+field, valid)
+			}
+			for _, invalid := range tc.invalid {
+				privateSchemaRejects(t, registry, schema, invalid)
+			}
+		}
+	}
+	schema := registry.SchemaFromRef(doc.Paths[onboardingTokenPath]["post"].RequestBody.Content[jsonMediaType].Schema.Ref)
+	for _, invalid := range []any{0, -1, 1.5} {
+		privateSchemaRejects(t, registry, schema, map[string]any{"expected_version": invalid})
+	}
+}
+
+func TestPrivateErrorCodesConstrainEachStatus(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	registry := privateRegistry(doc)
+	for path, methods := range doc.Paths {
+		for _, op := range methods {
+			for status, response := range op.Responses {
+				media, ok := response.Content["application/problem+json"]
+				if !ok {
+					continue
+				}
+				t.Run(path+"/"+status, func(t *testing.T) { checkErrorCodeConstraints(t, registry, media) })
+			}
+		}
+	}
+}
+
+func checkErrorCodeConstraints(t *testing.T, registry huma.Registry, media privateMedia) {
+	t.Helper()
+	if len(media.Schema.AllOf) != 2 || len(media.Schema.AllOf[1].Properties["code"].Enum) == 0 {
+		t.Fatal("missing machine-readable error codes")
+	}
+	for _, example := range media.Examples {
+		value := example.Value.(map[string]any)
+		validatePrivateValue(t, registry, media.Schema, "problem response", value)
+		wrongCode := copyWithoutField(value, "code")
+		wrongCode["code"] = "unsupported_failure"
+		privateSchemaRejects(t, registry, media.Schema, wrongCode)
+		wrongStatus := copyWithoutField(value, "status")
+		wrongStatus["status"] = 999
+		privateSchemaRejects(t, registry, media.Schema, wrongStatus)
+	}
+}
+
+func TestPrivateSessionErrorCodesPreserveGenericFailures(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	for _, path := range []string{authPrefix + "/csrf", authPrefix + "/logout", authPrefix + "/recovery/cancel"} {
+		for _, op := range doc.Paths[path] {
+			media := op.Responses["401"].Content["application/problem+json"]
+			codes := media.Schema.AllOf[1].Properties["code"].Enum
+			if len(codes) != 1 || codes[0] != "authentication_required" {
+				t.Fatalf("incorrect session error contract: %s %v", path, codes)
+			}
 		}
 	}
 }

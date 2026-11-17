@@ -1357,7 +1357,10 @@
             "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
-        "summary": "List published collection content"
+        "summary": "List published collection content",
+        "tags": [
+          "published-content"
+        ]
       }
     },
     "/api/v1/content/{type_key}/{slug}": {
@@ -1613,7 +1616,10 @@
             "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
-        "summary": "Get published content or its canonical address"
+        "summary": "Get published content or its canonical address",
+        "tags": [
+          "published-content"
+        ]
       }
     },
     "/api/v1/languages": {
@@ -1692,7 +1698,10 @@
             "description": "A dependency or public projection is unavailable. Code database_unavailable. Retry after service recovery."
           }
         },
-        "summary": "List active content languages"
+        "summary": "List active content languages",
+        "tags": [
+          "content-languages"
+        ]
       }
     },
     "/api/v1/site": {
@@ -1886,7 +1895,10 @@
             "description": "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
           }
         },
-        "summary": "Read published site settings and one complete UI catalog"
+        "summary": "Read published site settings and one complete UI catalog",
+        "tags": [
+          "site-publication"
+        ]
       }
     },
     "/health/live": {
@@ -1925,7 +1937,10 @@
             "description": "An unexpected HTTP processing error; this is distinct from the documented database readiness failure."
           }
         },
-        "summary": "Check whether the API process is responding"
+        "summary": "Check whether the API process is responding",
+        "tags": [
+          "health"
+        ]
       }
     },
     "/health/ready": {
@@ -1965,8 +1980,29 @@
             "description": "The database ping failed or exceeded its deadline; this API instance is not ready."
           }
         },
-        "summary": "Check whether the API can reach PostgreSQL"
+        "summary": "Check whether the API can reach PostgreSQL",
+        "tags": [
+          "health"
+        ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "description": "Process liveness and database connectivity probes.",
+      "name": "health"
+    },
+    {
+      "description": "Atomic published site settings and UI message catalogs.",
+      "name": "site-publication"
+    },
+    {
+      "description": "Active languages available for published content.",
+      "name": "content-languages"
+    },
+    {
+      "description": "Public collection items and canonical content addresses with private fields excluded.",
+      "name": "published-content"
+    }
+  ]
 }
