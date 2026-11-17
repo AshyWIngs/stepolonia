@@ -207,17 +207,31 @@ func (s *AuthService) completeRecoveryTx(ctx context.Context, tx *sql.Tx, req Au
 		*rejected = true
 		return authAudit(ctx, tx, auditAuthDenied, x.user, true)
 	}
-	return s.replaceRecoveryFactors(ctx, tx, x, encrypted, key, counter, digests, budget)
+	completion := recoveryCompletion{
+		ciphertext: encrypted, keyVersion: key, acceptedCounter: counter,
+		codeDigests: digests, budget: budget,
+	}
+	return s.replaceRecoveryFactors(ctx, tx, x, completion)
 }
 
-func (s *AuthService) replaceRecoveryFactors(ctx context.Context, tx *sql.Tx, x Session, encrypted []byte, key int, counter int64, digests [][]byte, budget authBudget) error {
-	if _, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,confirmed_at=$4,last_counter=$5 WHERE user_id=$1`, x.user, encrypted, key, x.now, counter); err != nil {
+// recoveryCompletion contains the confirmed replacement factors and the
+// reservation released only when the entire recovery transaction commits.
+type recoveryCompletion struct {
+	ciphertext      []byte
+	keyVersion      int
+	acceptedCounter int64
+	codeDigests     [][]byte
+	budget          authBudget
+}
+
+func (s *AuthService) replaceRecoveryFactors(ctx context.Context, tx *sql.Tx, x Session, completion recoveryCompletion) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,confirmed_at=$4,last_counter=$5 WHERE user_id=$1`, x.user, completion.ciphertext, completion.keyVersion, x.now, completion.acceptedCounter); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE public.recovery_codes SET consumed_at=$2 WHERE user_id=$1 AND consumed_at IS NULL`, x.user, x.now); err != nil {
 		return err
 	}
-	for _, d := range digests {
+	for _, d := range completion.codeDigests {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO public.recovery_codes(user_id,digest)VALUES($1,$2)`, x.user, d); err != nil {
 			return err
 		}
@@ -233,7 +247,7 @@ func (s *AuthService) replaceRecoveryFactors(ctx context.Context, tx *sql.Tx, x 
 	if err := checkRecoveryAdmin(ctx, tx, x.user); err != nil {
 		return err
 	}
-	if err := budget.success(ctx, tx); err != nil {
+	if err := completion.budget.success(ctx, tx); err != nil {
 		return err
 	}
 	return authAudit(ctx, tx, "mfa.recovery_completed", x.user, false)

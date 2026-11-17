@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 STAGED_TARGETS = (
     "lint-go", "lint-python", "lint-web", "lint-sql", "duplicates", "sdk-check",
     "setup", "ci-config", "docker-check", "python-tests", "api-checks", "web-checks",
-    "ci-service-checks", "ci-build", "ci-db-test", "ci-publishing-test", "ci-image-audit",
+    "ci-service-checks", "ci-build", "ci-db-test", "ci-publishing-test", "auth-test", "ci-image-audit",
 )
 WRAPPERS = {
     "config": ("setup", "ci-config"),
@@ -35,7 +35,7 @@ class VerifyStagesTest(unittest.TestCase):
 
     def test_developer_verify_retains_its_prerequisites(self):
         self.assertRegex(self.makefile,
-                         r"(?m)^verify: lint config test build db-test publishing-test image-audit$")
+                         r"(?m)^verify: lint config test build db-test publishing-test auth-test image-audit$")
 
     def test_wrappers_preserve_dependencies_and_call_same_recipe(self):
         for target, (dependencies, runner) in WRAPPERS.items():

@@ -175,6 +175,16 @@ func (s *AuthService) acceptTOTP(ctx context.Context, tx *sql.Tx, x Session, cod
 func (s *AuthService) VerifyMFA(ctx context.Context, req AuthRequest, code string) (SessionTokens, error) {
 	return s.factor(ctx, req, code, nil)
 }
+
+// factorCommand binds factor verification to its admission budget and the
+// password snapshot required only by a step-up command.
+type factorCommand struct {
+	request               AuthRequest
+	kind, operation, code string
+	snapshot              *authSnapshot
+	budget                authBudget
+}
+
 func (s *AuthService) factor(ctx context.Context, req AuthRequest, code string, snap *authSnapshot) (SessionTokens, error) {
 	kind := sessionLogin
 	op := "auth.login_completed"
@@ -204,10 +214,11 @@ func (s *AuthService) factor(ctx context.Context, req AuthRequest, code string, 
 			return SessionTokens{}, err
 		}
 	}
+	command := factorCommand{request: req, kind: kind, operation: op, code: code, snapshot: snap, budget: budget}
 	var out SessionTokens
 	var rejected bool
 	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		return s.factorTx(ctx, tx, req, kind, op, code, snap, budget, &out, &rejected)
+		return s.factorTx(ctx, tx, command, &out, &rejected)
 	})
 	if err != nil {
 		return SessionTokens{}, err
@@ -226,17 +237,17 @@ func checkFactorSnapshot(ctx context.Context, tx *sql.Tx, x Session, snap *authS
 	}
 	return currentSnapshot(ctx, tx, *snap)
 }
-func (s *AuthService) factorTx(ctx context.Context, tx *sql.Tx, req AuthRequest, kind, op, code string, snap *authSnapshot, budget authBudget, out *SessionTokens, rejected *bool) error {
-	x, err := s.session(ctx, tx, req, kind, true)
+func (s *AuthService) factorTx(ctx context.Context, tx *sql.Tx, command factorCommand, out *SessionTokens, rejected *bool) error {
+	x, err := s.session(ctx, tx, command.request, command.kind, true)
 	if err != nil {
 		return err
 	}
-	if err = checkFactorSnapshot(ctx, tx, x, snap); err != nil {
+	if err = checkFactorSnapshot(ctx, tx, x, command.snapshot); err != nil {
 		return err
 	}
-	if err = s.acceptTOTP(ctx, tx, x, code); errors.Is(err, ErrInvalidCredentials) {
+	if err = s.acceptTOTP(ctx, tx, x, command.code); errors.Is(err, ErrInvalidCredentials) {
 		*rejected = true
-		if kind == sessionLogin {
+		if command.kind == sessionLogin {
 			if _, err = tx.ExecContext(ctx, `UPDATE public.sessions SET failed_attempts=failed_attempts+1 WHERE id=$1`, x.id); err != nil {
 				return err
 			}
@@ -245,7 +256,7 @@ func (s *AuthService) factorTx(ctx context.Context, tx *sql.Tx, req AuthRequest,
 	} else if err != nil {
 		return err
 	}
-	return s.rotateFull(ctx, tx, x, snap != nil, budget, op, out)
+	return s.rotateFull(ctx, tx, x, command.snapshot != nil, command.budget, command.operation, out)
 }
 func (s *AuthService) rotateFull(ctx context.Context, tx *sql.Tx, x Session, step bool, budget authBudget, op string, out *SessionTokens) error {
 	if err := revokeSession(ctx, tx, x.id); err != nil {

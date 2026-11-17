@@ -123,6 +123,9 @@ jobs:
       - name: "Публикации: API, SSR и браузер"
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test ci-publishing-test
+      - name: "Authentication: PostgreSQL, TLS и browser security"
+        if: steps.scope.outputs.full == 'true'
+        run: make SITE=ci.test auth-test
       - name: "Безопасность: CVE-аудит 11 образов"
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test ci-image-audit

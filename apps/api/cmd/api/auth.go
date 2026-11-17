@@ -19,7 +19,9 @@ func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler,
 		return nil, nil, err
 	}
 	if cfg == nil {
-		return nil, func() {}, nil
+		return nil, func() {
+			// Disabled authentication created no private pool to close.
+		}, nil
 	}
 	defer clear(cfg.Service.EncryptionKey)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg.Database)

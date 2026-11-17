@@ -43,15 +43,20 @@ func tlsServer(t *testing.T, s *fakeAuth) *httptest.Server {
 	}
 	return server
 }
-func request(t *testing.T, server *httptest.Server, method, path, body, origin, media, csrf string) *http.Response {
+
+type authRequestOptions struct {
+	method, path, body, origin, media, csrf string
+}
+
+func requestAuth(t *testing.T, server *httptest.Server, opts authRequestOptions) *http.Response {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), method, server.URL+authPrefix+path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), opts.method, server.URL+authPrefix+opts.path, strings.NewReader(opts.body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set(originHeader, origin)
-	req.Header.Set(contentTypeHeader, media)
-	req.Header.Set("X-CSRF-Token", csrf)
+	req.Header.Set(originHeader, opts.origin)
+	req.Header.Set(contentTypeHeader, opts.media)
+	req.Header.Set("X-CSRF-Token", opts.csrf)
 	req.AddCookie(&http.Cookie{Name: cookieNames[preauthKind], Value: testToken, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	req.Header.Set(forwardedForHeader, "203.0.113.99")
 	res, err := server.Client().Do(req)
@@ -90,7 +95,10 @@ func TestTransportRejectsBeforeService(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res := request(t, server, http.MethodPost, tc.path, tc.body, tc.origin, tc.media, tc.csrf)
+			res := requestAuth(t, server, authRequestOptions{
+				method: http.MethodPost, path: tc.path, body: tc.body,
+				origin: tc.origin, media: tc.media, csrf: tc.csrf,
+			})
 			if res.StatusCode != tc.status {
 				t.Fatalf(statusFormat, res.StatusCode)
 			}
@@ -103,7 +111,10 @@ func TestTransportRejectsBeforeService(t *testing.T) {
 func TestLoginCookieAndUntrustedForwardedIP(t *testing.T) {
 	service := &fakeAuth{}
 	server := tlsServer(t, service)
-	res := request(t, server, http.MethodPost, loginPath, `{"login":"admin","password":"secret"}`, server.URL, jsonType, testToken)
+	res := requestAuth(t, server, authRequestOptions{
+		method: http.MethodPost, path: loginPath, body: `{"login":"admin","password":"secret"}`,
+		origin: server.URL, media: jsonType, csrf: testToken,
+	})
 	if res.StatusCode != 200 || service.calls != 1 {
 		t.Fatalf("login status %d calls %d", res.StatusCode, service.calls)
 	}
@@ -147,7 +158,10 @@ func TestLogoutCookieBoundary(t *testing.T) {
 			if origin == sameTestOrigin {
 				origin = server.URL
 			}
-			res := request(t, server, tc.method, logoutPath, "{}", origin, jsonType, tc.csrf)
+			res := requestAuth(t, server, authRequestOptions{
+				method: tc.method, path: logoutPath, body: "{}",
+				origin: origin, media: jsonType, csrf: tc.csrf,
+			})
 			if res.StatusCode != tc.status {
 				t.Fatalf(statusFormat, res.StatusCode)
 			}
