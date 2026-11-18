@@ -180,6 +180,10 @@ func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt rout
 		return
 	}
 	if path == createDraftPath {
+		if rt.operationID == listDraftsOperation {
+			h.serveDraftList(w, r, target, ip)
+			return
+		}
 		h.serveDraftCreate(w, r, rt, target, ip)
 		return
 	}

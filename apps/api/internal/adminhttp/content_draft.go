@@ -25,6 +25,7 @@ const (
 // DraftEditor verifies current permissions before creating, projecting or editing a draft.
 type DraftEditor interface {
 	CreateDraftForType(context.Context, identity.AuthRequest, string, int64) (content.DraftState, error)
+	ListDraftsForType(context.Context, identity.AuthRequest, string, int, int) (identity.DraftPage, error)
 	ReadDraftForType(context.Context, identity.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, identity.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
 	MarkSharedReadyForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
@@ -56,6 +57,11 @@ var readDraftRoute = route{
 	summary: "Read the current content draft", response: readableDraftSchema,
 	description: "Available only with a verified draft database login. A full session and current read permissions on the item's actual collection and scope are required. The response contains only actor-readable fields and relations. Send no query or request body. The request returns 503 if the draft exceeds the locale read limit or the read deadline.",
 }
+
+var (
+	collectionDraftRoutes = []route{createDraftRoute, listDraftsRoute}
+	itemDraftRoutes       = []route{saveDraftRoute, readDraftRoute}
+)
 
 func contentDraftTarget(path string) (routeTarget, bool) {
 	rest, ok := strings.CutPrefix(path, adminContentPrefix)
