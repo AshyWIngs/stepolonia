@@ -16,15 +16,15 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	ctx := context.Background()
 	requireNoError(t, Up(ctx, db, runtime))
 	for _, query := range []string{
-		`INSERT INTO public.auth_attempts VALUES (CURRENT_TIMESTAMP,'account',decode(repeat('01',32),'hex'),6)`,
-		`INSERT INTO public.auth_attempts VALUES (CURRENT_TIMESTAMP,'ip',decode(repeat('01',32),'hex'),31)`,
-		`INSERT INTO public.auth_attempts VALUES (CURRENT_TIMESTAMP,'site',decode(repeat('01',32),'hex'),101)`,
-		`INSERT INTO public.auth_attempts VALUES (CURRENT_TIMESTAMP,'other',decode(repeat('01',32),'hex'),1)`,
+		`INSERT INTO public.auth_attempt_buckets VALUES (CURRENT_TIMESTAMP,'account',decode(repeat('01',32),'hex'),6)`,
+		`INSERT INTO public.auth_attempt_buckets VALUES (CURRENT_TIMESTAMP,'ip',decode(repeat('01',32),'hex'),31)`,
+		`INSERT INTO public.auth_attempt_buckets VALUES (CURRENT_TIMESTAMP,'site',decode(repeat('01',32),'hex'),101)`,
+		`INSERT INTO public.auth_attempt_buckets VALUES (CURRENT_TIMESTAMP,'other',decode(repeat('01',32),'hex'),1)`,
 		`INSERT INTO public.security_audit(id,operation,reason) VALUES (gen_random_uuid(),'auth.denied','arbitrary secret')`,
 	} {
 		rejectSQL(t, ctx, db, "", query, "23514")
 	}
-	_, err := db.Exec(`INSERT INTO public.auth_attempts VALUES (CURRENT_TIMESTAMP,'account',decode(repeat('01',32),'hex'),5)`)
+	_, err := db.Exec(`INSERT INTO public.auth_attempt_buckets VALUES (CURRENT_TIMESTAMP,'account',decode(repeat('01',32),'hex'),5)`)
 	requireNoError(t, err)
 
 	testAuthRecoveryReservation(t, db)
@@ -85,7 +85,7 @@ func testMembershipPrivileges(t *testing.T, owner, security *sql.DB, runtime str
 	t.Helper()
 	var userID, roleID string
 	requireNoError(t, owner.QueryRow(`INSERT INTO public.users(id,login_key,state) VALUES(gen_random_uuid(),'membership-acl-user','disabled') RETURNING id`).Scan(&userID))
-	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'membership-acl-role') RETURNING id`).Scan(&roleID))
+	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name) VALUES(gen_random_uuid(),'membership-acl-role') RETURNING id`).Scan(&roleID))
 	_, err := security.Exec(`INSERT INTO public.user_roles(user_id,role_id) VALUES($1,$2)`, userID, roleID)
 	requireNoError(t, err)
 	var removed string
@@ -111,7 +111,7 @@ func testRestrictedRoleDelete(t *testing.T, owner, security *sql.DB) {
 	ctx := context.Background()
 	const deleteRole = "SELECT public.delete_archived_role($1,$2)"
 	var roleID string
-	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'disposable') RETURNING id`).Scan(&roleID))
+	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name) VALUES(gen_random_uuid(),'disposable') RETURNING id`).Scan(&roleID))
 	assertDelete := func(version int64, want bool) {
 		t.Helper()
 		var deleted bool

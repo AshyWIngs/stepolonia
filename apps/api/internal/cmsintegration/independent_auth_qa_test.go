@@ -143,12 +143,12 @@ func TestAuthIndependentTLSCSRFAndUnknownLimitsIntegration(t *testing.T) {
 	}
 	qaSpoofedLogin(t, f, second["csrf_token"], string(body), http.StatusTooManyRequests)
 	var safe bool
-	requireNoError(t, f.state.db.QueryRow(`SELECT sum(count)=5 AND bool_and(key_digest<>$1) FROM public.auth_attempts WHERE kind='ip'`, authDigest("203.0.113.123")).Scan(&safe))
+	requireNoError(t, f.state.db.QueryRow(`SELECT sum(count)=5 AND bool_and(key_digest<>$1) FROM public.auth_attempt_buckets WHERE kind='ip'`, authDigest("203.0.113.123")).Scan(&safe))
 	if !safe {
 		t.Fatal("untrusted forwarding header changed persistent client-IP budget")
 	}
 	var budgets int
-	requireNoError(t, f.state.db.QueryRow(`SELECT sum(count) FROM public.auth_attempts WHERE kind='account' AND key_digest=$1`, authDigest(qaUnknownLogin)).Scan(&budgets))
+	requireNoError(t, f.state.db.QueryRow(`SELECT sum(count) FROM public.auth_attempt_buckets WHERE kind='account' AND key_digest=$1`, authDigest(qaUnknownLogin)).Scan(&budgets))
 	if budgets != 5 {
 		t.Fatal("unknown account failures were not normalized/persisted")
 	}

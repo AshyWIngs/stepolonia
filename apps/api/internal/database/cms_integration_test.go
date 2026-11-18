@@ -54,7 +54,7 @@ func testCMSStrictFoundationRejectsUnfinishedSecurityPaths(t *testing.T, ctx con
 
 func testCMSPublisherCannotAccessDormantCms(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
-	for _, query := range []string{"SELECT * FROM public.sessions", "SELECT * FROM public.users", "INSERT INTO public.roles(id,name_key) VALUES ('a0000000-0000-0000-0000-000000000003','other')"} {
+	for _, query := range []string{"SELECT * FROM public.sessions", "SELECT * FROM public.users", "INSERT INTO public.roles(id,name) VALUES ('a0000000-0000-0000-0000-000000000003','other')"} {
 		tx, err := db.BeginTx(ctx, nil)
 		requireNoError(t, err)
 		_, err = tx.ExecContext(ctx, "SET LOCAL ROLE sp_publisher")
@@ -139,7 +139,7 @@ func testCMSGrantFieldBoundaries(t *testing.T, ctx context.Context, db *sql.DB) 
 		tx, err := db.BeginTx(ctx, nil)
 		requireNoError(t, err)
 		_, err = tx.ExecContext(ctx, `
-INSERT INTO public.roles(id,name_key) VALUES ('b0000000-0000-0000-0000-000000000001','field-boundary');
+INSERT INTO public.roles(id,name) VALUES ('b0000000-0000-0000-0000-000000000001','field-boundary');
 INSERT INTO public.content_types(id,key,route_namespace) VALUES ('b0000000-0000-0000-0000-000000000002','field_boundary','articles'),('b0000000-0000-0000-0000-000000000006','other_boundary','events');
 INSERT INTO public.content_fields(type_id,field_id,key) VALUES ('b0000000-0000-0000-0000-000000000006','b0000000-0000-0000-0000-000000000003','foreign_field');
 INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) VALUES ('b0000000-0000-0000-0000-000000000004','b0000000-0000-0000-0000-000000000001','content.items.read','content','b0000000-0000-0000-0000-000000000002','any');`)

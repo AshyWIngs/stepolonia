@@ -163,17 +163,17 @@ func TestAuthOnboardingAuthorizationIntegration(t *testing.T) {
 	requireNoError(t, err)
 	_, err = f.service.CreateUser(ctx, authReq(full), onboardingDeniedLogin)
 	onboardingError(t, err, cms.ErrStepUpRequired)
-	_, err = f.db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE kind='full'; UPDATE public.roles SET name_key='Ordinary provisioning role' WHERE name_key='Site Admin'; UPDATE public.role_grants SET can_delegate=false WHERE operation='users.create'`)
+	_, err = f.db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE kind='full'; UPDATE public.roles SET name='Ordinary provisioning role' WHERE name='Site Admin'; UPDATE public.role_grants SET can_delegate=false WHERE operation='users.create'`)
 	requireNoError(t, err)
 	u, err := f.service.CreateUser(ctx, authReq(full), "allowed@example.test")
 	requireNoError(t, err)
-	_, err = f.db.Exec(`UPDATE public.roles SET state='disabled' WHERE name_key='Ordinary provisioning role'`)
+	_, err = f.db.Exec(`UPDATE public.roles SET state='disabled' WHERE name='Ordinary provisioning role'`)
 	requireNoError(t, err)
 	_, err = f.service.CreateUser(ctx, authReq(full), "denied@example.test")
 	onboardingError(t, err, cms.ErrPermissionDenied)
 	_, err = f.service.IssueOnboardingToken(ctx, authReq(full), u.ID, u.Version)
 	onboardingError(t, err, cms.ErrPermissionDenied)
-	_, err = f.db.Exec(`UPDATE public.roles SET state='active' WHERE name_key='Ordinary provisioning role';DELETE FROM public.role_grants WHERE operation='users.create'`)
+	_, err = f.db.Exec(`UPDATE public.roles SET state='active' WHERE name='Ordinary provisioning role';DELETE FROM public.role_grants WHERE operation='users.create'`)
 	requireNoError(t, err)
 	_, err = f.service.IssueOnboardingToken(ctx, authReq(full), u.ID, u.Version)
 	onboardingError(t, err, cms.ErrPermissionDenied)
@@ -493,7 +493,7 @@ func TestAuthOnboardingUnauthenticatedAuditBudgetIntegration(t *testing.T) {
 		}
 	}
 	var bounded bool
-	requireNoError(t, f.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied')=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='anonymous-no-write') AND (SELECT COALESCE(sum(count),0) FROM public.auth_attempts WHERE kind='account')=5`).Scan(&bounded))
+	requireNoError(t, f.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied')=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='anonymous-no-write') AND (SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind='account')=5`).Scan(&bounded))
 	if !bounded {
 		t.Fatal("forged cookie rotation bypassed persistent denial aggregation")
 	}

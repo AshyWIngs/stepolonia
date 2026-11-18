@@ -289,7 +289,7 @@ func attachBootstrapAdmin(ctx context.Context, tx *sql.Tx, user string) error {
 	if err := checkPendingBootstrap(ctx, tx, user); err != nil {
 		return err
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM public.roles WHERE name_key='Site Admin' AND state='active'`, user)
+	result, err := tx.ExecContext(ctx, `INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM public.roles WHERE name='Site Admin' AND state='active'`, user)
 	if err != nil {
 		return err
 	}

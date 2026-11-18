@@ -162,7 +162,7 @@ BEGIN
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  IF NEW.sealed THEN
-  -- Блокировка языков согласована с импортом и исключает отключение во время публикации.
+  -- Hold language locks through publication so eligible languages cannot change.
   PERFORM public.lock_languages(ARRAY(SELECT code FROM public.languages
    WHERE code IN (NEW.default_language,NEW.fallback_language)
    OR code IN (SELECT language_code FROM public.site_revision_languages WHERE revision_id=NEW.id) ORDER BY code));
@@ -269,215 +269,88 @@ INNER JOIN
     ON m.revision_id = c.revision_id AND m.language_code = c.language_code;
 
 COMMENT ON TABLE public.ui_message_keys IS
-'Обязательные UI-ключи и сигнатуры текущего приложения; значения '
-'задаёт редактор.';
+'Application-required message keys with their placeholder signatures.';
 
 COMMENT ON COLUMN public.ui_message_keys.message_key IS
-'Машинный ключ обязательного сообщения, включая вложенные ключи через'
-' точку.';
+'Required message identifier. Dots separate nested keys.';
 
 COMMENT ON COLUMN public.ui_message_keys.placeholders IS
-'Упорядоченный набор уникальных имён подстановок; пустой массив '
-'запрещает подстановки.';
+'Ordered, unique placeholder names. An empty array permits no placeholders.';
 
 COMMENT ON TABLE public.site_revisions IS
-'Типизированный черновик или неизменяемый опубликованный снимок '
-'настроек и UI.';
-
-COMMENT ON COLUMN public.site_revisions.id IS
-'Случайный UUID общей версии настроек и каталога.';
-
-COMMENT ON COLUMN public.site_revisions.title IS
-'Публичное название установки, от 1 до 200 символов.';
-
-COMMENT ON COLUMN public.site_revisions.description IS
-'Публичное описание установки, до 2000 символов.';
+'Draft or sealed snapshot of site settings and the UI catalog.';
 
 COMMENT ON COLUMN public.site_revisions.default_language IS
-'Включённый язык контента по умолчанию.';
+'Default language for content.';
 
 COMMENT ON COLUMN public.site_revisions.fallback_language IS
-'Включённый язык полного запасного UI-каталога.';
+'Language of the fallback UI catalog.';
 
 COMMENT ON COLUMN public.site_revisions.sealed IS
-'Признак проверенного неизменяемого снимка; false означает черновик.';
+'True after validation seals the revision against further changes.';
 
 COMMENT ON TABLE public.site_state IS
-'Единственная точка атомарного переключения публикации и контроля '
-'конкурирующих команд.';
-
-COMMENT ON COLUMN public.site_state.singleton IS
-'Единственная строка состояния, допустимо только true.';
+'Singleton holding the current draft and publication pointers.';
 
 COMMENT ON COLUMN public.site_state.version IS
-'Редакционная optimistic версия, увеличивается каждой успешной '
-'командой.';
+'Optimistic version incremented on draft saves and publication.';
 
 COMMENT ON COLUMN public.site_state.draft_id IS
-'Текущий черновик; NULL после публикации или до первого сохранения.';
+'NULL before the first save or after publication.';
 
 COMMENT ON COLUMN public.site_state.published_id IS
-'Текущий закрытый снимок; NULL до первой утверждённой публикации.';
+'NULL until the first publication.';
 
 COMMENT ON TABLE public.site_revision_keys IS
-'Зафиксированные определения обязательных ключей конкретной версии '
-'UI.';
-
-COMMENT ON COLUMN public.site_revision_keys.revision_id IS
-'Снимок-владелец определения ключа.';
-
-COMMENT ON COLUMN public.site_revision_keys.message_key IS
-'Машинный ключ сообщения в этой версии.';
-
-COMMENT ON COLUMN public.site_revision_keys.placeholders IS
-'Упорядоченная сигнатура подстановок, зафиксированная при сохранении.';
+'Required UI keys and placeholder signatures captured for this revision.';
 
 COMMENT ON TABLE public.site_revision_languages IS
-'Метаданные языков UI, включённых в конкретный снимок.';
-
-COMMENT ON COLUMN public.site_revision_languages.revision_id IS
-'Версия снимка, которой принадлежат зафиксированные метаданные UI-языка.';
-
-COMMENT ON COLUMN public.site_revision_languages.language_code IS
-'Нормализованный код языка из динамического справочника.';
-
-COMMENT ON COLUMN public.site_revision_languages.name IS
-'Название языка на момент сохранения.';
-
-COMMENT ON COLUMN public.site_revision_languages.native_name IS
-'Самоназвание языка на момент сохранения.';
-
-COMMENT ON COLUMN public.site_revision_languages.direction IS
-'Направление письма ltr или rtl на момент сохранения.';
+'UI language metadata captured for this revision.';
 
 COMMENT ON TABLE public.site_revision_messages IS
-'Редакторские сообщения черновика или закрытой версии UI; публичны '
-'только текущие.';
-
-COMMENT ON COLUMN public.site_revision_messages.revision_id IS
-'Версия снимка, содержащего текст сообщения и его определение ключа.';
-
-COMMENT ON COLUMN public.site_revision_messages.language_code IS
-'Язык каталога сообщения.';
-
-COMMENT ON COLUMN public.site_revision_messages.message_key IS
-'Обязательный ключ сообщения этой версии.';
+'Editor-authored messages for a draft or sealed UI catalog.';
 
 COMMENT ON COLUMN public.site_revision_messages.message_value IS
-'Простой текст длиной до 4000 символов; подстановки имеют вид {name}.';
+'Plain text with optional {name} placeholders.';
 
 COMMENT ON VIEW public.public_site IS
-'Только текущие опубликованные настройки с включёнными default и '
-'fallback.';
-
-COMMENT ON COLUMN public.public_site.id IS
-'Случайный UUID общей версии настроек и каталога.';
-
-COMMENT ON COLUMN public.public_site.title IS
-'Публичное название установки, от 1 до 200 символов.';
-
-COMMENT ON COLUMN public.public_site.description IS
-'Публичное описание установки, до 2000 символов.';
-
-COMMENT ON COLUMN public.public_site.default_language IS
-'Включённый язык контента по умолчанию.';
-
-COMMENT ON COLUMN public.public_site.fallback_language IS
-'Включённый язык полного запасного UI-каталога.';
+'Current sealed revision with both configured languages enabled.';
 
 COMMENT ON VIEW public.public_ui_languages IS
-'Включённые UI-языки текущей публикации с зафиксированными '
-'метаданными.';
-
-COMMENT ON COLUMN public.public_ui_languages.revision_id IS
-'Текущая опубликованная версия метаданных доступного UI-языка.';
-
-COMMENT ON COLUMN public.public_ui_languages.language_code IS
-'Нормализованный код языка из динамического справочника.';
-
-COMMENT ON COLUMN public.public_ui_languages.name IS
-'Название языка на момент сохранения.';
-
-COMMENT ON COLUMN public.public_ui_languages.native_name IS
-'Самоназвание языка на момент сохранения.';
-
-COMMENT ON COLUMN public.public_ui_languages.direction IS
-'Направление письма ltr или rtl на момент сохранения.';
+'Enabled UI languages with metadata from the current publication.';
 
 COMMENT ON VIEW public.public_ui_messages IS
-'Полные сообщения только текущей публикации на включённых языках.';
-
-COMMENT ON COLUMN public.public_ui_messages.revision_id IS
-'Текущая опубликованная версия каталога, из которого выдано сообщение.';
-
-COMMENT ON COLUMN public.public_ui_messages.language_code IS
-'Язык каталога сообщения.';
-
-COMMENT ON COLUMN public.public_ui_messages.message_key IS
-'Обязательный ключ сообщения этой версии.';
-
-COMMENT ON COLUMN public.public_ui_messages.message_value IS
-'Простой текст длиной до 4000 символов; подстановки имеют вид {name}.';
+'Messages for enabled UI languages in the current publication.';
 
 COMMENT ON FUNCTION public.ui_placeholders(
     text
 ) IS
-'Извлекает упорядоченные уникальные имена подстановок простого '
-'текста.';
+'Extracts ordered, unique placeholder names from plain text.';
 
 REVOKE ALL ON FUNCTION public.ui_placeholders(text) FROM public;
 
 GRANT EXECUTE ON FUNCTION public.ui_placeholders(text) TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_child() IS
-'Сериализует изменения каталога с закрытием снимка и запрещает '
-'изменение публикаций.';
+'Locks the parent revision and prevents changes to sealed catalogs.';
 
 REVOKE ALL ON FUNCTION public.guard_site_child() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_child() TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_revision() IS
-'Закрывает только полный согласованный каталог и защищает '
-'опубликованные версии.';
+'Validates the complete catalog at sealing and protects sealed revisions.';
 
 REVOKE ALL ON FUNCTION public.guard_site_revision() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_revision() TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_state() IS
-'Защищает singleton, последовательность версий и ссылки только на '
-'закрытые публикации.';
+'Protects the singleton version and enforces draft and publication states.';
 
 REVOKE ALL ON FUNCTION public.guard_site_state() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_state() TO sp_publisher;
-
-COMMENT ON TRIGGER site_revisions_guard
-ON public.site_revisions IS
-'Запрещает создание закрытого снимка и изменения после его '
-'публикации; перед закрытием проверяет языки, полноту каталога и '
-'подстановки.';
-
-COMMENT ON TRIGGER site_state_guard
-ON public.site_state IS
-'Сохраняет единственную строку состояния, последовательность версий и'
-' ссылку публикации только на закрытый снимок.';
-
-COMMENT ON TRIGGER site_revision_keys_guard
-ON public.site_revision_keys IS
-'Блокирует снимок при изменении определений ключей и запрещает их '
-'перенос между версиями или правку после закрытия.';
-
-COMMENT ON TRIGGER site_revision_languages_guard
-ON public.site_revision_languages IS
-'Сериализует изменение метаданных UI-языков с закрытием снимка и '
-'сохраняет неизменность опубликованного набора языков.';
-
-COMMENT ON TRIGGER site_revision_messages_guard
-ON public.site_revision_messages IS
-'Защищает сообщения закрытого каталога от вставки, замены и удаления;'
-' изменение черновика блокирует строку снимка до конца транзакции.';
 
 REVOKE ALL ON public.ui_message_keys,
 public.site_revisions,
@@ -501,25 +374,11 @@ REVOKE ALL ON public.public_site,
 public.public_ui_languages,
 public.public_ui_messages FROM public;
 
-COMMENT ON COLUMN public.site_revisions.tagline IS
-'Публичный краткий девиз установки, до 300 символов.';
-
 COMMENT ON COLUMN public.site_revisions.notice IS
-'Публичное текстовое уведомление, до 2000 символов; пустое скрывает '
-'блок.';
+'An empty value hides the public notice.';
 
 COMMENT ON COLUMN public.site_revisions.accent IS
-'Акцент оформления в безопасном формате #RRGGBB, без CSS-выражений.';
-
-COMMENT ON COLUMN public.public_site.tagline IS
-'Публичный краткий девиз установки, до 300 символов.';
-
-COMMENT ON COLUMN public.public_site.notice IS
-'Публичное текстовое уведомление, до 2000 символов; пустое скрывает '
-'блок.';
-
-COMMENT ON COLUMN public.public_site.accent IS
-'Акцент оформления в безопасном формате #RRGGBB, без CSS-выражений.';
+'Theme accent as a hexadecimal RGB color (#RRGGBB).';
 
 -- +goose Down
 DROP VIEW public.public_ui_messages;

@@ -88,7 +88,7 @@ func TestAuthRolesInputValidationIntegration(t *testing.T) {
 		onboardingError(t, err, cms.ErrValidation)
 	}
 	var count int
-	requireNoError(t, x.f.db.QueryRow(`SELECT count(*) FROM public.roles WHERE name_key IN ('unknown','duplicate','wrong field','unknown type')`).Scan(&count))
+	requireNoError(t, x.f.db.QueryRow(`SELECT count(*) FROM public.roles WHERE name IN ('unknown','duplicate','wrong field','unknown type')`).Scan(&count))
 	if count != 0 {
 		t.Fatal("invalid grant set partially created")
 	}
@@ -97,7 +97,7 @@ func TestAuthRolesInputValidationIntegration(t *testing.T) {
 func TestAuthRolesEnvelopeIntegration(t *testing.T) {
 	cases := []struct{ name, query string }{
 		{"superior grant", `INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,'roles.edit')`},
-		{"latent superior recipient", `WITH r AS (INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'Other latent superior','archived') RETURNING id),g AS (INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),id,'roles.edit' FROM r) INSERT INTO public.user_roles(user_id,role_id) SELECT ur.user_id,r.id FROM r CROSS JOIN public.user_roles ur WHERE ur.role_id=$1`},
+		{"latent superior recipient", `WITH r AS (INSERT INTO public.roles(id,name,state) VALUES(gen_random_uuid(),'Other latent superior','archived') RETURNING id),g AS (INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),id,'roles.edit' FROM r) INSERT INTO public.user_roles(user_id,role_id) SELECT ur.user_id,r.id FROM r CROSS JOIN public.user_roles ur WHERE ur.role_id=$1`},
 		{"any ceiling", `UPDATE public.role_grants SET object_scope='any' WHERE role_id=$1`},
 		{"delegation growth", `UPDATE public.role_grants SET can_delegate=true WHERE role_id=$1`},
 		{"hidden field", `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT id,type_id,'c0000000-0000-4000-8000-000000000004' FROM public.role_grants WHERE role_id=$1`},
@@ -125,7 +125,7 @@ func TestAuthRolesOwnGrowthIntegration(t *testing.T) {
 			_, err = f.service.EditRole(context.Background(), authReq(full), roleID, 1, input)
 			onboardingError(t, err, cms.ErrPermissionDenied)
 			var unchanged bool
-			requireNoError(t, f.db.QueryRow(`SELECT version=1 AND name_key='Shared self role' AND NOT EXISTS(SELECT 1 FROM public.role_grants WHERE role_id=$1) FROM public.roles WHERE id=$1`, roleID).Scan(&unchanged))
+			requireNoError(t, f.db.QueryRow(`SELECT version=1 AND name='Shared self role' AND NOT EXISTS(SELECT 1 FROM public.role_grants WHERE role_id=$1) FROM public.roles WHERE id=$1`, roleID).Scan(&unchanged))
 			if !unchanged {
 				t.Fatal("self growth committed")
 			}
@@ -148,7 +148,7 @@ func TestAuthRolesLastAdminAndRollbackIntegration(t *testing.T) {
 	_, err = f.service.CreateRole(context.Background(), authReq(full), rolesInput("Audit failed creation"))
 	onboardingError(t, err, cms.ErrSecurityUnavailable)
 	var unchanged bool
-	requireNoError(t, f.db.QueryRow(`SELECT version=$2 AND name_key=$3 AND NOT EXISTS(SELECT 1 FROM public.roles WHERE name_key='Audit failed creation') FROM public.roles WHERE id=$1`, role, admin.Version, admin.Name).Scan(&unchanged))
+	requireNoError(t, f.db.QueryRow(`SELECT version=$2 AND name=$3 AND NOT EXISTS(SELECT 1 FROM public.roles WHERE name='Audit failed creation') FROM public.roles WHERE id=$1`, role, admin.Version, admin.Name).Scan(&unchanged))
 	if !unchanged {
 		t.Fatal("audit outage committed partial role state")
 	}

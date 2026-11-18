@@ -24,8 +24,8 @@ func checkFreshSchema(ctx context.Context, db *sql.DB) error {
 	for key := range contract.Indexes {
 		names[strings.SplitN(key, ".", 2)[1]] = true
 	}
-	// Retired storage is never treated as an empty universal installation.
-	for _, name := range []string{"articles", "article_draft_translations", "article_revisions", "article_revision_translations", "public_routes", "public_article_routes", "public_article_translations"} {
+	// Retired application objects must not survive a fresh install.
+	for _, name := range []string{"articles", "article_draft_translations", "article_revisions", "article_revision_translations", "public_routes", "public_article_routes", "public_article_translations", "auth_attempts", "auth_attempts_pkey", "roles_name_key_key"} {
 		names[name] = true
 	}
 	relations := make([]string, 0, len(names))

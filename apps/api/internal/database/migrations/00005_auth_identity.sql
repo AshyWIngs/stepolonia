@@ -1,5 +1,4 @@
 -- +goose Up
--- Authentication uses a dedicated pool; editorial commands remain dormant.
 CREATE TABLE public.users (
     id uuid CONSTRAINT users_pkey PRIMARY KEY,
     login_key text COLLATE "C" NOT NULL CONSTRAINT users_login_key_key UNIQUE,
@@ -238,13 +237,15 @@ COMMENT ON COLUMN public.enrollment_attempts.pending_ciphertext IS
 COMMENT ON COLUMN public.enrollment_attempts.password_hash IS
 'Pending Argon2id PHC; never used by login before enrollment completion.';
 
-CREATE TABLE public.auth_attempts (
+CREATE TABLE public.auth_attempt_buckets (
     bucket_start timestamptz NOT NULL,
     kind text NOT NULL,
     key_digest bytea NOT NULL,
     count integer NOT NULL DEFAULT 0,
-    CONSTRAINT auth_attempts_pkey PRIMARY KEY (bucket_start, kind, key_digest),
-    CONSTRAINT auth_attempts_shape_check CHECK (
+    CONSTRAINT auth_attempt_buckets_pkey PRIMARY KEY (
+        bucket_start, kind, key_digest
+    ),
+    CONSTRAINT auth_attempt_buckets_shape_check CHECK (
         kind IN ('account', 'ip', 'site', 'preauth_ip', 'preauth_site')
         AND octet_length(key_digest) = 32
         AND count BETWEEN 0 AND CASE kind
@@ -260,8 +261,8 @@ COMMENT ON TABLE public.recovery_attempts IS
 COMMENT ON COLUMN public.recovery_attempts.pending_ciphertext IS
 'AEAD-encrypted replacement TOTP seed confirmed only at completion.';
 
-COMMENT ON TABLE public.auth_attempts IS
-'Bounded authentication buckets storing account and IP digests.';
+COMMENT ON TABLE public.auth_attempt_buckets IS
+'Rate-limit counters by time window and digested scope key.';
 
 CREATE TABLE public.security_audit (
     id uuid CONSTRAINT security_audit_pkey PRIMARY KEY,
@@ -320,19 +321,17 @@ COMMENT ON TABLE public.recovery_codes IS
 'commit.';
 
 COMMENT ON TABLE public.security_audit IS
-'Append-only bounded security events; immutable identity snapshots '
-'without credential data.';
+'Append-only security events with actor and target IDs.';
 
 COMMENT ON TABLE public.users IS
 'CMS account identities; activation requires verified password and MFA '
 'enrollment.';
 
 COMMENT ON COLUMN public.users.login_key IS
-'Unique canonical login identifier; normalization belongs to the '
-'future enrollment service.';
+'Canonical login identifier used for enrollment and sign-in.';
 
 COMMENT ON COLUMN public.users.state IS
-'Pending enrollment never authenticates; active requires completed enrollment.';
+'Pending accounts can enroll. Active accounts can sign in.';
 
 COMMENT ON COLUMN public.users.credential_version IS
 'Credential generation checked on every authenticated session access.';
@@ -485,7 +484,7 @@ public.sessions,
 public.recovery_attempts,
 public.onboarding_tokens,
 public.enrollment_attempts,
-public.auth_attempts FROM public,
+public.auth_attempt_buckets FROM public,
 sp_publisher,
 sp_language_importer;
 
@@ -497,26 +496,28 @@ public.mfa_totp,
 public.recovery_codes,
 public.sessions,
 public.recovery_attempts,
-public.auth_attempts,
+public.auth_attempt_buckets,
 public.onboarding_tokens,
 public.enrollment_attempts TO sp_security;
 
 GRANT UPDATE ON public.users, public.mfa_totp, public.recovery_codes,
-public.sessions, public.recovery_attempts, public.auth_attempts,
-public.onboarding_tokens, public.enrollment_attempts TO sp_security;
+public.sessions, public.recovery_attempts,
+public.auth_attempt_buckets, public.onboarding_tokens,
+public.enrollment_attempts TO sp_security;
 
 GRANT INSERT ON public.sessions, public.recovery_attempts,
-public.auth_attempts, public.recovery_codes, public.users, public.mfa_totp,
-public.onboarding_tokens, public.enrollment_attempts TO sp_security;
+public.auth_attempt_buckets, public.recovery_codes, public.users,
+public.mfa_totp, public.onboarding_tokens,
+public.enrollment_attempts TO sp_security;
 
-GRANT DELETE ON public.auth_attempts, public.sessions TO sp_security;
+GRANT DELETE ON public.auth_attempt_buckets, public.sessions TO sp_security;
 
 GRANT INSERT ON public.security_audit TO sp_security;
 
 -- +goose Down
 DROP TABLE public.enrollment_attempts;
 DROP TABLE public.onboarding_tokens;
-DROP TABLE public.auth_attempts;
+DROP TABLE public.auth_attempt_buckets;
 DROP TABLE public.recovery_attempts;
 DROP TABLE public.security_audit;
 DROP TABLE public.recovery_codes;

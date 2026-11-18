@@ -83,7 +83,7 @@ func TestAuthLifecycleReadProjectionIntegration(t *testing.T) {
 	_, err = f.service.CreateUser(ctx, authReq(full), "a-pending@example.test")
 	requireNoError(t, err)
 	_ = lifecycleEnrolled(t, f, full, "b-disabled@example.test")
-	_, err = f.db.Exec(`WITH r AS (INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'Read only lifecycle','active') RETURNING id),g AS (INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),id,'users.read' FROM r) INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM r`, account.user.ID)
+	_, err = f.db.Exec(`WITH r AS (INSERT INTO public.roles(id,name,state) VALUES(gen_random_uuid(),'Read only lifecycle','active') RETURNING id),g AS (INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),id,'users.read' FROM r) INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM r`, account.user.ID)
 	requireNoError(t, err)
 	req := authReq(viewer)
 	req.CSRF = ""

@@ -105,7 +105,7 @@ func TestAuthRolesHTTPReadOnlySessionIntegration(t *testing.T) {
 	_, err = f.state.db.Exec(`UPDATE public.sessions SET step_up_at=NULL WHERE token_digest IN ($1,$2)`, authDigest(reader.Token), authDigest(full.Token))
 	requireNoError(t, err)
 	var superior string
-	requireNoError(t, f.state.db.QueryRow(`SELECT id::text FROM public.roles WHERE name_key='Site Admin'`).Scan(&superior))
+	requireNoError(t, f.state.db.QueryRow(`SELECT id::text FROM public.roles WHERE name='Site Admin'`).Scan(&superior))
 	out, _ := f.roleHTTP(t, http.MethodGet, rolesHTTPPath+"/"+superior, "", reader, 200)
 	if len(out) != 5 || len(out["grants"].([]any)) < 1 {
 		t.Fatal("roles.read failed independent safe policy access")

@@ -14,7 +14,7 @@ import (
 func createMembershipTestRole(t *testing.T, f authFixtureState, name, state string) string {
 	t.Helper()
 	var id string
-	requireNoError(t, f.db.QueryRow(`INSERT INTO public.roles(id,name_key,state)
+	requireNoError(t, f.db.QueryRow(`INSERT INTO public.roles(id,name,state)
  VALUES(gen_random_uuid(),$1,$2) RETURNING id::text`, name, state).Scan(&id))
 	return id
 }
@@ -48,9 +48,9 @@ func TestAuthUserRolesLimitsAndLastAdminIntegration(t *testing.T) {
 
 	recipient := lifecycleEnrolled(t, f, admin, "membership-limit@example.test")
 	const caseSensitiveRole = "e0000000-0000-4000-8000-000000000001"
-	_, err = f.db.Exec(`INSERT INTO public.roles(id,name_key,state) VALUES($1,'UUID normalization test','disabled')`, caseSensitiveRole)
+	_, err = f.db.Exec(`INSERT INTO public.roles(id,name,state) VALUES($1,'UUID normalization test','disabled')`, caseSensitiveRole)
 	requireNoError(t, err)
-	rows, err := f.db.Query(`INSERT INTO public.roles(id,name_key,state)
+	rows, err := f.db.Query(`INSERT INTO public.roles(id,name,state)
  SELECT gen_random_uuid(),'Membership test policy ' || n,'disabled' FROM generate_series(1,16) n RETURNING id::text`)
 	requireNoError(t, err)
 	defer func() { _ = rows.Close() }()

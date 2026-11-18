@@ -49,7 +49,7 @@ func checkBootstrapAdmin(ctx context.Context, tx *sql.Tx, user string) error {
 
 func checkPendingBootstrap(ctx context.Context, tx *sql.Tx, user string) error {
 	var valid bool
-	if err := tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM public.users)=1 AND EXISTS(SELECT 1 FROM public.users WHERE id=$1 AND state='pending' AND enrollment_completed_at IS NULL) AND (SELECT count(*) FROM public.roles)=3 AND NOT EXISTS(SELECT 1 FROM public.roles WHERE state<>'active' OR name_key NOT IN ('Author','Editor','Site Admin')) AND NOT EXISTS(SELECT 1 FROM public.user_roles) AND NOT EXISTS(SELECT 1 FROM public.sessions) AND NOT EXISTS(SELECT 1 FROM public.recovery_codes) AND (SELECT count(*) FROM public.mfa_totp)=1 AND EXISTS(SELECT 1 FROM public.mfa_totp WHERE user_id=$1 AND confirmed_at IS NULL AND last_counter=-1)`, user).Scan(&valid); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM public.users)=1 AND EXISTS(SELECT 1 FROM public.users WHERE id=$1 AND state='pending' AND enrollment_completed_at IS NULL) AND (SELECT count(*) FROM public.roles)=3 AND NOT EXISTS(SELECT 1 FROM public.roles WHERE state<>'active' OR name NOT IN ('Author','Editor','Site Admin')) AND NOT EXISTS(SELECT 1 FROM public.user_roles) AND NOT EXISTS(SELECT 1 FROM public.sessions) AND NOT EXISTS(SELECT 1 FROM public.recovery_codes) AND (SELECT count(*) FROM public.mfa_totp)=1 AND EXISTS(SELECT 1 FROM public.mfa_totp WHERE user_id=$1 AND confirmed_at IS NULL AND last_counter=-1)`, user).Scan(&valid); err != nil {
 		return err
 	}
 	if !valid {
@@ -154,7 +154,7 @@ func seedBootstrapRole(ctx context.Context, tx *sql.Tx, roleName string, article
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO public.roles(id,name_key,state) VALUES($1,$2,'active')`, roleID, roleName); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO public.roles(id,name,state) VALUES($1,$2,'active')`, roleID, roleName); err != nil {
 		return err
 	}
 	if roleName == seedAdminName {

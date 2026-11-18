@@ -9,8 +9,8 @@ import (
 func TestAuthLifecycleCapacityIntegration(t *testing.T) {
 	cases := []struct{ name, query string }{
 		{"account capacity", `INSERT INTO public.users(id,login_key) SELECT gen_random_uuid(),'cap-'||i::text FROM generate_series(1,100) i`},
-		{"role capacity", `INSERT INTO public.roles(id,name_key) SELECT gen_random_uuid(),'cap-role-'||i::text FROM generate_series(1,30) i`},
-		{"memberships", `WITH r AS (INSERT INTO public.roles(id,name_key) SELECT gen_random_uuid(),'cap-member-'||i::text FROM generate_series(1,17) i RETURNING id) INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM r`},
+		{"role capacity", `INSERT INTO public.roles(id,name) SELECT gen_random_uuid(),'cap-role-'||i::text FROM generate_series(1,30) i`},
+		{"memberships", `WITH r AS (INSERT INTO public.roles(id,name) SELECT gen_random_uuid(),'cap-member-'||i::text FROM generate_series(1,17) i RETURNING id) INSERT INTO public.user_roles(user_id,role_id) SELECT $1,id FROM r`},
 		{"grants", `WITH types AS (INSERT INTO public.content_types(id,key,route_namespace) SELECT gen_random_uuid(),'cap_type_'||i::text,'cap-type-'||i::text FROM generate_series(1,65) i RETURNING id),schemas AS (INSERT INTO public.content_schemas(type_id,schema_no,sealed) SELECT id,1,true FROM types) INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) SELECT gen_random_uuid(),(SELECT role_id FROM public.user_roles WHERE user_id=$1 LIMIT 1),'content.items.read','content',id,'any' FROM types`},
 	}
 	for _, tc := range cases {
