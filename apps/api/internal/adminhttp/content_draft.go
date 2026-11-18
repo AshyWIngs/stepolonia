@@ -58,6 +58,11 @@ var readDraftRoute = route{
 	description: "Available only with a verified draft database login. A full session and current read permissions on the item's actual collection and scope are required. The response contains only actor-readable fields and relations. Send no query or request body. The request returns 503 if the draft exceeds the locale read limit or the read deadline.",
 }
 
+var (
+	collectionDraftRoutes = []route{createDraftRoute, listDraftsRoute}
+	itemDraftRoutes       = []route{saveDraftRoute, readDraftRoute}
+)
+
 func contentDraftTarget(path string) (routeTarget, bool) {
 	rest, ok := strings.CutPrefix(path, adminContentPrefix)
 	if !ok {

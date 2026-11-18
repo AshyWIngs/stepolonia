@@ -524,8 +524,8 @@ func privateRoutes() map[string][]route {
 		all[path] = methods
 	}
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
-	all[createDraftPath] = []route{listDraftsRoute, createDraftRoute}
-	all[contentDraftPath] = []route{readDraftRoute, saveDraftRoute}
+	all[createDraftPath] = collectionDraftRoutes
+	all[contentDraftPath] = itemDraftRoutes
 	for path, rt := range draftCandidateRoutes {
 		all[path] = []route{rt}
 	}

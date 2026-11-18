@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -20,11 +21,12 @@ func TestAdminDraftListHTTPSIntegration(t *testing.T) {
 		return sendDraftRequest(t, server, http.MethodGet, f.actor.Token, draftHTTPRequest{path: path, status: status})
 	}
 
-	_, err := f.owner.Exec(`INSERT INTO public.content_items(id,type_id,version) VALUES($1,$2,3)`, lastListedDraft, draftEditorType)
-	requireNoError(t, err)
-	_, err = f.owner.Exec(`INSERT INTO public.content_drafts(item_id,type_id,schema_no) VALUES($1,$2,1)`, lastListedDraft, draftEditorType)
-	requireNoError(t, err)
-	_, err = f.owner.Exec(`INSERT INTO public.content_item_assignments(item_id,user_id) VALUES($1,$2)`, lastListedDraft, f.userID)
+	_, err := f.owner.Exec(`WITH item AS (
+ INSERT INTO public.content_items(id,type_id,version) VALUES($1,$2,3) RETURNING id,type_id
+ ), draft AS (
+ INSERT INTO public.content_drafts(item_id,type_id,schema_no) SELECT id,type_id,1 FROM item RETURNING item_id
+ )
+ INSERT INTO public.content_item_assignments(item_id,user_id) SELECT item_id,$3 FROM draft`, lastListedDraft, draftEditorType, f.userID)
 	requireNoError(t, err)
 	expireSessionStepUp(t, f.owner, f.actor.Token)
 
@@ -44,8 +46,7 @@ func TestAdminDraftListHTTPSIntegration(t *testing.T) {
 	_, err = f.owner.Exec(`DELETE FROM public.content_item_assignments WHERE user_id=$1`, f.userID)
 	requireNoError(t, err)
 	assertDraftListPage(t, read(collection, http.StatusOK), nil)
-	_, err = f.owner.Exec(`UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)
-	requireNoError(t, err)
+	requireNoError(t, disableDraftFixtureRole(context.Background(), f))
 	read(collection, http.StatusNotFound)
 	requireNoError(t, f.auth.Logout(context.Background(), f.actor, fullSessionFixtureKind))
 	read(collection, http.StatusUnauthorized)
@@ -53,28 +54,28 @@ func TestAdminDraftListHTTPSIntegration(t *testing.T) {
 
 func assertDraftListPage(t *testing.T, body string, next *int, ids ...string) {
 	t.Helper()
+	type itemResponse struct {
+		ItemID  string `json:"item_id"`
+		TypeID  string `json:"type_id"`
+		Schema  string `json:"schema_no"`
+		Version string `json:"version"`
+	}
 	var page struct {
-		Items []struct {
-			ItemID  string `json:"item_id"`
-			TypeID  string `json:"type_id"`
-			Schema  string `json:"schema_no"`
-			Version string `json:"version"`
-		} `json:"items"`
-		NextOffset *int `json:"next_offset"`
+		Items      []itemResponse `json:"items"`
+		NextOffset *int           `json:"next_offset"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.DisallowUnknownFields()
 	requireNoError(t, decoder.Decode(&page))
-	if page.Items == nil || len(page.Items) != len(ids) || !reflect.DeepEqual(page.NextOffset, next) {
-		t.Fatalf("unexpected items or next offset: %s", body)
-	}
-	for index, item := range page.Items {
+	want := make([]itemResponse, 0, len(ids))
+	for _, id := range ids {
 		wantVersion := "1"
-		if ids[index] == lastListedDraft {
+		if id == lastListedDraft {
 			wantVersion = "3"
 		}
-		if item.ItemID != ids[index] || item.TypeID != draftEditorType || item.Schema != "1" || item.Version != wantVersion {
-			t.Fatalf("unexpected draft at index %d: %s", index, body)
-		}
+		want = append(want, itemResponse{ItemID: id, TypeID: draftEditorType, Schema: "1", Version: wantVersion})
+	}
+	if page.Items == nil || !slices.Equal(page.Items, want) || !reflect.DeepEqual(page.NextOffset, next) {
+		t.Fatalf("unexpected items or next offset: %s", body)
 	}
 }

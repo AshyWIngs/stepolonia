@@ -50,7 +50,7 @@ func draftListSchemas() map[string]*huma.Schema {
 	summary := closedObjectSchema("Identity and versions of an authorized draft.", map[string]*huma.Schema{
 		itemIDField: uuidSchema(exampleUUID), typeIDField: uuidSchema(exampleUUID),
 		schemaNoField:     contentVersionSchema("Collection schema pinned to the draft.", "1"),
-		draftVersionField: contentVersionSchema("Current item version.", "2"),
+		draftVersionField: contentVersionSchema("Item version at the time the page was read.", "2"),
 	}, []string{itemIDField, typeIDField, schemaNoField, draftVersionField}, example)
 	page := privatePageSchema("Page of authorized draft identities. next_offset is null when there is no following page within the supported range.",
 		draftSummarySchemaName, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset, identity.DraftPage{Items: []identity.DraftSummary{example}})

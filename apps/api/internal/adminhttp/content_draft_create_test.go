@@ -103,7 +103,7 @@ func TestCreateDraftRequiresEnabledEditorAndWriteBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = res.Body.Close() }()
-	if res.StatusCode != http.StatusMethodNotAllowed || res.Header.Get("Allow") != "GET, POST" || editor.calls != 0 {
+	if res.StatusCode != http.StatusMethodNotAllowed || res.Header.Get("allow") != "GET, POST" || editor.calls != 0 {
 		t.Fatalf("wrong method rejection or write dispatched: %d %v", res.StatusCode, res.Header)
 	}
 }

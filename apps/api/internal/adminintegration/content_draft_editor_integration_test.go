@@ -214,9 +214,7 @@ func TestAdminDraftEditorRevocationIntegration(t *testing.T) {
 		{"session", func(ctx context.Context, f draftEditorFixture) error {
 			return f.auth.Logout(ctx, f.actor, fullSessionFixtureKind)
 		}, identity.ErrAuthenticationRequired},
-		{"role", func(ctx context.Context, f draftEditorFixture) error {
-			return revokeDraftAccess(ctx, f.owner, `UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)
-		}, identity.ErrNotFound},
+		{"role", disableDraftFixtureRole, identity.ErrNotFound},
 		{"assignment", func(ctx context.Context, f draftEditorFixture) error {
 			return revokeDraftAccess(ctx, f.owner, `DELETE FROM public.content_item_assignments WHERE user_id=$1`, f.userID)
 		}, identity.ErrPermissionDenied},
@@ -225,6 +223,10 @@ func TestAdminDraftEditorRevocationIntegration(t *testing.T) {
 		t.Run(tc.name+"/edit-first", func(t *testing.T) { checkDraftRevocationOrder(t, tc, true) })
 		t.Run(tc.name+"/revoke-first", func(t *testing.T) { checkDraftRevocationOrder(t, tc, false) })
 	}
+}
+
+func disableDraftFixtureRole(ctx context.Context, f draftEditorFixture) error {
+	return revokeDraftAccess(ctx, f.owner, `UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)
 }
 
 func revokeDraftAccess(ctx context.Context, db *sql.DB, statement, id string) error {
