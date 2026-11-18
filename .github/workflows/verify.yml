@@ -149,7 +149,8 @@ jobs:
         run: make SITE=ci.test auth-test
       - name: "Security: record the Stage 3 image audit exception"
         if: steps.scope.outputs.full == 'true' && env.STAGE3_SKIP_IMAGE_AUDIT == 'true'
-        run: echo "::warning::Image CVE audit skipped for the Stage 3 integration candidate (PR #63)."
+        run: |
+          echo "::warning::Image CVE audit skipped for the Stage 3 integration candidate (PR #63)."
       - name: "Security: audit 11 images for CVEs"
         if: steps.scope.outputs.full == 'true' && env.STAGE3_SKIP_IMAGE_AUDIT != 'true'
         env:
