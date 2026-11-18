@@ -467,7 +467,7 @@ func authNotFoundDescription(operationID string) string {
 		return " Collection is missing or outside the actor's authorized create scope."
 	case listDraftsOperation:
 		return " Collection is missing or outside the actor's authorized read scope."
-	case readySharedOperation, readyLocaleOperation, publishOperation:
+	case readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized command scope. A draft locale may also be absent."
 	case saveDraftOperation:
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
@@ -582,7 +582,7 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
-	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation:
+	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return contentDraftTag
 	case readSettingsOperation, saveSettingsOperation, publishSettingsOperation:
 		return settingsTag

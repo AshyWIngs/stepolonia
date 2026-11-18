@@ -184,7 +184,9 @@ func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Sessi
 			writeOnly[field.Key] = true
 		}
 	}
-	if err := applyDraftPatch(ctx, tx, &state, schema, patch, writeOnly); err != nil {
+	if err := applyDraftPatch(ctx, tx, &state, schema, patch, writeOnly, func(relation Relation) (bool, error) {
+		return canReadRelation(ctx, tx, session, relation)
+	}); err != nil {
 		return DraftState{}, databaseError(err)
 	}
 	return draftUpdateResponse(ctx, tx, session, state, schema, read)
@@ -218,6 +220,11 @@ func checkDraftPatchFields(update identity.ContentItemAccess, schema TypeSchema,
 	}
 	for _, key := range patchKeys(schema, patch) {
 		if !update.AllowsField(fieldsByKey[key]) {
+			return identity.ErrPermissionDenied
+		}
+	}
+	for _, change := range patch.RelationChanges {
+		if !update.AllowsField(change.FieldID) {
 			return identity.ErrPermissionDenied
 		}
 	}

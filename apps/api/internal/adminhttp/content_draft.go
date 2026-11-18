@@ -33,6 +33,8 @@ type DraftEditor interface {
 	MarkSharedReadyForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
 	MarkReadyForType(context.Context, identity.AuthRequest, string, string, string, int64, int64) (content.DraftState, error)
 	PublishForType(context.Context, identity.AuthRequest, string, string, int64, int64, []string) (content.DraftState, error)
+	AdoptSchemaForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
+	UnpublishForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
 }
 
 type saveDraftInput struct {
@@ -41,6 +43,7 @@ type saveDraftInput struct {
 	Shared          map[string]content.FieldValue `json:"shared,omitempty"`
 	UnsetShared     []string                      `json:"unset_shared,omitempty"`
 	Locales         map[string]draftLocalePatch   `json:"locales,omitempty"`
+	RelationChanges []content.RelationChange      `json:"relation_changes,omitempty"`
 }
 
 type draftLocalePatch struct {
@@ -50,8 +53,8 @@ type draftLocalePatch struct {
 
 var saveDraftRoute = route{
 	kind: fullKind, method: http.MethodPatch, operationID: saveDraftOperation,
-	summary: "Save scalar content draft changes", response: contentDraftSchema,
-	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. Accepts scalar changes only. Changes and their audit commit together.",
+	summary: "Save content draft changes", response: contentDraftSchema,
+	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. A relation change requires read access to any newly selected target. Changes and their audit commit together.",
 }
 
 var readDraftRoute = route{
@@ -129,7 +132,7 @@ func (input saveDraftInput) patch() content.DraftPatch {
 	for locale, patch := range input.Locales {
 		locales[locale] = content.ValuePatch{Values: patch.Values, Unset: patch.Unset}
 	}
-	return content.DraftPatch{SchemaNo: input.SchemaNo, Shared: input.Shared, UnsetShared: input.UnsetShared, Locales: locales}
+	return content.DraftPatch{SchemaNo: input.SchemaNo, Shared: input.Shared, UnsetShared: input.UnsetShared, Locales: locales, RelationChanges: input.RelationChanges}
 }
 
 func readDraftInput(w http.ResponseWriter, r *http.Request) (saveDraftInput, string, int) {

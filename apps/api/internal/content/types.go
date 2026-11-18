@@ -127,6 +127,13 @@ type DraftPatch struct {
 	Locales          map[string]ValuePatch
 	Relations        []Relation
 	ReplaceRelations bool
+	RelationChanges  []RelationChange
+}
+
+type RelationChange struct {
+	FieldID      string `json:"field_id"`
+	Locale       string `json:"locale,omitempty"`
+	TargetItemID string `json:"target_item_id,omitempty"`
 }
 type ValuePatch struct {
 	Values map[string]FieldValue

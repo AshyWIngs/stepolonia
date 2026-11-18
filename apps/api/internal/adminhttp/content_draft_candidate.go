@@ -18,9 +18,13 @@ const (
 	readySharedOperation = "contentMarkSharedReady"
 	readyLocaleOperation = "contentMarkReady"
 	publishOperation     = "contentPublish"
+	adoptSchemaOperation = "contentAdoptDraftSchema"
+	unpublishOperation   = "contentUnpublish"
 	readySharedPath      = contentDraftPath + "/ready-shared"
 	readyLocalePath      = contentDraftPath + "/ready"
 	publishPath          = contentDraftPath + "/publish"
+	adoptSchemaPath      = contentDraftPath + "/adopt-schema"
+	unpublishPath        = contentDraftPath + "/unpublish"
 	publishedDraftSchema = "PublishedContentDraft"
 	candidateLocaleField = "locale"
 	intendedLocalesField = "intended_locales"
@@ -30,6 +34,8 @@ var draftCandidateRoutes = map[string]route{
 	readySharedPath: candidateRoute(readySharedOperation, "Mark the shared draft ready", "Validates shared values and relations and approves the current shared sequence."),
 	readyLocalePath: candidateRoute(readyLocaleOperation, "Mark a draft locale ready", "Approves the current locale, shared and schema versions and the enabled language generation."),
 	publishPath:     publishDraftRoute(),
+	adoptSchemaPath: candidateRoute(adoptSchemaOperation, "Adopt the current collection schema", "Requires update access to all target-schema fields. Keeps existing values and relations and resets readiness on adoption."),
+	unpublishPath:   candidateRoute(unpublishOperation, "Remove a published content item", "Requires content.items.unpublish on the item. Clears public visibility and readiness. Preserves immutable history and route reservations. Accepts the current draft's pinned schema even when a newer schema exists."),
 }
 
 func publishDraftRoute() route {
@@ -95,6 +101,10 @@ func (h *handler) runDraftCandidate(ctx context.Context, req identity.AuthReques
 		return h.draftEditor.MarkReadyForType(ctx, req, target.typeKey, target.id, input.Locale, input.ExpectedVersion, input.SchemaNo)
 	case publishOperation:
 		return h.draftEditor.PublishForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo, input.IntendedLocales)
+	case adoptSchemaOperation:
+		return h.draftEditor.AdoptSchemaForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo)
+	case unpublishOperation:
+		return h.draftEditor.UnpublishForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo)
 	default:
 		return content.DraftState{}, identity.ErrNotFound
 	}
@@ -128,6 +138,8 @@ var draftCandidateConflicts = map[string][]string{
 	readySharedOperation: {schemaConflictCode, versionConflictCode, relationUnavailableCode},
 	readyLocaleOperation: {schemaConflictCode, versionConflictCode, localeUnavailableCode, relationUnavailableCode},
 	publishOperation:     {schemaConflictCode, versionConflictCode, notReadyCode, localeUnavailableCode, routeConflictCode, relationUnavailableCode},
+	adoptSchemaOperation: {schemaConflictCode, versionConflictCode},
+	unpublishOperation:   {schemaConflictCode, versionConflictCode},
 }
 
 func writeDraftCandidateError(w http.ResponseWriter, operation string, err error) {

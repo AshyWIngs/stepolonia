@@ -85,7 +85,7 @@ func TestPrivateUserRoutesRequireConfiguredBoundary(t *testing.T) {
 		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/roles", "/api/v1/admin/roles/00000000-0000-4000-8000-000000000001"})
 		const itemPath = "/api/v1/admin/content/article/00000000-0000-4000-8000-000000000001"
 		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/content-types", "/api/v1/admin/content/article", itemPath, itemPath + "/assignees", itemPath + "/ready-shared", itemPath + "/ready", itemPath + "/publish", itemPath + "/schema"})
-		assertAdminRouteStatus(t, handler, http.StatusNotFound, []string{itemPath + "/unpublish"})
+		assertAdminRouteStatus(t, handler, want, []string{itemPath + "/adopt-schema", itemPath + "/unpublish"})
 	}
 }
 

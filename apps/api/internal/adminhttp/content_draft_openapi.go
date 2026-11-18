@@ -10,18 +10,20 @@ import (
 )
 
 const (
-	contentDraftTag     = "content-drafts"
-	contentDraftSchema  = "SavedContentDraft"
-	readableDraftSchema = "ReadableContentDraft"
-	draftSharedField    = "shared"
-	draftLocalesField   = "locales"
-	typeIDField         = "type_id"
-	draftVersionField   = "version"
-	publicationIDField  = "publication_id"
-	draftValuesField    = "values"
-	localSequenceField  = "local_seq"
-	sharedSequenceField = "shared_seq"
-	draftExampleField   = "headline"
+	contentDraftTag       = "content-drafts"
+	contentDraftSchema    = "SavedContentDraft"
+	readableDraftSchema   = "ReadableContentDraft"
+	draftSharedField      = "shared"
+	draftLocalesField     = "locales"
+	typeIDField           = "type_id"
+	draftVersionField     = "version"
+	publicationIDField    = "publication_id"
+	draftValuesField      = "values"
+	localSequenceField    = "local_seq"
+	sharedSequenceField   = "shared_seq"
+	draftExampleField     = "headline"
+	draftRelationFieldID  = "field_id"
+	draftRelationTargetID = "target_item_id"
 )
 
 type draftReceipt struct {
@@ -120,17 +122,32 @@ func draftRequestSchema() *huma.Schema {
 	shared := draftValueMap("Scalar changes indexed by stable shared field key.", field)
 	values := draftValueMap("Scalar changes indexed by stable localized field key.", field)
 	locale := closedObjectSchema("Changes to a single locale.", map[string]*huma.Schema{draftValuesField: values, "unset": unset}, nil, nil)
-	schema := closedObjectSchema("Versioned scalar patch. Kind, field scope and value codec are checked against the pinned schema.", map[string]*huma.Schema{
+	relation := relationPatchSchema()
+	schema := closedObjectSchema("Versioned patch checked against the pinned schema. Omitted fields and relation slots remain unchanged.", map[string]*huma.Schema{
 		expectedVersionField: contentVersionSchema("Current item version.", "2"),
 		schemaNoField:        contentVersionSchema("Semantic schema pinned to the draft.", "1"),
 		draftSharedField:     shared, "unset_shared": unset,
-		draftLocalesField: draftValueMap("Localized changes indexed by normalized language code.", locale),
+		draftLocalesField:  draftValueMap("Localized changes indexed by normalized language code.", locale),
+		"relation_changes": {Type: huma.TypeArray, Items: relation, MaxItems: new(64), Description: "Update distinct field and locale slots. Omit target_item_id to remove the relation in that slot."},
 	}, []string{expectedVersionField, schemaNoField}, draftRequestExample())
 	// Huma precomputes regular properties but does not traverse map values.
 	field.PrecomputeMessages()
 	locale.PrecomputeMessages()
 	schema.PrecomputeMessages()
 	return schema
+}
+
+func relationPatchSchema() *huma.Schema {
+	target := uuidSchema(exampleUUID)
+	target.Description = "A readable target item of the collection defined by the field. Omit to remove the relation."
+	field := uuidSchema(exampleUUID)
+	field.Description = "Stable relation field ID that the actor can update."
+	locale := stringSchema("Omit for a shared relation. Use the normalized code of a saved draft locale for a localized relation.", "pl")
+	locale.Pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"
+	locale.MaxLength = new(64)
+	return closedObjectSchema("Change one relation field and locale slot.", map[string]*huma.Schema{
+		draftRelationFieldID: field, draftRelationTargetID: target, candidateLocaleField: locale,
+	}, []string{draftRelationFieldID}, nil)
 }
 
 func draftScalarSchema() *huma.Schema {
@@ -155,9 +172,9 @@ func draftResultSchema() *huma.Schema {
 		"ready":            ready,
 	}, []string{draftValuesField, localSequenceField, "ready"}, nil)
 	relation := closedObjectSchema("One actor-readable relation whose target is also readable.", map[string]*huma.Schema{
-		"field_id": uuidSchema(exampleUUID), "locale": stringSchema("Language code for a localized relation or empty for a shared relation.", "en"),
-		"target_type_id": uuidSchema(exampleUUID), "target_item_id": uuidSchema(exampleUUID),
-	}, []string{"field_id", "locale", "target_type_id", "target_item_id"}, nil)
+		draftRelationFieldID: uuidSchema(exampleUUID), candidateLocaleField: stringSchema("Language code for a localized relation or empty for a shared relation.", "en"),
+		"target_type_id": uuidSchema(exampleUUID), draftRelationTargetID: uuidSchema(exampleUUID),
+	}, []string{draftRelationFieldID, candidateLocaleField, "target_type_id", draftRelationTargetID}, nil)
 	readySeq := contentVersionSchema("Approved shared sequence or null until approved.", "1")
 	readySeq.Nullable = true
 	example := savedDraftResponse{draftReceipt: draftReceipt{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 3}, readableDraft: &readableDraft{
@@ -239,6 +256,10 @@ func draftSuccessDescription(operationID string) string {
 		return "Returns a bounded page of collections within the actor's read grants."
 	case readDraftMetadataOperation:
 		return "Returns only the actor-readable field definitions for the current draft."
+	case adoptSchemaOperation:
+		return "Returns the adopted schema and updated draft version after the transaction commits."
+	case unpublishOperation:
+		return "Returns the updated draft version after removing the public pointer and clearing readiness."
 	case listDraftsOperation:
 		return "Returns a bounded page of draft identities and versions authorized by collection and item scope."
 	case createDraftOperation:

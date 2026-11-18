@@ -12,6 +12,7 @@ const (
 	OpContentUpdate      Operation = "content.items.update"
 	OpContentReady       Operation = "content.items.ready"
 	OpContentPublish     Operation = "content.items.publish"
+	OpContentUnpublish   Operation = "content.items.unpublish"
 	OpContentTypesManage Operation = "content_types.manage"
 )
 
@@ -37,7 +38,7 @@ const (
 func (o Operation) Scope() (OperationScope, error) {
 	switch o {
 	case opContentCreate, OpContentRead, OpContentUpdate,
-		OpContentReady, OpContentPublish, "content.items.unpublish", opContentAssign:
+		OpContentReady, OpContentPublish, OpContentUnpublish, opContentAssign:
 		return ContentScope, nil
 	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",

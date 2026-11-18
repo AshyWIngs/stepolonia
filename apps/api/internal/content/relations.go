@@ -29,10 +29,7 @@ func replaceRelations(ctx context.Context, tx *sql.Tx, state DraftState, schema 
 		}
 	}
 	if sharedChanged {
-		if _, err := tx.ExecContext(ctx, `UPDATE public.content_drafts SET shared_seq=shared_seq+1 WHERE item_id=$1`, state.ItemID); err != nil {
-			return false, err
-		}
-		return true, resetReady(ctx, tx, state.ItemID)
+		return true, invalidateChangedRelationScopes(ctx, tx, state.ItemID, map[string]bool{"": true})
 	}
 	return true, invalidateRelationLocales(ctx, tx, state.ItemID, before, after)
 }
@@ -145,10 +142,10 @@ func checkPublishedRelation(ctx context.Context, tx *sql.Tx, relation Relation, 
 func validateRelation(fields map[string]Definition, state DraftState, relation Relation) error {
 	field, ok := fields[relation.FieldID]
 	if !ok || field.Kind != kindRelation || field.TargetTypeID != relation.TargetTypeID || relation.TargetItemID == "" {
-		return problem(Validation, "invalid_relation")
+		return problem(Validation, invalidRelationCode)
 	}
 	if field.Scope == scopeShared && relation.Locale != "" || field.Scope == scopeLocalized && relation.Locale == "" {
-		return problem(Validation, "invalid_scope")
+		return problem(Validation, invalidScopeCode)
 	}
 	if relation.Locale != "" {
 		if _, ok := state.Locales[relation.Locale]; !ok {
