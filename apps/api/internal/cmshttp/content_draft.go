@@ -15,14 +15,16 @@ import (
 
 const (
 	contentDraftPath   = adminContentPrefix + "{type_key}/{item_id}"
+	readDraftOperation = "contentGetDraft"
 	saveDraftOperation = "contentSaveDraft"
 	schemaNoField      = "schema_no"
 	schemaConflictCode = "schema_conflict"
 	maxDraftBodyBytes  = 262144
 )
 
-// DraftEditor verifies the persisted item and current field permissions before editing.
+// DraftEditor verifies current item and field permissions before projecting or editing a draft.
 type DraftEditor interface {
+	ReadDraftForType(context.Context, cms.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, cms.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
 }
 
@@ -45,6 +47,12 @@ var saveDraftRoute = route{
 	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. Accepts scalar changes only. Changes and their audit commit together.",
 }
 
+var readDraftRoute = route{
+	kind: fullKind, method: http.MethodGet, operationID: readDraftOperation,
+	summary: "Read the current content draft", response: readableDraftSchema,
+	description: "Available only with a verified draft database login. A full session and current read permissions on the item's actual collection and scope are required. The response contains only actor-readable fields and relations. Send no query or request body. The request returns 503 if the draft exceeds the locale read limit or the read deadline.",
+}
+
 func contentDraftTarget(path string) (routeTarget, bool) {
 	rest, ok := strings.CutPrefix(path, adminContentPrefix)
 	if !ok {
@@ -55,6 +63,35 @@ func contentDraftTarget(path string) (routeTarget, bool) {
 		return routeTarget{}, false
 	}
 	return routeTarget{path: contentDraftPath, id: itemID, typeKey: typeKey}, true
+}
+
+func (h *handler) serveDraft(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
+	if rt.operationID == readDraftOperation {
+		h.serveDraftRead(w, r, target, ip)
+		return
+	}
+	h.serveDraftSave(w, r, rt, target, ip)
+}
+
+func (h *handler) serveDraftRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		writeError(w, cms.ErrValidation)
+		return
+	}
+	req, _, err := requestSession(r, fullKind, ip)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if !attachRequestID(w, &req) {
+		return
+	}
+	state, err := h.draftEditor.ReadDraftForType(r.Context(), req, target.typeKey, target.id)
+	if err != nil {
+		writeDraftError(w, err)
+		return
+	}
+	respond(w, draftResponse(state))
 }
 
 func (h *handler) serveDraftSave(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {

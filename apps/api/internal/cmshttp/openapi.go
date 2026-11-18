@@ -44,7 +44,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, projected draft reads and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -65,7 +65,7 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		}
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
-	if rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation {
+	if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
 		op.Parameters = append(op.Parameters, contentItemParameters()...)
 	}
 	return op
@@ -252,6 +252,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addRoleSchemas(schemas)
 	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
 	schemas[contentDraftSchema] = draftResultSchema()
+	schemas[readableDraftSchema] = draftReadSchema()
 	return schemas
 }
 
@@ -303,7 +304,8 @@ func sessionCookieHeader() *huma.Param {
 func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
-	if authTag(rt) != usersTag && authTag(rt) != rolesTag && rt.operationID != replaceContentAssigneesOperation && rt.operationID != saveDraftOperation {
+	tag := authTag(rt)
+	if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -326,8 +328,8 @@ func authResponses(rt route) map[string]*huma.Response {
 }
 
 func authErrorCodes(rt route) map[int][]string {
-	if rt.operationID == saveDraftOperation {
-		return draftErrorCodes()
+	if authTag(rt) == contentDraftTag {
+		return draftErrorCodes(rt)
 	}
 	if rt.operationID == replaceContentAssigneesOperation {
 		return contentAssigneesErrorCodes()
@@ -381,6 +383,8 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 			description += " Account or requested role is missing or outside the actor's assignment envelope."
 		case saveDraftOperation:
 			description += " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
+		case readDraftOperation:
+			description += " Item is missing, belongs to a different collection or is outside the actor's authorized read scope."
 		case replaceContentAssigneesOperation:
 			description += " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
 		}
@@ -447,7 +451,7 @@ func privateRoutes() map[string][]route {
 		all[path] = methods
 	}
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
-	all[contentDraftPath] = []route{saveDraftRoute}
+	all[contentDraftPath] = []route{readDraftRoute, saveDraftRoute}
 	return all
 }
 
@@ -474,7 +478,7 @@ func authTags() []*huma.Tag {
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation, disable and role membership replacement."},
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
-		{Name: contentDraftTag, Description: "Versioned scalar draft editing when the installation enables its draft editor."},
+		{Name: contentDraftTag, Description: "Projected draft reads and versioned scalar editing when the installation enables its draft editor."},
 	}
 }
 
@@ -489,7 +493,7 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
-	case saveDraftOperation:
+	case readDraftOperation, saveDraftOperation:
 		return contentDraftTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
@@ -507,6 +511,9 @@ func authSuccessDescription(rt route) string {
 	case usersTag:
 		return userSuccessDescription(rt)
 	case contentDraftTag:
+		if rt.operationID == readDraftOperation {
+			return "Returns the current draft version and actor-readable state."
+		}
 		return "Draft and audit committed. Returns the current item version and any actor-readable draft state."
 	case contentAssigneesTag:
 		return "Complete assignee set and audit committed; returns the item UUID, assignment set and incremented version."
