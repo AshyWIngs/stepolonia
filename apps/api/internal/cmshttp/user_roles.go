@@ -10,11 +10,11 @@ import (
 	"stepolonia/apps/api/internal/cms"
 )
 
-type userRoleService interface {
+type userRolesReplacer interface {
 	ReplaceUserRoles(context.Context, cms.AuthRequest, string, int64, []string) (cms.User, error)
 }
 
-var _ userRoleService = (*cms.AuthService)(nil)
+var _ userRolesReplacer = (*cms.AuthService)(nil)
 
 const userRolesPath = userPath + "/roles"
 const replaceUserRolesOperation = "usersReplaceRoles"
@@ -45,7 +45,7 @@ func (h *handler) serveUserRoles(w http.ResponseWriter, r *http.Request, rt rout
 		problem(w, status, code)
 		return
 	}
-	service, ok := h.service.(userRoleService)
+	service, ok := h.service.(userRolesReplacer)
 	if !ok {
 		writeError(w, cms.ErrSecurityUnavailable)
 		return
