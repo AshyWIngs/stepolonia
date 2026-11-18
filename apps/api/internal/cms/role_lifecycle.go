@@ -46,7 +46,7 @@ func (s *AuthService) RestoreRole(ctx context.Context, req AuthRequest, id strin
 
 func (s *AuthService) changeRoleState(ctx context.Context, req AuthRequest, id string, version int64, transition roleTransition) (Role, error) {
 	var out Role
-	err := s.authorizedCommand(ctx, req, transition.permission, transition.auditEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
+	err := s.authorizedCommand(ctx, req, []string{transition.permission}, transition.auditEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		plan, err := prepareRoleMutation(ctx, tx, x, id, version)
 		if err != nil {
 			return err
@@ -85,4 +85,48 @@ func (s *AuthService) applyRoleTransition(ctx context.Context, tx *sql.Tx, x Ses
 		return Role{}, err
 	}
 	return out, securityAudit(ctx, tx, transition.auditEvent, x.user, out.ID, "")
+}
+
+// CopyRole creates a disabled, unassigned role with the source's explicit grants.
+func (s *AuthService) CopyRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64, name string) (Role, error) {
+	var out Role
+	const auditEvent = "roles.copied"
+	err := s.authorizedCommand(ctx, req, []string{opRolesCreate, opRolesEdit}, auditEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
+		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
+		if err != nil {
+			return err
+		}
+		out, err = s.createRole(ctx, tx, x, RoleInput{Name: name, Grants: plan.role.Grants}, plan.before, auditEvent)
+		return err
+	})
+	if err != nil {
+		return Role{}, err
+	}
+	return out, nil
+}
+
+// DeleteRole removes an archived role only after its memberships and grants have been removed.
+func (s *AuthService) DeleteRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64) error {
+	const auditEvent = "roles.deleted"
+	return s.authorizedCommand(ctx, req, []string{opRolesDelete}, auditEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
+		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
+		if err != nil {
+			return err
+		}
+		if plan.role.State != roleStateArchived {
+			return ErrInvalidTransition
+		}
+		var deleted bool
+		if err = tx.QueryRowContext(ctx, `SELECT public.delete_archived_role($1,$2)`, plan.role.ID, expectedVersion).Scan(&deleted); err != nil {
+			return err
+		}
+		if !deleted {
+			return ErrRoleInUse
+		}
+		// An unassigned role contributes to neither active nor latent access.
+		if err = s.requireAccessAdmin(ctx, tx, plan.before); err != nil {
+			return err
+		}
+		return securityAudit(ctx, tx, auditEvent, x.user, plan.role.ID, "")
+	})
 }

@@ -10,6 +10,7 @@ import (
 )
 
 const rolesHTTPPath = "/api/v1/admin/roles"
+const rolesStepUpCode = "step_up_required"
 
 func (f authHTTPFixture) roleHTTP(t *testing.T, method, path, body string, session cms.SessionTokens, status int) (map[string]any, string) {
 	t.Helper()
@@ -112,7 +113,7 @@ func TestAuthRolesHTTPReadOnlySessionIntegration(t *testing.T) {
 	f.roleHTTP(t, http.MethodGet, rolesHTTPPath, "", reader, 200)
 	f.roleHTTP(t, http.MethodGet, rolesHTTPPath, "", full, 200)
 	stale, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"stale-admin","grants":[]}`, full, 403)
-	if stale["code"] != "step_up_required" {
+	if stale["code"] != rolesStepUpCode {
 		t.Fatal("stale administrator bypassed role freshness")
 	}
 	problem, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"forbidden","grants":[]}`, reader, 403)

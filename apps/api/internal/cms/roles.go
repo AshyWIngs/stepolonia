@@ -23,6 +23,7 @@ const (
 	opRolesRead   = "roles.read"
 	opRolesCreate = "roles.create"
 	opRolesEdit   = "roles.edit"
+	opRolesDelete = "roles.delete"
 )
 
 // Role exposes policy metadata without recipients, credentials or content values.
@@ -181,9 +182,13 @@ func normalizeRoleName(name string) (string, error) {
 // CreateRole creates a disabled role without memberships or effective access.
 func (s *AuthService) CreateRole(ctx context.Context, req AuthRequest, input RoleInput) (Role, error) {
 	var out Role
-	err := s.authorizedCommand(ctx, req, opRolesCreate, "roles.created", func(ctx context.Context, tx *sql.Tx, x Session) error {
-		var err error
-		out, err = s.createRole(ctx, tx, x, normalizeRoleInput(input))
+	const auditEvent = "roles.created"
+	err := s.authorizedCommand(ctx, req, []string{opRolesCreate}, auditEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
+		before, err := loadAccess(ctx, tx)
+		if err != nil {
+			return err
+		}
+		out, err = s.createRole(ctx, tx, x, normalizeRoleInput(input), before, auditEvent)
 		return err
 	})
 	if err != nil {
@@ -192,11 +197,7 @@ func (s *AuthService) CreateRole(ctx context.Context, req AuthRequest, input Rol
 	return out, nil
 }
 
-func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, input RoleInput) (Role, error) {
-	before, err := loadAccess(ctx, tx)
-	if err != nil {
-		return Role{}, err
-	}
+func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, input RoleInput, before accessSnapshot, auditEvent string) (Role, error) {
 	grants, err := validateRoleInput(ctx, tx, input)
 	if err != nil {
 		return Role{}, err
@@ -230,13 +231,13 @@ func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, inp
 	if err != nil {
 		return Role{}, err
 	}
-	return out, securityAudit(ctx, tx, "roles.created", x.user, out.ID, "")
+	return out, securityAudit(ctx, tx, auditEvent, x.user, out.ID, "")
 }
 
 // EditRole atomically replaces explicit policy without state or membership changes.
 func (s *AuthService) EditRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64, input RoleInput) (Role, error) {
 	var out Role
-	err := s.authorizedCommand(ctx, req, opRolesEdit, "roles.edited", func(ctx context.Context, tx *sql.Tx, x Session) error {
+	err := s.authorizedCommand(ctx, req, []string{opRolesEdit}, "roles.edited", func(ctx context.Context, tx *sql.Tx, x Session) error {
 		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
 		if err != nil {
 			return err

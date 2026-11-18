@@ -137,7 +137,7 @@ func (s *AuthService) changeUserState(ctx context.Context, req AuthRequest, id s
 		permission, event = opUsersActivate, "users.activated"
 	}
 	var out User
-	err := s.authorizedCommand(ctx, req, permission, event, func(ctx context.Context, tx *sql.Tx, x Session) error {
+	err := s.authorizedCommand(ctx, req, []string{permission}, event, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		var err error
 		out, err = s.applyUserState(ctx, tx, x, userStateChange{id, version, activate, event})
 		return err

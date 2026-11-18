@@ -31,12 +31,21 @@ func roleGrantExample() roleGrantDTO {
 	return roleGrantDTO{Operation: "users.read", Scope: roleInstallationScope, CanDelegate: false}
 }
 
-func roleRequestSchema(rt route) (*huma.Schema, map[string]any) {
-	example := map[string]any{"name": "docs-reviewer", "grants": []roleGrantDTO{roleGrantExample()}}
+func roleRequestSchema(operationID string) (*huma.Schema, map[string]any) {
+	example := map[string]any{"name": "docs-reviewer"}
 	schema := responseDTOSchema("Complete explicit role policy. Name and grants are required; no actor, state, memberships, recipient list or implicit grant expansion is accepted.", roleWriteInput{})
+	if operationID == copyRoleOperation {
+		example[expectedVersionField] = 1
+		delete(schema.Properties, "grants")
+		schema.Description = "New role name and current source version."
+		schema.Required = []string{"name", expectedVersionField}
+		schema.Examples = []any{example}
+		return schema, example
+	}
+	example["grants"] = []roleGrantDTO{roleGrantExample()}
 	schema.Examples = []any{example}
 	replaceRoleGrantSchema(schema)
-	if rt.method == http.MethodPatch {
+	if operationID == editRoleOperation {
 		schema.Required = append(schema.Required, expectedVersionField)
 		example[expectedVersionField] = 1
 	} else {
@@ -111,12 +120,15 @@ func rolePageParameters() []*huma.Param {
 
 func roleErrorCodes(rt route) map[int][]string {
 	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode}, 403: {originCode, permissionCode}, 405: {methodNotAllowedCode}, 503: {securityUnavailableCode}}
-	if rt.operationID == getRoleOperation || rt.operationID == editRoleOperation || rt.roleState != nil {
+	if rt.operationID != listRolesOperation && rt.operationID != createRoleOperation {
 		codes[404] = []string{notFoundCode}
 	}
 	if rt.method != http.MethodGet {
 		codes[403] = append(codes[403], csrfCode, stepUpRequiredCode)
 		codes[409] = []string{versionConflictCode, invalidTransitionCode, lastAdminRequiredCode}
+		if rt.operationID == deleteRoleOperation {
+			codes[409] = append(codes[409], roleInUseCode)
+		}
 		codes[413] = []string{bodyTooLargeCode}
 		codes[429] = []string{rateLimitedCode}
 	}
@@ -132,6 +144,10 @@ func roleSuccessDescription(rt route) string {
 		return "Bounded role policy page returned after current roles.read authorization; next_offset is null at the end."
 	case getRoleOperation:
 		return "Safe explicit role policy returned after current roles.read authorization."
+	case copyRoleOperation:
+		return "Disabled copy and explicit grants committed with audit. The source is unchanged."
+	case deleteRoleOperation:
+		return "Archived role deleted and audit committed."
 	case createRoleOperation:
 		return "Disabled role and explicit grants committed with audit; no memberships created."
 	default:

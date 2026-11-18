@@ -27,6 +27,7 @@ const (
 	stepUpRequiredCode      = "step_up_required"
 	lastAdminRequiredCode   = "last_admin_required"
 	versionConflictCode     = "version_conflict"
+	roleInUseCode           = "role_in_use"
 	invalidTransitionCode   = "invalid_transition"
 	rateLimitedCode         = "rate_limited"
 )
@@ -73,6 +74,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status, code = http.StatusConflict, lastAdminRequiredCode
 	case errors.Is(err, cms.ErrVersionConflict):
 		status, code = http.StatusConflict, versionConflictCode
+	case errors.Is(err, cms.ErrRoleInUse):
+		status, code = http.StatusConflict, roleInUseCode
 	case errors.Is(err, cms.ErrInvalidTransition):
 		status, code = http.StatusConflict, invalidTransitionCode
 	case errors.Is(err, cms.ErrNotFound):

@@ -73,17 +73,22 @@ func securityAudit(ctx context.Context, tx *sql.Tx, operation, actor, target, re
 // securityCommand authorizes from current grants after the shared mutex. Denials
 // are audited after rollback, so an audit outage never permits a partial command.
 func (s *AuthService) securityCommand(ctx context.Context, req AuthRequest, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
-	return s.authorizedCommand(ctx, req, opUsersCreate, operation, fn)
+	return s.authorizedCommand(ctx, req, []string{opUsersCreate}, operation, fn)
 }
 
-func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, permission, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
+func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, permissions []string, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
 	ctx, err := auditRequestContext(ctx, req)
 	if err != nil {
 		return err
 	}
 	err = s.WithSession(ctx, req, true, func(ctx context.Context, tx *sql.Tx, x Session) error {
-		if err := requirePermission(ctx, tx, x.user, permission); err != nil {
-			return err
+		if len(permissions) == 0 {
+			return ErrPermissionDenied
+		}
+		for _, permission := range permissions {
+			if err := requirePermission(ctx, tx, x.user, permission); err != nil {
+				return err
+			}
 		}
 		if !x.FreshStepUp() {
 			return ErrStepUpRequired

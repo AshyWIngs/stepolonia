@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	roleVersionSixBody  = `{"expected_version":6}`
 	roleFixtureName     = "safe-policy"
 	roleFixtureActive   = "active"
 	roleFixtureArchived = "archived"
@@ -55,6 +56,18 @@ func (s *fakeRoles) EditRole(_ context.Context, req cms.AuthRequest, id string, 
 	s.calls++
 	s.req, s.userID, s.version, s.policy, s.operation = req, id, version, input, editRoleOperation
 	return cms.Role{ID: id, Name: input.Name, State: lifecycleFixtureState, Version: version + 1, Grants: input.Grants}, s.commandErr
+}
+
+func (s *fakeRoles) CopyRole(_ context.Context, req cms.AuthRequest, id string, version int64, name string) (cms.Role, error) {
+	s.calls++
+	s.req, s.userID, s.version, s.operation = req, id, version, copyRoleOperation
+	return cms.Role{ID: "22222222-2222-4222-8222-222222222222", Name: name, State: lifecycleFixtureState, Version: 1}, s.commandErr
+}
+
+func (s *fakeRoles) DeleteRole(_ context.Context, req cms.AuthRequest, id string, version int64) error {
+	s.calls++
+	s.req, s.userID, s.version, s.operation = req, id, version, deleteRoleOperation
+	return s.commandErr
 }
 
 func (s *fakeRoles) EnableRole(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.Role, error) {
@@ -156,7 +169,7 @@ func TestAuthRolesRejectMalformedNestedJSON(t *testing.T) {
 		t.Run(body, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, rolesPath, strings.NewReader(body))
 			req.Header.Set(contentTypeHeader, jsonMediaType)
-			_, code, status := readRoleInput(httptest.NewRecorder(), req, false)
+			_, code, status := readRoleInput(httptest.NewRecorder(), req, createRoleOperation)
 			if code != validationCode || status != 400 {
 				t.Fatal("malformed role policy accepted", code, status)
 			}
@@ -175,7 +188,7 @@ func TestAuthRolesConditionalGrantShapesAndVersion(t *testing.T) {
 		body := `{"name":"x","grants":[` + grant + `],"expected_version":3}`
 		req := httptest.NewRequest(http.MethodPatch, rolePath, strings.NewReader(body))
 		req.Header.Set(contentTypeHeader, jsonMediaType)
-		input, code, _ := readRoleInput(httptest.NewRecorder(), req, true)
+		input, code, _ := readRoleInput(httptest.NewRecorder(), req, editRoleOperation)
 		if code != "" || input.ExpectedVersion != 3 || len(rolePolicy(input).Grants) != 1 {
 			t.Fatal("valid conditional role input rejected", body)
 		}
@@ -184,7 +197,7 @@ func TestAuthRolesConditionalGrantShapesAndVersion(t *testing.T) {
 		body := `{"name":"x","grants":[],"expected_version":` + version + `}`
 		req := httptest.NewRequest(http.MethodPatch, rolePath, strings.NewReader(body))
 		req.Header.Set(contentTypeHeader, jsonMediaType)
-		_, _, status := readRoleInput(httptest.NewRecorder(), req, true)
+		_, _, status := readRoleInput(httptest.NewRecorder(), req, editRoleOperation)
 		if status != 400 {
 			t.Fatal("invalid expected version accepted", version)
 		}
@@ -201,7 +214,7 @@ func TestAuthRolesBodyLimitAndGrantCap(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodPost, rolesPath, strings.NewReader(tc.body))
 		req.Header.Set(contentTypeHeader, jsonMediaType)
-		_, _, status := readRoleInput(httptest.NewRecorder(), req, false)
+		_, _, status := readRoleInput(httptest.NewRecorder(), req, createRoleOperation)
 		if status != tc.status {
 			t.Fatal("role body limit failed", status)
 		}
@@ -220,7 +233,7 @@ func TestAuthRolesBodyDoesNotInheritCredentialLimit(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, rolesPath, strings.NewReader(string(raw)))
 	req.Header.Set(contentTypeHeader, jsonMediaType)
-	decoded, code, _ := readRoleInput(httptest.NewRecorder(), req, false)
+	decoded, code, _ := readRoleInput(httptest.NewRecorder(), req, createRoleOperation)
 	if code != "" || len(decoded.Grants[0].FieldIDs) != 120 {
 		t.Fatal("role body inherited credential or invented field-count limit")
 	}
@@ -254,8 +267,8 @@ func TestAuthRolesSessionOriginQueryAndMethodBoundary(t *testing.T) {
 			lifecycleResponse(t, server, req, 403)
 		}
 	}
-	for path, allow := range map[string]string{rolesPath: "GET, POST", rolesPath + "/" + exampleUUID: "GET, PATCH"} {
-		req := roleRequest(t, server, http.MethodDelete, path, "{}", fullKind)
+	for path, allow := range map[string]string{rolesPath: "GET, POST", rolesPath + "/" + exampleUUID: "GET, PATCH, DELETE"} {
+		req := roleRequest(t, server, http.MethodPut, path, "{}", fullKind)
 		res, err := server.Client().Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -300,7 +313,7 @@ func TestAuthRoleStateCommands(t *testing.T) {
 		action := tc.action
 		t.Run(action, func(t *testing.T) {
 			path := rolesPath + "/" + exampleUUID + "/" + action
-			req := roleRequest(t, server, http.MethodPost, path, `{"expected_version":6}`, fullKind)
+			req := roleRequest(t, server, http.MethodPost, path, roleVersionSixBody, fullKind)
 			req.Header.Set(requestIDHeader, "client-chosen")
 			out := lifecycleResponse(t, server, req, 200)
 			assertSafeRoleFields(t, out)
@@ -336,5 +349,58 @@ func TestAuthRoleStateRejectsInvalidRequests(t *testing.T) {
 	lifecycleResponse(t, server, req, 405)
 	if service.calls != 0 {
 		t.Fatal("rejected request reached role service")
+	}
+}
+
+func TestAuthRoleCopyDeleteInputs(t *testing.T) {
+	service := &fakeRoles{}
+	server := newAdminTLSServer(t, service)
+	path := rolesPath + "/" + exampleUUID
+	for _, tc := range []struct{ method, path, body string }{
+		{http.MethodPost, path + "/copy", `{"name":"new-copy","expected_version":6}`},
+		{http.MethodDelete, path, roleVersionSixBody},
+	} {
+		for _, header := range []string{originHeader, testCSRFHeader} {
+			req := roleRequest(t, server, tc.method, tc.path, tc.body, fullKind)
+			req.Header.Del(header)
+			lifecycleResponse(t, server, req, 403)
+		}
+		lifecycleResponse(t, server, roleRequest(t, server, tc.method, tc.path, tc.body, loginKind), 401)
+		for _, body := range []string{`{}`, `{"name":"new-copy"}`, `{"name":"new-copy","expected_version":0}`, `{"name":"new-copy","expected_version":1,"grants":[]}`, tc.body + "{}"} {
+			lifecycleResponse(t, server, roleRequest(t, server, tc.method, tc.path, body, fullKind), 400)
+		}
+		lifecycleResponse(t, server, roleRequest(t, server, tc.method, tc.path, tc.body+strings.Repeat(" ", 4096), fullKind), 413)
+	}
+	lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path+"/copy", roleVersionSixBody, fullKind), 400)
+	if service.calls != 0 {
+		t.Fatal("invalid copy/delete request reached service")
+	}
+}
+
+func TestAuthRoleCopyResponse(t *testing.T) {
+	service := &fakeRoles{}
+	server := newAdminTLSServer(t, service)
+	path := rolesPath + "/" + exampleUUID
+	out := lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path+"/copy", `{"name":"new-copy","expected_version":6}`, fullKind), 200)
+	assertSafeRoleFields(t, out)
+	if service.operation != copyRoleOperation || service.version != 6 || service.userID != exampleUUID || service.req.CSRF != testToken || !roleUUID(service.req.RequestID) || out["id"] == exampleUUID || out["name"] != "new-copy" {
+		t.Fatal("copy role command or result drifted")
+	}
+}
+
+func TestAuthRoleDeleteResponse(t *testing.T) {
+	service := &fakeRoles{}
+	server := newAdminTLSServer(t, service)
+	path := rolesPath + "/" + exampleUUID
+	req := roleRequest(t, server, http.MethodDelete, path, roleVersionSixBody, fullKind)
+	res, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := io.ReadAll(res.Body)
+	assertPrivateNoStore(t, res)
+	if err != nil || len(body) != 0 || res.StatusCode != 204 || len(res.Cookies()) != 0 || service.operation != deleteRoleOperation || service.version != 6 || service.userID != exampleUUID || service.req.CSRF != testToken || !roleUUID(service.req.RequestID) {
+		t.Fatal("delete role command or empty response drifted", res.StatusCode, err)
 	}
 }

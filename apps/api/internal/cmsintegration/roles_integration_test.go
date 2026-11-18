@@ -20,6 +20,16 @@ func rolesInput(name string, grants ...cms.RoleGrant) cms.RoleInput {
 	return cms.RoleInput{Name: name, Grants: grants}
 }
 
+func addTestInstallationGrant(t *testing.T, f authFixtureState, roleID, operation string) {
+	t.Helper()
+	_, err := f.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,$2)`, roleID, operation)
+	requireNoError(t, err)
+}
+
+func userReaderGrant() cms.RoleGrant {
+	return cms.RoleGrant{Operation: "users.read", Scope: rolesInstallationScope}
+}
+
 func rolesContentGrant() cms.RoleGrant {
 	return cms.RoleGrant{Operation: bootstrapOpRead, Scope: rolesContentScope, TypeID: lifecycleType, ObjectScope: "assigned", FieldIDs: []string{lifecycleField}}
 }

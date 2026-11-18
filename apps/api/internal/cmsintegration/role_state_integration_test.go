@@ -12,7 +12,7 @@ import (
 func TestAuthRoleStateHTTPIntegration(t *testing.T) {
 	f := newRestrictedAuthHTTPFixture(t)
 	admin := authFull(t, f.state)
-	created, err := f.state.service.CreateRole(context.Background(), authReq(admin), rolesInput("State policy", cms.RoleGrant{Operation: "users.read", Scope: rolesInstallationScope}))
+	created, err := f.state.service.CreateRole(context.Background(), authReq(admin), rolesInput("State policy", userReaderGrant()))
 	requireNoError(t, err)
 	path := rolesHTTPPath + "/" + created.ID
 	want, _ := f.roleHTTP(t, http.MethodGet, path, "", admin, 200)
@@ -21,7 +21,7 @@ func TestAuthRoleStateHTTPIntegration(t *testing.T) {
 	}
 	expireSessionStepUp(t, f.state.db, admin.Token)
 	problem, _ := f.roleHTTP(t, http.MethodPost, path+"/enable", `{"expected_version":1}`, admin, 403)
-	if problem["code"] != "step_up_required" {
+	if problem["code"] != rolesStepUpCode {
 		t.Fatalf("expired step-up: %v", problem["code"])
 	}
 	authRefreshStep(t, f.state.db, admin.Token)
@@ -63,8 +63,7 @@ func TestAuthRoleStateRecipientEnvelopeIntegration(t *testing.T) {
 	requireNoError(t, err)
 	// The disabled recipient has an archived second role above the manager's authority.
 	superior := createAssignedTestRole(t, x.f, "Recipient superior", rolesArchivedState, x.target.ID)
-	_, err = x.f.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,$2)`, superior, "roles.edit")
-	requireNoError(t, err)
+	addTestInstallationGrant(t, x.f, superior, roleEditPermission)
 	_, err = x.f.service.EnableRole(ctx, authReq(x.actor), x.targetRole, 999)
 	onboardingError(t, err, cms.ErrNotFound)
 	_, err = x.f.service.RestoreRole(ctx, authReq(x.actor), x.targetRole, restored.Version)

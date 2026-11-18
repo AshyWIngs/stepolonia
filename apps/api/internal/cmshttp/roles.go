@@ -18,6 +18,8 @@ type RoleService interface {
 	GetRole(context.Context, cms.AuthRequest, string) (cms.Role, error)
 	CreateRole(context.Context, cms.AuthRequest, cms.RoleInput) (cms.Role, error)
 	EditRole(context.Context, cms.AuthRequest, string, int64, cms.RoleInput) (cms.Role, error)
+	CopyRole(context.Context, cms.AuthRequest, string, int64, string) (cms.Role, error)
+	DeleteRole(context.Context, cms.AuthRequest, string, int64) error
 	EnableRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
 	DisableRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
 	ArchiveRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
@@ -36,6 +38,8 @@ const (
 	getRoleOperation    = "rolesGet"
 	createRoleOperation = "rolesCreate"
 	editRoleOperation   = "rolesEdit"
+	copyRoleOperation   = "rolesCopy"
+	deleteRoleOperation = "rolesDelete"
 )
 
 // A full 64-grant policy with explicit field UUID sets needs its own body cap.
@@ -56,7 +60,9 @@ var roleRoutes = map[string][]route{
 	rolePath: {
 		{kind: fullKind, method: http.MethodGet, operationID: getRoleOperation, summary: "Read a role policy", response: roleSchema, description: "Requires a full session and current installation-wide roles.read under the shared security mutex. Returns the explicit policy, including latent grants of disabled or archived roles, without content values, labels, credentials or recipients. This read is independent of the edit delegation envelope and does not require CSRF or fresh step-up."},
 		{kind: fullKind, method: http.MethodPatch, operationID: editRoleOperation, summary: "Replace a role name and explicit grants", response: roleSchema, description: "Requires a full session, current roles.edit, CSRF and strong authentication no older than five minutes. Both name and grants are required; grants replace the entire explicit set atomically. Rechecks current permissions, target and positive expected_version under the shared security mutex. Old and new grants, latent grants and all affected recipients must fit the actor's envelope. Cannot increase the actor's own effective access or delegation, violate last-admin, change role state or memberships. Audit failure rolls back the complete change."},
+		{kind: fullKind, method: http.MethodDelete, fields: expectedVersionField, operationID: deleteRoleOperation, summary: "Delete an archived role", description: "Requires a full session, roles.delete, CSRF and strong authentication no older than five minutes. The server checks expected_version under the shared security mutex. A non-archived role returns invalid_transition. Remaining memberships, grants or field dependencies on an archived role return role_in_use. Deletion and audit commit atomically. Prior audit records are preserved."},
 	},
+	rolePath + "/copy":    {{kind: fullKind, method: http.MethodPost, operationID: copyRoleOperation, summary: "Copy a role policy", response: roleSchema, description: "Requires a full session, both roles.create and roles.edit, CSRF and strong authentication no older than five minutes. The source version, explicit grants and delegation envelope are checked under the shared security mutex. Creates a disabled role with a new UUID and the supplied unique name. Memberships are never copied. A stale version or name collision returns version_conflict. Reaching the role limit returns invalid_transition. Creation, grants and audit commit atomically."}},
 	rolePath + "/enable":  {roleStateRoute("rolesEnable", "roles.enable", roleDisabled, roleActive, RoleService.EnableRole)},
 	rolePath + "/disable": {roleStateRoute("rolesDisable", "roles.disable", roleActive, roleDisabled, RoleService.DisableRole)},
 	rolePath + "/archive": {roleStateRoute("rolesArchive", "roles.archive", roleDisabled, roleArchived, RoleService.ArchiveRole)},
@@ -156,30 +162,53 @@ func (h *handler) serveRole(w http.ResponseWriter, r *http.Request, rt route, id
 		writeError(w, cms.ErrValidation)
 		return
 	}
-	var role cms.Role
-	switch {
-	case rt.operationID == getRoleOperation:
-		role, err = service.GetRole(r.Context(), req, id)
-	case rt.roleState != nil:
-		input, code, status := readRouteInput(w, r, rt)
-		if code != "" {
-			problem(w, status, code)
-			return
-		}
-		role, err = rt.roleState(service, r.Context(), req, id, input.ExpectedVersion)
-	default:
-		input, code, status := readRoleInput(w, r, rt.method == http.MethodPatch)
-		if code != "" {
-			problem(w, status, code)
-			return
-		}
-		policy := rolePolicy(input)
-		if rt.operationID == createRoleOperation {
-			role, err = service.CreateRole(r.Context(), req, policy)
-		} else {
-			role, err = service.EditRole(r.Context(), req, id, input.ExpectedVersion, policy)
-		}
+	if rt.operationID == getRoleOperation {
+		role, err := service.GetRole(r.Context(), req, id)
+		respondRole(w, role, err)
+		return
 	}
+	if rt.fields == expectedVersionField {
+		serveRoleVersionCommand(w, r, rt, service, req, id)
+		return
+	}
+	input, code, status := readRoleInput(w, r, rt.operationID)
+	if code != "" {
+		problem(w, status, code)
+		return
+	}
+	var role cms.Role
+	switch rt.operationID {
+	case createRoleOperation:
+		role, err = service.CreateRole(r.Context(), req, rolePolicy(input))
+	case copyRoleOperation:
+		role, err = service.CopyRole(r.Context(), req, id, input.ExpectedVersion, input.Name)
+	case editRoleOperation:
+		role, err = service.EditRole(r.Context(), req, id, input.ExpectedVersion, rolePolicy(input))
+	default:
+		err = cms.ErrSecurityUnavailable
+	}
+	respondRole(w, role, err)
+}
+
+func serveRoleVersionCommand(w http.ResponseWriter, r *http.Request, rt route, service RoleService, req cms.AuthRequest, id string) {
+	input, code, status := readRouteInput(w, r, rt)
+	if code != "" {
+		problem(w, status, code)
+		return
+	}
+	if rt.operationID == deleteRoleOperation {
+		if err := service.DeleteRole(r.Context(), req, id, input.ExpectedVersion); err != nil {
+			writeError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	role, err := rt.roleState(service, r.Context(), req, id, input.ExpectedVersion)
+	respondRole(w, role, err)
+}
+
+func respondRole(w http.ResponseWriter, role cms.Role, err error) {
 	if err != nil {
 		writeError(w, err)
 		return
@@ -224,17 +253,17 @@ func safeRole(role cms.Role) roleResponse {
 	return roleResponse{ID: role.ID, Name: role.Name, State: role.State, Version: role.Version, Grants: grants}
 }
 
-func readRoleInput(w http.ResponseWriter, r *http.Request, edit bool) (roleWriteInput, string, int) {
+func readRoleInput(w http.ResponseWriter, r *http.Request, operationID string) (roleWriteInput, string, int) {
 	var input roleWriteInput
-	raw, code, status := readJSONBody(w, r, maxRoleBodyBytes)
+	limit := int64(maxRoleBodyBytes)
+	if operationID == copyRoleOperation {
+		limit = maxCredentialBodyBytes
+	}
+	raw, code, status := readJSONBody(w, r, limit)
 	if code != "" {
 		return input, code, status
 	}
-	rt := roleRoutes[rolesPath][1]
-	if edit {
-		rt = roleRoutes[rolePath][1]
-	}
-	schema, _ := roleRequestSchema(rt)
+	schema, _ := roleRequestSchema(operationID)
 	if !validateRoleJSON(raw, schema) || json.Unmarshal(raw, &input) != nil {
 		return input, validationCode, http.StatusBadRequest
 	}

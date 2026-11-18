@@ -78,12 +78,12 @@ const assert = require('node:assert/strict');
   assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
   assert.deepEqual(Object.keys(privateSpec.paths['/api/v1/admin/users']).sort(),['get','post']);
   const rolePaths=['/api/v1/admin/roles','/api/v1/admin/roles/{id}'];
-  const roleStatePaths=['enable','disable','archive','restore'].map(action=>rolePaths[1]+'/'+action);
-  rolePaths.push(...roleStatePaths);
-  for(const path of roleStatePaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
+  const roleCommandPaths=['enable','disable','archive','restore','copy'].map(action=>rolePaths[1]+'/'+action);
+  rolePaths.push(...roleCommandPaths);
+  for(const path of roleCommandPaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[0]]).sort(),['get','post']);
-  assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['get','patch']);
+  assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['delete','get','patch']);
   assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)));
   await page.locator('.topbar select').selectOption({label:'Private CMS API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
@@ -135,11 +135,18 @@ const assert = require('node:assert/strict');
    role=await operation('roles'+action,{expected_version:expected},full.csrf_token,200,roleID);
    assert.deepEqual([role.id,role.state,role.version],[roleID,state,expected+1]);
   }
+  const copied=await operation('rolesCopy',{name:'browser-role-copy',expected_version:role.version},full.csrf_token,200,role.id);
+  assert.notEqual(copied.id,role.id);
+  assert.deepEqual([copied.name,copied.state,copied.version,copied.grants],['browser-role-copy','disabled',1,[]]);
+  const archived=await operation('rolesArchive',{expected_version:copied.version},full.csrf_token,200,copied.id);
+  await operation('rolesDelete',{expected_version:copied.version},full.csrf_token,409,copied.id);
+  await operation('rolesDelete',{expected_version:archived.version},full.csrf_token,204,copied.id);
+  await operation('rolesGet',undefined,undefined,404,copied.id);
   await operation('authLogout',{},restricted.csrf_token,403);
   await operation('authLogout',{},full.csrf_token,204);
   assert(!(await context.cookies(origin)).some(c=>c.name.startsWith('__Host-sp_')));
   assert.deepEqual(faults,[]);
-  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, four versioned role state transitions, stale-token rejection and logout');
+  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, four versioned role state transitions, role copy and deletion, stale-token rejection and logout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
 `

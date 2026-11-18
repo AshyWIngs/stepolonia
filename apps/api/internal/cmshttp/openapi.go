@@ -32,7 +32,9 @@ func OpenAPIJSON() ([]byte, error) {
 				item.Get = op
 			case http.MethodPatch:
 				item.Patch = op
-			default:
+			case http.MethodDelete:
+				item.Delete = op
+			case http.MethodPost:
 				item.Post = op
 			}
 			paths[path] = item
@@ -40,7 +42,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation and disable operations, and role policy reads, disabled creation, atomic editing and versioned state transitions. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation and disable operations, and role policy reads, disabled creation, atomic editing, copying, versioned state transitions and deletion. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -66,13 +68,16 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 	name := rt.operationID + "Request"
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
-	if rt.roleState != nil {
-		schema.Description = "Role state change for the current version. The request path selects the transition."
+	if authTag(rt) == rolesTag && rt.fields == expectedVersionField {
+		schema.Description = "Positive current role version required for this command."
 		schema.Properties[expectedVersionField].Description = "Positive current role version checked under the shared security mutex."
 		description = "One JSON object, at most 4096 bytes, containing only the positive integer expected_version. Duplicate keys, unknown fields and trailing JSON are rejected."
 	} else if authTag(rt) == rolesTag {
-		schema, example = roleRequestSchema(rt)
+		schema, example = roleRequestSchema(rt.operationID)
 		description = "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
+		if rt.operationID == copyRoleOperation {
+			description = "One JSON object, at most 4096 bytes. Supply the new name and positive expected_version of the source role. Unknown or duplicate keys and trailing JSON are rejected."
+		}
 	}
 	registry.Map()[name] = schema
 	return &huma.RequestBody{Required: true, Description: description, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
@@ -100,7 +105,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST and PATCH require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users and GET /api/v1/admin/roles accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PATCH and DELETE require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users and GET /api/v1/admin/roles accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -420,7 +425,7 @@ func authTags() []*huma.Tag {
 		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation and disable."},
-		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement and versioned state transitions."},
+		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 	}
 }
 
@@ -429,7 +434,7 @@ func authTag(rt route) string {
 		return rolesTag
 	}
 	switch rt.operationID {
-	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation:
+	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, copyRoleOperation, deleteRoleOperation:
 		return rolesTag
 	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation:
 		return usersTag
