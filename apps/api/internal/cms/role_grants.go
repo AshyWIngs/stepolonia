@@ -223,11 +223,13 @@ func recipientsWithinEnvelope(actor []accessGrant, snapshot accessSnapshot, reci
 // a missing field in an any-scope grant.
 func accessDoesNotGrow(before, after []accessGrant) bool {
 	for _, target := range after {
-		if len(target.fields) == 0 {
-			if !hasAccessCoverage(before, target) {
-				return false
-			}
+		// A complete covering grant also covers every individual field. Keep
+		// compatible-source union as the fallback for genuinely split policies.
+		if hasAccessCoverage(before, target) {
 			continue
+		}
+		if len(target.fields) == 0 {
+			return false
 		}
 		for _, field := range target.fields {
 			part := target
