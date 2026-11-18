@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const expectedRolesTag = "roles"
+
 func TestPrivateRolesContract(t *testing.T) {
 	doc, _ := readPrivateDocument(t)
 	for _, path := range []string{rolesPath, rolePath} {
@@ -28,7 +30,7 @@ func TestPrivateRolesContract(t *testing.T) {
 
 func assertRoleReadContract(t *testing.T, op privateOperation) {
 	t.Helper()
-	if len(op.Tags) != 1 || op.Tags[0] != "roles" || len(op.Security) != 1 || op.Security[0]["__Host-sp_session"] == nil {
+	if len(op.Tags) != 1 || op.Tags[0] != expectedRolesTag || len(op.Security) != 1 || op.Security[0]["__Host-sp_session"] == nil {
 		t.Fatal("role read leaked into another group or authentication kind")
 	}
 	if _, exists := op.Responses["200"].Headers["Set-Cookie"]; exists {
@@ -64,5 +66,38 @@ func TestPrivateRolesGrantSchemaRejectsWrongShapes(t *testing.T) {
 		if variant.AdditionalProperties != false || !slices.Contains(variant.Required, "can_delegate") {
 			t.Fatal("grant shape does not require explicit delegation policy")
 		}
+	}
+}
+
+func TestPrivateRoleStateContract(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	for _, tc := range roleStateCases {
+		methods := doc.Paths["/api/v1/admin/roles/{id}/"+tc.action]
+		op := methods["post"]
+		if len(methods) != 1 || op.OperationID != tc.operation || !slices.Equal(op.Tags, []string{expectedRolesTag}) || len(op.Security) != 1 || op.Security[0]["__Host-sp_session"] == nil {
+			t.Fatal("role state operation, tag or auth scheme drifted", tc.action)
+		}
+		assertRoleVersionSchema(t, doc, op)
+		success := op.Responses["200"].Content["application/json"]
+		if success.Schema.Ref != "#/components/schemas/Role" || success.Example.(map[string]any)["state"] != tc.state {
+			t.Fatal("wrong resulting role in documentation", tc.action)
+		}
+		for _, status := range []string{"400", "401", "403", "404", "405", "409", "413", "429", "503"} {
+			if _, ok := op.Responses[status]; !ok {
+				t.Fatal("undocumented role state response", tc.action, status)
+			}
+		}
+	}
+}
+
+func assertRoleVersionSchema(t *testing.T, doc privateDocument, op privateOperation) {
+	t.Helper()
+	input := doc.Components.Schemas[op.OperationID+"Request"]
+	if input == nil || len(input.Properties) != 1 || !slices.Equal(input.Required, []string{"expected_version"}) || input.AdditionalProperties != false {
+		t.Fatal("role state command must accept only expected_version", op.OperationID)
+	}
+	version := input.Properties["expected_version"]
+	if version.Type != "integer" || version.Minimum == nil || *version.Minimum != 1 {
+		t.Fatal("role version must be positive", op.OperationID)
 	}
 }

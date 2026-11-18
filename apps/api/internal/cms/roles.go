@@ -237,11 +237,11 @@ func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, inp
 func (s *AuthService) EditRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64, input RoleInput) (Role, error) {
 	var out Role
 	err := s.authorizedCommand(ctx, req, opRolesEdit, "roles.edited", func(ctx context.Context, tx *sql.Tx, x Session) error {
-		plan, err := prepareRoleEdit(ctx, tx, x, id, expectedVersion, normalizeRoleInput(input))
+		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
 		if err != nil {
 			return err
 		}
-		out, err = s.applyRoleEdit(ctx, tx, x, plan)
+		out, err = s.applyRoleEdit(ctx, tx, x, plan, normalizeRoleInput(input))
 		return err
 	})
 	if err != nil {
@@ -250,17 +250,21 @@ func (s *AuthService) EditRole(ctx context.Context, req AuthRequest, id string, 
 	return out, nil
 }
 
-type roleEdit struct {
+type roleMutation struct {
 	role       Role
-	input      RoleInput
+	policies   map[string][]accessGrant
 	before     accessSnapshot
 	recipients []string
 }
 
-func prepareRoleEdit(ctx context.Context, tx *sql.Tx, x Session, id string, version int64, input RoleInput) (roleEdit, error) {
-	plan := roleEdit{input: input}
+func prepareRoleMutation(ctx context.Context, tx *sql.Tx, x Session, id string, version int64) (roleMutation, error) {
+	var plan roleMutation
 	var err error
-	plan.before, err = loadAccess(ctx, tx)
+	plan.policies, err = boundedRolePolicies(ctx, tx)
+	if err != nil {
+		return plan, err
+	}
+	plan.before, err = membershipAccess(ctx, tx, plan.policies)
 	if err != nil {
 		return plan, err
 	}
@@ -269,7 +273,7 @@ func prepareRoleEdit(ctx context.Context, tx *sql.Tx, x Session, id string, vers
 		return plan, err
 	}
 	actor := plan.before[x.user].active
-	if !withinEnvelope(actor, accessGrants(plan.role.Grants)) {
+	if !withinEnvelope(actor, plan.policies[plan.role.ID]) {
 		return plan, ErrNotFound
 	}
 	plan.recipients, err = roleRecipients(ctx, tx, id)
@@ -285,23 +289,23 @@ func prepareRoleEdit(ctx context.Context, tx *sql.Tx, x Session, id string, vers
 	if plan.role.Version != version {
 		return plan, ErrVersionConflict
 	}
-	grants, err := validateRoleInput(ctx, tx, input)
-	if err != nil {
-		return plan, err
-	}
-	if !withinEnvelope(actor, grants) {
-		return plan, ErrPermissionDenied
-	}
 	return plan, nil
 }
 
-func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleEdit) (Role, error) {
+func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput) (Role, error) {
+	grants, err := validateRoleInput(ctx, tx, input)
+	if err != nil {
+		return Role{}, err
+	}
+	if !withinEnvelope(plan.before[x.user].active, grants) {
+		return Role{}, ErrPermissionDenied
+	}
 	out := plan.role
-	err := tx.QueryRowContext(ctx, `UPDATE public.roles SET name_key=$2,version=version+1 WHERE id=$1 RETURNING name_key,version`, out.ID, plan.input.Name).Scan(&out.Name, &out.Version)
+	err = tx.QueryRowContext(ctx, `UPDATE public.roles SET name_key=$2,version=version+1 WHERE id=$1 RETURNING name_key,version`, out.ID, input.Name).Scan(&out.Name, &out.Version)
 	if err != nil {
 		return Role{}, roleWriteError(err)
 	}
-	if err = replaceRoleGrants(ctx, tx, out.ID, plan.input.Grants); err != nil {
+	if err = replaceRoleGrants(ctx, tx, out.ID, input.Grants); err != nil {
 		return Role{}, err
 	}
 	after, err := loadAccess(ctx, tx)

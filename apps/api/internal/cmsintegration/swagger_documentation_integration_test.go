@@ -78,6 +78,9 @@ const assert = require('node:assert/strict');
   assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
   assert.deepEqual(Object.keys(privateSpec.paths['/api/v1/admin/users']).sort(),['get','post']);
   const rolePaths=['/api/v1/admin/roles','/api/v1/admin/roles/{id}'];
+  const roleStatePaths=['enable','disable','archive','restore'].map(action=>rolePaths[1]+'/'+action);
+  rolePaths.push(...roleStatePaths);
+  for(const path of roleStatePaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[0]]).sort(),['get','post']);
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['get','patch']);
@@ -85,19 +88,24 @@ const assert = require('node:assert/strict');
   await page.locator('.topbar select').selectOption({label:'Private CMS API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();
-  async function operation(id,body,csrf,status) {
+  async function operation(id,body,csrf,status,targetID) {
    console.log('Swagger operation: '+id+' expected '+status);
    const block=page.locator('[id$="-'+id+'"]');
    if(!await block.locator('.opblock-body').isVisible()) await block.locator('.opblock-summary').click();
    const tryButton=block.getByRole('button',{name:'Try it out',exact:true});
    if(!prepared.has(id)) {await tryButton.click(); prepared.add(id);}
    if(body!==undefined) await block.locator('textarea').fill(JSON.stringify(body));
+   let path=Object.entries(privateSpec.paths).find(([,v])=>Object.values(v).some(op=>op.operationId===id))[0];
+   if(targetID) {
+    await block.locator('tr[data-param-name="id"] input').fill(targetID);
+    path=path.replace('{id}',targetID);
+   }
    const originInput=block.locator('input[placeholder="Origin"]');
    if(body!==undefined && await originInput.count()) await originInput.fill(origin);
    const token=block.locator('input[placeholder="X-CSRF-Token"]');
    if(await token.count()) await token.fill(csrf||'');
    const [response]=await Promise.all([
-    page.waitForResponse(r=>r.url()===origin+Object.entries(privateSpec.paths).find(([p,v])=>Object.values(v).some(op=>op.operationId===id))[0] && r.request().method()!=='OPTIONS',{timeout:10000}).catch(async e=>{throw new Error(e.message+'; errors='+JSON.stringify(faults));}),
+    page.waitForResponse(r=>r.url()===origin+path && r.request().method()!=='OPTIONS',{timeout:10000}).catch(async e=>{throw new Error(e.message+'; errors='+JSON.stringify(faults));}),
     block.getByRole('button',{name:'Execute',exact:true}).click()
    ]);
    assert.equal(response.status(),status,id+' unexpected HTTP status');
@@ -119,11 +127,19 @@ const assert = require('node:assert/strict');
   cookies=await context.cookies(origin);
   assert(cookies.some(c=>c.name==='__Host-sp_session'&&c.httpOnly&&c.secure&&c.sameSite==='Strict'));
   assert(!cookies.some(c=>c.name==='__Host-sp_login'));
+  let role=await operation('rolesCreate',{name:'browser-role',grants:[]},full.csrf_token,200);
+  assert.equal(role.state,'disabled');
+  for(const [action,state] of [['Enable','active'],['Disable','disabled'],['Archive','archived'],['Restore','disabled']]){
+   const expected=role.version;
+   const roleID=role.id;
+   role=await operation('roles'+action,{expected_version:expected},full.csrf_token,200,roleID);
+   assert.deepEqual([role.id,role.state,role.version],[roleID,state,expected+1]);
+  }
   await operation('authLogout',{},restricted.csrf_token,403);
   await operation('authLogout',{},full.csrf_token,204);
   assert(!(await context.cookies(origin)).some(c=>c.name.startsWith('__Host-sp_')));
   assert.deepEqual(faults,[]);
-  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, stale-token rejection and logout');
+  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, four versioned role state transitions, stale-token rejection and logout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
 `

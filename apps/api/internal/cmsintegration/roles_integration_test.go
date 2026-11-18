@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	rolesContentScope  = "content"
-	rolesArchivedState = "archived"
+	rolesContentScope      = "content"
+	rolesInstallationScope = "installation"
+	rolesArchivedState     = "archived"
 )
 
 func rolesInput(name string, grants ...cms.RoleGrant) cms.RoleInput {
@@ -67,7 +68,7 @@ func TestAuthRolesInputValidationIntegration(t *testing.T) {
 	ctx := context.Background()
 	cases := []cms.RoleInput{
 		rolesInput("", rolesContentGrant()),
-		rolesInput("unknown", cms.RoleGrant{Operation: "unknown.operation", Scope: "installation"}),
+		rolesInput("unknown", cms.RoleGrant{Operation: "unknown.operation", Scope: rolesInstallationScope}),
 		rolesInput("duplicate", rolesContentGrant(), rolesContentGrant()),
 		rolesInput("wrong field", cms.RoleGrant{Operation: bootstrapOpRead, Scope: rolesContentScope, TypeID: lifecycleOtherType, ObjectScope: "assigned", FieldIDs: []string{lifecycleField}}),
 		rolesInput("unknown type", cms.RoleGrant{Operation: bootstrapOpRead, Scope: rolesContentScope, TypeID: "00000000-0000-4000-8000-000000000099", ObjectScope: "any"}),
@@ -125,8 +126,7 @@ func TestAuthRolesOwnGrowthIntegration(t *testing.T) {
 func TestAuthRolesLastAdminAndRollbackIntegration(t *testing.T) {
 	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
-	var role string
-	requireNoError(t, f.db.QueryRow(`SELECT role_id::text FROM public.user_roles WHERE user_id=$1`, f.user).Scan(&role))
+	role := bootstrapAdminRoleID(t, f)
 	admin, err := f.service.GetRole(context.Background(), authReq(full), role)
 	requireNoError(t, err)
 	_, err = f.service.EditRole(context.Background(), authReq(full), role, admin.Version, rolesInput("Remove last admin"))

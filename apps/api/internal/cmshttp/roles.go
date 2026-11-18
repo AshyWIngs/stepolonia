@@ -12,12 +12,16 @@ import (
 	"stepolonia/apps/api/internal/cms"
 )
 
-// RoleService supplies authorized policy reads and atomic explicit-grant commands.
+// RoleService supplies authorized role reads, policy writes and state changes.
 type RoleService interface {
 	ListRoles(context.Context, cms.AuthRequest, cms.RolePage) (cms.RoleList, error)
 	GetRole(context.Context, cms.AuthRequest, string) (cms.Role, error)
 	CreateRole(context.Context, cms.AuthRequest, cms.RoleInput) (cms.Role, error)
 	EditRole(context.Context, cms.AuthRequest, string, int64, cms.RoleInput) (cms.Role, error)
+	EnableRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
+	DisableRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
+	ArchiveRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
+	RestoreRole(context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
 }
 
 var _ RoleService = (*cms.AuthService)(nil)
@@ -38,6 +42,12 @@ const (
 // Credential endpoints retain their smaller independent limit.
 const maxRoleBodyBytes = 256 * 1024
 
+const (
+	roleActive   = "active"
+	roleDisabled = "disabled"
+	roleArchived = "archived"
+)
+
 var roleRoutes = map[string][]route{
 	rolesPath: {
 		{kind: fullKind, method: http.MethodGet, operationID: listRolesOperation, summary: "List role policies", response: roleListSchema, description: "Requires a full session and current installation-wide roles.read under the shared security mutex. Returns explicit policy IDs, operations and scope flags in stable stored-name and UUID order; never content values, field labels, credentials or recipients. Read permission is independent of the mutation delegation envelope and does not require CSRF, fresh step-up or a denial budget. Default limit 20, maximum 32; offset at most 32."},
@@ -47,6 +57,18 @@ var roleRoutes = map[string][]route{
 		{kind: fullKind, method: http.MethodGet, operationID: getRoleOperation, summary: "Read a role policy", response: roleSchema, description: "Requires a full session and current installation-wide roles.read under the shared security mutex. Returns the explicit policy, including latent grants of disabled or archived roles, without content values, labels, credentials or recipients. This read is independent of the edit delegation envelope and does not require CSRF or fresh step-up."},
 		{kind: fullKind, method: http.MethodPatch, operationID: editRoleOperation, summary: "Replace a role name and explicit grants", response: roleSchema, description: "Requires a full session, current roles.edit, CSRF and strong authentication no older than five minutes. Both name and grants are required; grants replace the entire explicit set atomically. Rechecks current permissions, target and positive expected_version under the shared security mutex. Old and new grants, latent grants and all affected recipients must fit the actor's envelope. Cannot increase the actor's own effective access or delegation, violate last-admin, change role state or memberships. Audit failure rolls back the complete change."},
 	},
+	rolePath + "/enable":  {roleStateRoute("rolesEnable", "roles.enable", roleDisabled, roleActive, RoleService.EnableRole)},
+	rolePath + "/disable": {roleStateRoute("rolesDisable", "roles.disable", roleActive, roleDisabled, RoleService.DisableRole)},
+	rolePath + "/archive": {roleStateRoute("rolesArchive", "roles.archive", roleDisabled, roleArchived, RoleService.ArchiveRole)},
+	rolePath + "/restore": {roleStateRoute("rolesRestore", "roles.restore", roleArchived, roleDisabled, RoleService.RestoreRole)},
+}
+
+type roleStateCommand func(RoleService, context.Context, cms.AuthRequest, string, int64) (cms.Role, error)
+
+func roleStateRoute(operationID, permission, from, to string, command roleStateCommand) route {
+	return route{kind: fullKind, method: http.MethodPost, fields: expectedVersionField, operationID: operationID, roleState: command, resultState: to, response: roleSchema,
+		summary:     "Change a role from " + from + " to " + to,
+		description: "Requires a full session, current " + permission + ", CSRF and strong authentication no older than five minutes. The role must be " + from + " and match expected_version. The server checks the role and all recipients against the actor's delegation envelope under the shared security mutex. The change preserves memberships and explicit grants. Only active roles supply effective grants. Invalid transitions and stale versions return 409."}
 }
 
 type roleGrantDTO struct {
@@ -81,7 +103,7 @@ type roleListResponse struct {
 	NextOffset *int           `json:"next_offset"`
 }
 
-func isRoleRoute(path string) bool { return path == rolesPath || path == rolePath }
+func isRoleRoute(path string) bool { _, ok := roleRoutes[path]; return ok }
 
 func roleRoutePath(path string) (string, string) {
 	if path == rolesPath {
@@ -90,9 +112,16 @@ func roleRoutePath(path string) (string, string) {
 	if !strings.HasPrefix(path, rolesPath+"/") {
 		return "", ""
 	}
-	id := strings.TrimPrefix(path, rolesPath+"/")
-	if id == "" || strings.Contains(id, "/") {
+	id, action, hasAction := strings.Cut(strings.TrimPrefix(path, rolesPath+"/"), "/")
+	if id == "" {
 		return "", ""
+	}
+	if hasAction {
+		key := rolePath + "/" + action
+		if !isRoleRoute(key) {
+			return "", ""
+		}
+		return key, id
 	}
 	return rolePath, id
 }
@@ -128,9 +157,17 @@ func (h *handler) serveRole(w http.ResponseWriter, r *http.Request, rt route, id
 		return
 	}
 	var role cms.Role
-	if rt.operationID == getRoleOperation {
+	switch {
+	case rt.operationID == getRoleOperation:
 		role, err = service.GetRole(r.Context(), req, id)
-	} else {
+	case rt.roleState != nil:
+		input, code, status := readRouteInput(w, r, rt)
+		if code != "" {
+			problem(w, status, code)
+			return
+		}
+		role, err = rt.roleState(service, r.Context(), req, id, input.ExpectedVersion)
+	default:
 		input, code, status := readRoleInput(w, r, rt.method == http.MethodPatch)
 		if code != "" {
 			problem(w, status, code)

@@ -214,3 +214,10 @@ func assertSQLState(t *testing.T, err error, want string) {
 		t.Fatalf("expected SQLSTATE %s; got %v", want, err)
 	}
 }
+
+func bootstrapAdminRoleID(t *testing.T, f authFixtureState) string {
+	t.Helper()
+	var roleID string
+	requireNoError(t, f.db.QueryRow(`SELECT role_id::text FROM public.user_roles WHERE user_id=$1`, f.user).Scan(&roleID))
+	return roleID
+}

@@ -80,6 +80,8 @@ const (
 )
 
 type route struct {
+	roleState   roleStateCommand
+	resultState string
 	kind        string
 	fields      string
 	method      string

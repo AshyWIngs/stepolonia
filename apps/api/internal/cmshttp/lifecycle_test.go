@@ -143,7 +143,7 @@ func TestLifecycleReadsRejectUnsafeOriginsAndRestrictedSessions(t *testing.T) {
 func TestLifecycleCommandsVersionAndProjection(t *testing.T) {
 	service := &fakeLifecycle{}
 	server := newAdminTLSServer(t, service)
-	for _, action := range []string{"activate", "disable"} {
+	for _, action := range userStateActions {
 		res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/"+action, `{"expected_version":7}`, fullKind)
 		raw, err := io.ReadAll(res.Body)
 		if err != nil {
@@ -161,11 +161,15 @@ func TestLifecycleCommandsVersionAndProjection(t *testing.T) {
 	}
 }
 
+var userStateActions = []string{"activate", "disable"}
+
+var invalidVersionBodies = []string{`{}`, `{"expected_version":0}`, `{"expected_version":null}`, `{"expected_version":"1"}`, `{"expected_version":1.5}`, `{"expected_version":1,"expected_version":2}`, `{"expected_version":1,"actor_id":"admin"}`, `{"expected_version":1,"state":"active"}`}
+
 func TestLifecycleCommandsRejectInjectedAndMissingVersions(t *testing.T) {
 	service := &fakeLifecycle{}
 	server := newAdminTLSServer(t, service)
-	for _, action := range []string{"activate", "disable"} {
-		for _, body := range []string{`{}`, `{"expected_version":0}`, `{"expected_version":null}`, `{"expected_version":"1"}`, `{"expected_version":1.5}`, `{"expected_version":1,"expected_version":2}`, `{"expected_version":1,"actor_id":"admin"}`, `{"expected_version":1,"state":"active"}`} {
+	for _, action := range userStateActions {
+		for _, body := range invalidVersionBodies {
 			res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/"+action, body, fullKind)
 			if res.StatusCode != 400 {
 				t.Fatal("unsafe lifecycle body accepted", body, res.StatusCode)

@@ -93,7 +93,7 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	if op.RequestBody == nil {
 		t.Fatalf("missing request body %s", path)
 	}
-	if authTag(rt) == rolesTag {
+	if authTag(rt) == rolesTag && rt.roleState == nil {
 		checkRoleRequestExample(t, rt, op.RequestBody.Content[jsonMediaType])
 		return op
 	}
@@ -261,7 +261,10 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable"},
-		"roles":                   {"rolesList", "rolesGet", "rolesCreate", "rolesEdit"},
+		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit"},
+	}
+	for _, tc := range roleStateCases {
+		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
 	}
 	declared := map[string]bool{}
 	for _, tag := range doc.Tags {
