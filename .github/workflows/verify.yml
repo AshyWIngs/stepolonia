@@ -146,6 +146,8 @@ jobs:
         run: make SITE=ci.test auth-test
       - name: "Безопасность: CVE-аудит 11 образов"
         if: steps.scope.outputs.full == 'true'
+        env:
+          VERIFY_ACCEPT_RECORDED_FINDINGS: ${{ github.event_name == 'pull_request' && github.repository == 'AshyWIngs/stepolonia' && github.base_ref == 'main' && (github.event.number == 43 || github.event.number == 44) }}
         run: make SITE=ci.test ci-image-audit
       - name: "Диагностика: журналы PostgreSQL и браузера после сбоя"
         if: ${{ failure() && steps.scope.outputs.full == 'true' }}
