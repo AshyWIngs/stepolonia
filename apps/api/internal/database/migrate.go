@@ -34,7 +34,7 @@ func Up(ctx context.Context, db *sql.DB, runtime string) error {
 
 // CheckSchema validates the complete initial domain set without repairing drift.
 func CheckSchema(ctx context.Context, db *sql.DB) error {
-	if err := checkCMSDefaultPrivileges(ctx, db); err != nil {
+	if err := checkAdministrationDefaultPrivileges(ctx, db); err != nil {
 		return err
 	}
 	version, err := readMigrationVersion(ctx, db)

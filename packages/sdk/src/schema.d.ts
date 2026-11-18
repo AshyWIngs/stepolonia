@@ -643,7 +643,7 @@ export interface components {
             tagline: string;
             /**
              * @description Human-readable title of this installation.
-             * @example Stepolonia
+             * @example Portal
              */
             title: string;
         };

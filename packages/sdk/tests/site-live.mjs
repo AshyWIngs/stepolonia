@@ -38,12 +38,20 @@ function assertPublication(result, version, language, requestedLanguage) {
     assert.deepEqual(new Set(Object.keys(item)), new Set(['code', 'direction', 'name', 'native_name']))
   }
   const keys = ['articles', 'events', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home',
-    'cms.cms', 'cms.language', 'cms.theme', 'cms.system', 'cms.light',
-    'cms.dark', 'cms.sign_in', 'cms.login', 'cms.password', 'cms.continue',
-    'cms.two_step', 'cms.code_help', 'cms.code', 'cms.verify', 'cms.restart',
-    'cms.signed_in', 'cms.sign_out', 'cms.checking', 'cms.working', 'cms.retry',
-    'cms.invalid_credentials', 'cms.invalid_code', 'cms.unavailable', 'cms.limited', 'cms.changed',
-    'cms.restricted', 'cms.signed_out',
+    'admin.name', 'admin.language', 'admin.theme', 'admin.system', 'admin.light',
+    'admin.dark', 'admin.sign_in', 'admin.login', 'admin.password', 'admin.continue',
+    'admin.two_step', 'admin.code_help', 'admin.code', 'admin.verify', 'admin.restart',
+    'admin.signed_in', 'admin.sign_out', 'admin.checking', 'admin.working', 'admin.retry',
+    'admin.invalid_credentials', 'admin.invalid_code', 'admin.unavailable', 'admin.limited', 'admin.changed',
+    'admin.restricted', 'admin.signed_out',
+    'admin.settings', 'admin.portal_name', 'admin.tagline',
+    'admin.description', 'admin.notice', 'admin.accent',
+    'admin.default_language', 'admin.fallback_language', 'admin.interface_texts',
+    'admin.save_draft', 'admin.publish_draft', 'admin.confirm_publish',
+    'admin.draft_saved', 'admin.published', 'admin.access_denied',
+    'admin.settings_conflict', 'admin.settings_invalid', 'admin.reload_settings',
+    'admin.cancel', 'admin.close', 'admin.remove_catalog',
+    'admin.fresh_auth', 'admin.unlock', 'admin.add_catalog', 'admin.step_up_required',
   ]
   assert.deepEqual(new Set(Object.keys(site.messages)), new Set(keys))
   for (const key of keys) {

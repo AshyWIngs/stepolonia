@@ -88,6 +88,8 @@ func run(ctx context.Context, args []string) error {
 		return database.Seed(ctx, db)
 	case commandImportLanguages:
 		return database.ImportLanguages(ctx, db, rows)
+	case commandInitializeSite:
+		return initializeSite(ctx, db, args[1], args[2])
 	case "migrate":
 		return runMigration(ctx, db, args[1])
 	}
@@ -96,11 +98,15 @@ func run(ctx context.Context, args []string) error {
 
 func validateCommand(args []string) error {
 	if len(args) == 0 {
-		return inputError{"commands: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin"}
+		return inputError{"commands: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin | initialize-site TITLE LANGUAGE"}
 	}
 	switch args[0] {
 	case "prepare-roles", "seed", commandBootstrapAdmin:
 		if len(args) == 1 {
+			return nil
+		}
+	case commandInitializeSite:
+		if len(args) == 3 {
 			return nil
 		}
 	case commandImportLanguages:

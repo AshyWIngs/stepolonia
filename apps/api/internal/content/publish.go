@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 type publicationLocale struct {
@@ -24,7 +24,7 @@ type publicationCandidate struct {
 }
 
 func (s *Service) Publish(ctx context.Context, actor Actor, item string, expected, schemaNo int64, intended []string) (DraftState, error) {
-	return s.withCandidate(ctx, actor, string(cms.OpContentPublish), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
+	return s.withCandidate(ctx, actor, string(identity.OpContentPublish), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
 		return publishCandidate(ctx, tx, state, schema, intended, s.relationAccess(ctx, tx, actor))
 	})
 }

@@ -10,14 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const authEnabledEnv = "CMS_AUTH_ENABLED"
-const cmsDBUserEnv = "CMS_DB_USER"
-const cmsKeyFileEnv = "CMS_TOTP_KEY_FILE"
+const authEnabledEnv = "ADMIN_AUTH_ENABLED"
+const adminDBUserEnv = "ADMIN_DB_USER"
+const adminKeyFileEnv = "ADMIN_TOTP_KEY_FILE"
 
 func authEnvironment(t *testing.T) (*pgxpool.Config, string, string) {
 	t.Helper()
-	t.Setenv("CMS_DRAFT_DB_USER", "")
-	t.Setenv("CMS_DRAFT_DB_PASSWORD_FILE", "")
+	t.Setenv("CONTENT_EDITOR_DB_USER", "")
+	t.Setenv("CONTENT_EDITOR_DB_PASSWORD_FILE", "")
 	directory := t.TempDir()
 	password, key := filepath.Join(directory, "password"), filepath.Join(directory, "key")
 	for path, value := range map[string]string{password: "private-db-password", key: strings.Repeat("k", 32)} {
@@ -25,7 +25,7 @@ func authEnvironment(t *testing.T) (*pgxpool.Config, string, string) {
 			t.Fatal(err)
 		}
 	}
-	for name, value := range map[string]string{authEnabledEnv: "true", cmsDBUserEnv: "auth_only", "CMS_DB_PASSWORD_FILE": password, "CMS_AUTH_ORIGIN": "https://example.test", cmsKeyFileEnv: key, "CMS_TOTP_KEY_VERSION": "1", "SITE": "example.test", "CMS_AUTH_PROXY_CIDRS": "127.0.0.1/32"} {
+	for name, value := range map[string]string{authEnabledEnv: "true", adminDBUserEnv: "auth_only", "ADMIN_DB_PASSWORD_FILE": password, "ADMIN_AUTH_ORIGIN": "https://example.test", adminKeyFileEnv: key, "ADMIN_TOTP_KEY_VERSION": "1", "SITE": "example.test", "ADMIN_AUTH_PROXY_CIDRS": "127.0.0.1/32"} {
 		t.Setenv(name, value)
 	}
 	cfg, err := pgxpool.ParseConfig("postgres://runtime@localhost/test")
@@ -51,7 +51,7 @@ func TestAuthenticationPoolIsolation(t *testing.T) {
 }
 
 func TestAuthenticationConfigurationFailsClosed(t *testing.T) {
-	for _, field := range []string{cmsDBUserEnv, "CMS_DB_PASSWORD_FILE", "CMS_AUTH_ORIGIN", cmsKeyFileEnv, "CMS_TOTP_KEY_VERSION", "SITE"} {
+	for _, field := range []string{adminDBUserEnv, "ADMIN_DB_PASSWORD_FILE", "ADMIN_AUTH_ORIGIN", adminKeyFileEnv, "ADMIN_TOTP_KEY_VERSION", "SITE"} {
 		t.Run(field, func(t *testing.T) {
 			runtime, _, _ := authEnvironment(t)
 			t.Setenv(field, "")
@@ -62,7 +62,7 @@ func TestAuthenticationConfigurationFailsClosed(t *testing.T) {
 	}
 	t.Run("runtime_identity", func(t *testing.T) {
 		runtime, _, _ := authEnvironment(t)
-		t.Setenv(cmsDBUserEnv, "runtime")
+		t.Setenv(adminDBUserEnv, "runtime")
 		if _, err := Authentication(runtime); err == nil {
 			t.Fatal("accepted public pool identity")
 		}
@@ -72,7 +72,7 @@ func TestAuthenticationConfigurationFailsClosed(t *testing.T) {
 		t.Setenv(authEnabledEnv, strconv.FormatBool(false))
 		cfg, err := Authentication(runtime)
 		if cfg != nil || err != nil {
-			t.Fatal("disabled CMS configured private credentials")
+			t.Fatal("disabled administration configured private credentials")
 		}
 	})
 }
@@ -92,7 +92,7 @@ func TestPrivateCredentialFileSafety(t *testing.T) {
 	if err := os.Symlink(key, link); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(cmsKeyFileEnv, link)
+	t.Setenv(adminKeyFileEnv, link)
 	if _, err := Authentication(runtime); err == nil {
 		t.Fatal("followed key symlink")
 	}
@@ -116,7 +116,7 @@ func TestAuthenticationDoesNotInheritRoleSwitch(t *testing.T) {
 }
 
 func TestDraftDatabaseConfiguration(t *testing.T) {
-	const userEnv = "CMS_DRAFT_DB_USER"
+	const userEnv = "CONTENT_EDITOR_DB_USER"
 	const draftLogin = "draft_writer"
 	runtime, password, _ := authEnvironment(t)
 	cfg, err := Authentication(runtime)
@@ -128,8 +128,8 @@ func TestDraftDatabaseConfiguration(t *testing.T) {
 	if _, err := Authentication(runtime); err == nil {
 		t.Fatal("accepted incomplete draft configuration")
 	}
-	t.Setenv("CMS_DRAFT_DB_PASSWORD_FILE", password)
-	for _, user := range []string{runtime.ConnConfig.User, os.Getenv(cmsDBUserEnv)} {
+	t.Setenv("CONTENT_EDITOR_DB_PASSWORD_FILE", password)
+	for _, user := range []string{runtime.ConnConfig.User, os.Getenv(adminDBUserEnv)} {
 		t.Setenv(userEnv, user)
 		if _, err := Authentication(runtime); err == nil {
 			t.Fatal("accepted a shared draft database identity")
@@ -148,6 +148,6 @@ func TestDraftDatabaseConfiguration(t *testing.T) {
 	}
 	t.Setenv(authEnabledEnv, strconv.FormatBool(false))
 	if _, err := Authentication(runtime); err == nil {
-		t.Fatal("accepted draft configuration without CMS authentication")
+		t.Fatal("accepted draft configuration without administration authentication")
 	}
 }

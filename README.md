@@ -2,7 +2,7 @@
 
 Stepolonia is a Go and Nuxt portal platform. Installations share code and have separate PostgreSQL databases, settings, and content.
 
-The project is in pre-release development. Public content and site settings are available through a read-only API and Nuxt SSR. Private CMS authentication and the scalar draft-save endpoint are available with explicit configuration. The editorial UI is planned.
+The project is in pre-release development. Public content and site settings are available through a read-only API and Nuxt SSR. Private administration provides sign-in and access-controlled editing over HTTPS with explicit configuration. The portal title and interface messages come from the site publication.
 
 ## Repository layout
 
@@ -19,7 +19,7 @@ The project is in pre-release development. Public content and site settings are 
 
 Run `make swagger` from the repository root to serve the public API and Swagger UI at [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs). The OpenAPI document is at `/openapi.json`. The launcher requires Docker, Go from `apps/api/go.mod`, and Python from `.python-version`. It creates a loopback-only disposable database, loads synthetic data, and removes the database on Ctrl-C. To select a different port, run `python3 scripts/dev-swagger.py --port 8081`.
 
-The Swagger demo includes published Article and Event items in Polish (`pl`). Use `welcome-to-stepolonia` and `community-meetup` for detail reads, `limit=1` for pagination, and `welcome-old` for an HTTP 301 redirect. `/api/v1/site?lang=kk` falls back to the published Polish UI catalog. The site catalog uses `lang`. Content endpoints use `language`. The API connects with a restricted runtime login, and the fixture writer uses an owner connection before the API starts. Private CMS routes are disabled in this demo.
+The Swagger demo includes published Article and Event items in Polish (`pl`). Use `welcome-to-stepolonia` and `community-meetup` for detail reads, `limit=1` for pagination, and `welcome-old` for an HTTP 301 redirect. `/api/v1/site?lang=kk` selects the published Kazakh UI catalog. The site catalog uses `lang`. Content endpoints use `language`. The API connects with a restricted runtime login, and the fixture writer uses an owner connection before the API starts. Private administration routes are disabled in this demo.
 
 ### Full installation
 
@@ -30,7 +30,17 @@ make python-version-check
 make up
 ```
 
-The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until its schema is applied and someone publishes site settings with a complete UI catalog. The database seed creates language metadata. Run `make smoke` once the site configuration is published. The example installation serves local HTTP. For a different installation:
+The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until the operator applies the schema and publishes the first site settings revision. Seed the language directory, then initialize the selected installation with its own title and initial language.
+
+```sh
+make SITE=example.test migrate
+make SITE=example.test seed
+python3 scripts/db_tools.py --site example.test initialize-site "Polacy w Kazachstanie" pl
+```
+
+The command publishes the bundled interface catalogs for `en`, `kk`, `pl` and `ru` once. Later edits are available in Administration at `/admin` for an account with `settings.manage`. Saving a draft preserves the public revision until publication. Run `make SITE=example.test smoke` after the initial publication. The example installation serves local HTTP.
+
+Administration requires the configured HTTPS origin. For a different installation:
 
 ```sh
 python3 scripts/setup-local.py --site another.test --port 8081
@@ -38,6 +48,8 @@ make SITE=another.test up
 ```
 
 Local configuration is stored in `sites/<SITE>/.env`, and passwords in `sites/<SITE>/.secrets/`. Git ignores these files. Setup preserves existing values and verifies ownership, file type, and the absence of links before changing secret permissions through open file descriptors. An existing database's credentials and volume require their own change procedure.
+
+Administration requires a canonical HTTPS origin. Set `ADMIN_AUTH_ENABLED=true`, `ADMIN_AUTH_ORIGIN`, `ADMIN_DB_USER`, `ADMIN_DB_PASSWORD_FILE`, `ADMIN_TOTP_KEY_FILE`, and `ADMIN_TOTP_KEY_VERSION` in the API process. Configure `ADMIN_AUTH_PROXY_CIDRS` only for trusted proxies. Portal settings and content edits use a distinct verified login through `CONTENT_EDITOR_DB_USER` and `CONTENT_EDITOR_DB_PASSWORD_FILE`.
 
 To set a local default installation, use the ignored `.site.mk`:
 
