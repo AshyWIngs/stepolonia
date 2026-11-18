@@ -5,8 +5,8 @@ test harnesses remove their containers, networks, PostgreSQL volumes, and image 
 Reports stay in `reports/`.
 
 ```sh
-python3 scripts/local-smoke.py -- make publishing-test
-python3 scripts/local-smoke.py --kind -- kubectl get nodes
+./scripts/local-smoke.sh -- make publishing-test
+./scripts/local-smoke.sh --kind -- kubectl get nodes
 ```
 
 The Kubernetes mode requires `kind` and `kubectl`. It creates a temporary kubeconfig with
@@ -17,7 +17,7 @@ To load a build into the cluster, export the image to an archive in the temporar
 directory. This keeps project image tags out of the host Docker image store.
 
 ```sh
-python3 scripts/local-smoke.py --kind -- sh -eu -c '
+./scripts/local-smoke.sh --kind -- sh -eu -c '
   docker buildx build --tag stepolonia-api:smoke \
     --output "type=docker,dest=$STEPOLONIA_SMOKE_TMP/api.tar" apps/api
   kind load image-archive --name "$STEPOLONIA_SMOKE_CLUSTER" "$STEPOLONIA_SMOKE_TMP/api.tar"
