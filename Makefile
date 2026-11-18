@@ -112,8 +112,8 @@ test: setup docker-check python-tests api-checks web-checks
 # Только проверки Caddy/PostgreSQL: prerequisites выполняются вызывающим Make.
 ci-service-checks:
 	mkdir -p reports
-	docker build --progress=plain --target checks -t sp-caddy-checks:stage0 infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
-	docker build --progress=plain --target checks -t sp-postgres-checks:stage0 infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
+	docker build --progress=plain --target checks --output type=cacheonly infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
+	docker build --progress=plain --target checks --output type=cacheonly infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
 
 python-version-check:
 	python3 -c 'import platform, sys; from pathlib import Path; expected = Path(".python-version").read_text().strip(); actual = platform.python_version(); print(sys.executable, actual); sys.exit(0 if platform.python_implementation() == "CPython" and actual == expected else "Требуется CPython " + expected)'
@@ -124,11 +124,11 @@ python-tests: python-version-check
 
 api-checks:
 	mkdir -p reports
-	docker build --progress=plain --target checks -t sp-api-checks:stage0 apps/api > reports/api-checks.log 2>&1 || { cat reports/api-checks.log; exit 1; }
+	docker build --progress=plain --target checks --output type=cacheonly apps/api > reports/api-checks.log 2>&1 || { cat reports/api-checks.log; exit 1; }
 
 web-checks:
 	mkdir -p reports
-	docker build --progress=plain -f apps/web/Dockerfile --target checks -t sp-web-checks:stage0 . > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
+	docker build --progress=plain -f apps/web/Dockerfile --target checks --output type=cacheonly . > reports/web-checks.log 2>&1 || { cat reports/web-checks.log; exit 1; }
 
 smoke: setup
 	python3 scripts/smoke.py --site "$(SITE)"
