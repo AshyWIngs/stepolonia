@@ -2,6 +2,7 @@
 """Verify schema and tools on an owned, disposable PostgreSQL installation."""
 import argparse
 from contextlib import redirect_stdout
+from functools import partial
 from ipaddress import IPv4Address
 import json
 import os
@@ -16,6 +17,7 @@ import smoke
 from site_config import ROOT, compose_command, load_config, postgres_sql_args, site_directory
 
 
+run_prebuilt_tool = partial(run_tool, build_image=False)
 OWNERSHIP_LABEL = "io.stepolonia.stage12-test"
 
 
@@ -110,8 +112,8 @@ def installation_override(project, token, volume, *, runtime=False, images_proje
 def check_cli(site, directory, override, compose, config, log):
     """Проверяем поставляемый CLI и защиту Down до SQL-сценариев Go."""
     # Проверяем поставляемый CLI, включая защищённый Down, до SQL-тестов Go.
-    run_tool(site, ["prepare-roles"], override=override, log=log)
-    run_tool(site, ["migrate", "up"], override=override, log=log)
+    run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
+    run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
     # Обходим Python guard только в этом отрицательном тесте настоящего Go CLI.
     # Сравниваем всю историю версий и publishing-каталог, чтобы заметить выполненный Down.
     snapshot_query = """SELECT json_build_object(
@@ -131,13 +133,13 @@ def check_cli(site, directory, override, compose, config, log):
             or before_down != after_down):
         raise RuntimeError("CLI Down с пустым токеном должен отказать без изменения каталога и версий")
     log.write("PASS: CLI Down с пустым токеном отклонён; catalog/version сохранены\n")
-    run_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
-    run_tool(site, ["migrate", "up"], override=override, log=log)
-    run_tool(site, ["seed"], override=override, log=log)
+    run_prebuilt_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
+    run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
+    run_prebuilt_tool(site, ["seed"], override=override, log=log)
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
-    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
-    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+    run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+    run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
 
 
 def published_port(compose, service, target, token, log):
@@ -154,12 +156,12 @@ def published_port(compose, service, target, token, log):
 
 def check_runtime(site, directory, override, compose, environment, project, token, log):
     """Принимаем контейнерный Publishing без повторения ранее принятых SQL-сценариев."""
-    run_tool(site, ["prepare-roles"], override=override, log=log)
-    run_tool(site, ["migrate", "up"], override=override, log=log)
-    run_tool(site, ["seed"], override=override, log=log)
+    run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
+    run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
+    run_prebuilt_tool(site, ["seed"], override=override, log=log)
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
-    run_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
+    run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
     command([*compose, "build", "api", "web", "caddy"], log)
     command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
     port = published_port(compose, "caddy", 8080, token, log)
@@ -205,10 +207,10 @@ def check_localization(base, images_project, primary_compose, log):
         query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
         command([*compose, *postgres_sql_args(config, query)], log)
         for arguments in (["prepare-roles"], ["migrate", "up"], ["seed"]):
-            run_tool(site, arguments, override=override, log=log)
+            run_prebuilt_tool(site, arguments, override=override, log=log)
         languages = directory / "languages.csv"
         languages.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
-        run_tool(site, ["import-languages", "/input/languages.csv"], input_file=languages,
+        run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=languages,
                  override=override, log=log)
         command([*compose, *postgres_sql_args(config,
                  "UPDATE public.languages SET is_enabled=(code IN ('pl','en','fr'))")], log)
