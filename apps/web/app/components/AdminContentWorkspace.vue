@@ -68,7 +68,7 @@ async function loadWorkspace() {
     languages.value = activeLanguages.data
     selectedType.value = page.items[0]?.type_key ?? ''
     if (selectedType.value) await loadDraftPage()
-    if (active.value) loaded.value = true
+    else loaded.value = true
   })
 }
 
@@ -89,6 +89,7 @@ async function loadDraftPage(offset = 0) {
   if (!active.value || selectedType.value !== type) return
   drafts.value = offset === 0 ? page.items : [...drafts.value, ...page.items]
   draftOffset.value = page.next_offset
+  loaded.value = true
 }
 
 function changeCollection() {

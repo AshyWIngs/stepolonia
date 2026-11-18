@@ -48,11 +48,12 @@ class AuthHarnessTests(unittest.TestCase):
                 else:
                     auth.main()
                 calls = [call.args[0] for call in command.call_args_list]
-                go_calls = [arguments for arguments in calls if arguments[0] == "go"]
-                self.assertEqual(go_calls[0], [
-                    "go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
+                first_go_call = next(call for call in command.call_args_list if call.args[0][0] == "go")
+                self.assertEqual(first_go_call.args[0], [
+                    "go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-timeout=7m", "-run",
                     "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration", "./cmd/db",
                 ])
+                self.assertEqual(first_go_call.kwargs["timeout"], 480)
                 self.assertEqual(calls[-2][0:3], ["docker", "container", "stop"])
                 self.assertEqual(calls[-1][0:4], ["docker", "container", "rm", "--volumes"])
 
