@@ -79,6 +79,7 @@ image-audit: lint build
 # Используем уже собранные образы на том же runner; отдельный job не нужен.
 ci-image-audit:
 	mkdir -p reports/images
+	docker image inspect $(GRYPE_IMAGE) >/dev/null 2>&1 || docker pull $(GRYPE_IMAGE)
 	docker build --progress=plain -f infrastructure/quality/Dockerfile --target duplicates-build -t sp-quality-npm:verify . > reports/images/npm-build.log 2>&1 || { cat reports/images/npm-build.log; exit 1; }
 	docker build --progress=plain --target dbtools -t sp-db-tools:verify apps/api > reports/images/db-tools-build.log 2>&1 || { cat reports/images/db-tools-build.log; exit 1; }
 	@set -eu; trap 'rm -f reports/images/image.tar' EXIT; status=0; \
@@ -97,7 +98,7 @@ ci-image-audit:
 	    > "reports/images/$$name.json" 2> "reports/images/$$name.log" \
 	    || { scan_exit=$$?; cat "reports/images/$$name.log"; \
 	        if [ "$$scan_exit" -eq 2 ] && [ "$${VERIFY_ACCEPT_RECORDED_FINDINGS:-}" = true ] && \
-	            python3 scripts/check_recorded_cves.py "$$image" "reports/images/$$name.json"; then \
+	            python3 scripts/check_recorded_cves.py "$$image" < "reports/images/$$name.json" 3< "reports/images/$$name.log"; then \
 	          echo "::warning::Owner-accepted High findings in $$image for this development PR only"; \
 	        else echo "FAIL: CVE audit $$image; findings: reports/images/$$name.json"; status=1; fi; }; \
 	done; exit $$status

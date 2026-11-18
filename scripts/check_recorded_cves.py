@@ -6,7 +6,6 @@ import os
 import re
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 
 # All three Alpine images have identical blocking package versions and locations.
@@ -32,14 +31,14 @@ def finding_identity(match):
     return json.dumps(fields, sort_keys=True, separators=(",", ":"))
 
 
-def accepted_report(image, report_path, now):
+def accepted_report(image, report_stream, diagnostic_stream, now):
     if now >= EXPIRES_AT or image not in ACCEPTED_BY_IMAGE:
         return False
     # Code 2 is checked by the caller. Reject mixed threshold/operational diagnostics.
     if not re.fullmatch(r"\[\d+\] ERROR discovered vulnerabilities at or above the severity threshold",
-                        report_path.with_suffix(".log").read_text().strip()):
+                        diagnostic_stream.read().strip()):
         return False
-    report = json.loads(report_path.read_bytes())
+    report = json.load(report_stream)
     if report["descriptor"]["db"]["status"]["valid"] is not True or image not in report["source"]["target"]["tags"]:
         return False
     selected = sorted(finding_identity(m) for m in report["matches"]
@@ -55,4 +54,7 @@ if __name__ == "__main__":
         and os.environ.get("GITHUB_BASE_REF") == "main"
         and os.environ.get("GITHUB_REF") in {"refs/pull/43/merge", "refs/pull/44/merge"}
     )
-    sys.exit(0 if authorized_pr and accepted_report(sys.argv[1], Path(sys.argv[2]), datetime.now(UTC)) else 1)
+    # Make supplies the scanner JSON on stdin and its diagnostic log on fd 3.
+    with os.fdopen(3, encoding="utf-8") as diagnostics:
+        accepted = authorized_pr and accepted_report(sys.argv[1], sys.stdin, diagnostics, datetime.now(UTC))
+    sys.exit(0 if accepted else 1)
