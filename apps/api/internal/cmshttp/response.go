@@ -35,6 +35,12 @@ const (
 type csrfResponse struct {
 	CSRFToken string `json:"csrf_token"`
 }
+
+type csrfSessionResponse struct {
+	CSRFToken   string `json:"csrf_token"`
+	SessionKind string `json:"session_kind"`
+}
+
 type recoveryEnrollmentResponse struct {
 	CSRFToken string `json:"csrf_token"`
 	Secret    string `json:"secret"`

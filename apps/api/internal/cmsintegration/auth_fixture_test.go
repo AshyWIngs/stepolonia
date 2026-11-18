@@ -105,6 +105,13 @@ type authHTTPFixture struct {
 
 func newAuthHTTPFixture(t *testing.T) authHTTPFixture {
 	t.Helper()
+	return newAuthHTTPFixtureWithHandler(t, func(_ authFixtureState, auth http.Handler) http.Handler {
+		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	})
+}
+
+func newAuthHTTPFixtureWithHandler(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler) authHTTPFixture {
+	t.Helper()
 	f := authFixture(t)
 	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
@@ -122,9 +129,7 @@ func newAuthHTTPFixture(t *testing.T) authHTTPFixture {
 	service, err := cms.NewAuthService(db, f.config)
 	requireNoError(t, err)
 	requireNoError(t, service.CheckReady(context.Background()))
-	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler {
-		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
-	})
+	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler { return wrap(f, auth) })
 	client := server.Client()
 	client.Jar, err = cookiejar.New(nil)
 	requireNoError(t, err)

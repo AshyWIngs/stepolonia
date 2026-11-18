@@ -99,8 +99,8 @@ type route struct {
 
 // Route metadata is shared by dispatch and the private OpenAPI generator.
 var routes = map[string]route{
-	csrfPath: {kind: "", method: http.MethodGet, operationID: csrfOperation, summary: "Create or rotate a CSRF token", response: csrfResponseSchema,
-		description: "Without session cookies, creates a five-minute preauth session. With exactly one valid session cookie, rotates its CSRF token while retaining its session kind. Start here before login or recovery; use the returned token in the next POST and retain the browser-managed cookie."},
+	csrfPath: {kind: "", method: http.MethodGet, operationID: csrfOperation, summary: "Create or rotate a CSRF token", response: csrfSessionResponseSchema,
+		description: "Without session cookies, creates a five-minute preauth session. With exactly one valid session cookie, rotates its CSRF token and returns the verified session kind without replacing the cookie. A rejected session cookie is cleared on 401 and the browser can retry once to start preauth. Start here before login or recovery; use the returned token in the next POST and retain the browser-managed cookie."},
 	loginPath: {kind: preauthKind, fields: "login,password", method: http.MethodPost, operationID: "authLogin", summary: "Verify the password and begin MFA", response: csrfResponseSchema,
 		description: "Requires a preauth session and its CSRF token. A successful password check replaces preauth with a five-minute restricted login session; it does not grant full access. Submit a fresh TOTP to MFA verification with the returned CSRF token."},
 	"/mfa/verify": {kind: loginKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authVerifyMFA", summary: "Complete login with a TOTP", response: csrfResponseSchema,
@@ -402,15 +402,20 @@ func (h *handler) csrf(w http.ResponseWriter, r *http.Request, ip string) {
 			return
 		}
 		out, err = h.service.NewPreauthFor(r.Context(), cms.AuthRequest{ClientIP: addr})
+		if err == nil {
+			setSession(w, out)
+		}
 	} else if err == nil {
 		out, err = h.service.RotateCSRF(r.Context(), token, kind)
+		if errors.Is(err, cms.ErrAuthenticationRequired) {
+			clearCookie(w, cookieNames[kind])
+		}
 	}
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	setSession(w, out)
-	respond(w, csrfResponse{CSRFToken: out.CSRF})
+	respond(w, csrfSessionResponse{CSRFToken: out.CSRF, SessionKind: out.Kind})
 }
 
 const (
@@ -452,9 +457,14 @@ func sessionCookie(r *http.Request, want string) (string, string, error) {
 }
 func clearCookies(w http.ResponseWriter) {
 	for _, name := range cookieNames {
-		http.SetCookie(w, &http.Cookie{Name: name, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		clearCookie(w, name)
 	}
 }
+
+func clearCookie(w http.ResponseWriter, name string) {
+	http.SetCookie(w, &http.Cookie{Name: name, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+}
+
 func setSession(w http.ResponseWriter, t cms.SessionTokens) {
 	clearCookies(w)
 	name, ok := cookieNames[t.Kind]

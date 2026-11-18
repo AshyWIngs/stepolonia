@@ -27,7 +27,7 @@ func seedContent(ctx context.Context, db *sql.DB, token string) error {
 	if !owned {
 		return errors.New("refusing fixture writes outside owned disposable database")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','ru','en')`); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','ru','en','kk')`); err != nil {
 		return err
 	}
 	article, event := apiexamples.Article(), apiexamples.Event()

@@ -11,7 +11,16 @@ INSERT INTO public.ui_message_keys (message_key) VALUES
 ('articles'), ('events'), ('empty'), ('pagination'), ('previous'), ('next'),
 ('navigation'),
 ('all'), ('languages'), ('errors.400'), ('errors.404'), ('errors.503'),
-('errors.other'), ('errors.retry'), ('errors.home');
+('errors.other'), ('errors.retry'), ('errors.home'),
+('cms.cms'), ('cms.language'), ('cms.theme'),
+('cms.system'), ('cms.light'), ('cms.dark'),
+('cms.sign_in'), ('cms.login'), ('cms.password'),
+('cms.continue'), ('cms.two_step'), ('cms.code_help'),
+('cms.code'), ('cms.verify'), ('cms.restart'),
+('cms.signed_in'), ('cms.sign_out'), ('cms.checking'),
+('cms.working'), ('cms.retry'), ('cms.invalid_credentials'),
+('cms.invalid_code'), ('cms.unavailable'), ('cms.limited'),
+('cms.changed'), ('cms.restricted'), ('cms.signed_out');
 
 CREATE TABLE public.site_revisions (
     tagline text NOT NULL,

@@ -1,8 +1,10 @@
 import { defineNuxtRouteMiddleware, useError, useNuxtApp } from '#imports'
 import type { NuxtError } from '#app'
+import { isAdminPath } from '~/utils/admin-path'
 import { usePublicSite } from '~/composables/usePublicSite'
 
 export default defineNuxtRouteMiddleware(async (to) => {
+  if (isAdminPath(to.path)) return
   const app = useNuxtApp()
   const error = useError().value
   const serializedError: Partial<ReturnType<NuxtError['toJSON']>> | undefined = error ?? undefined
