@@ -212,7 +212,7 @@ type draftRevocation struct {
 func TestCMSDraftEditorRevocationIntegration(t *testing.T) {
 	cases := []draftRevocation{
 		{"session", func(ctx context.Context, f draftEditorFixture) error {
-			return f.auth.Logout(ctx, f.actor, "full")
+			return f.auth.Logout(ctx, f.actor, fullSessionFixtureKind)
 		}, cms.ErrAuthenticationRequired},
 		{"role", func(ctx context.Context, f draftEditorFixture) error {
 			return revokeDraftAccess(ctx, f.owner, `UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)

@@ -270,15 +270,8 @@ func readRoleInput(w http.ResponseWriter, r *http.Request, operationID string) (
 // Schema validation shares the documented conditional grant shapes. A token
 // walk rejects duplicate keys and null before Go's decoder can erase them.
 func validateRoleJSON(raw []byte, schema *huma.Schema) bool {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	if !uniqueJSONValue(dec) {
-		return false
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return false
-	}
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
+	value, ok := decodeUniqueJSON(raw)
+	if !ok {
 		return false
 	}
 	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
@@ -288,6 +281,19 @@ func validateRoleJSON(raw []byte, schema *huma.Schema) bool {
 	var result huma.ValidateResult
 	huma.Validate(registry, schema, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, value, &result)
 	return len(result.Errors) == 0
+}
+
+func decodeUniqueJSON(raw []byte) (any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if !uniqueJSONValue(dec) {
+		return nil, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+	var value any
+	err := json.Unmarshal(raw, &value)
+	return value, err == nil
 }
 
 func uniqueJSONValue(dec *json.Decoder) bool {

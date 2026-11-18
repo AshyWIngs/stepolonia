@@ -45,7 +45,7 @@ var userRoutes = map[string][]route{
 		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. The target must still be pending and expected_version must match its current version under the write mutex. Atomically revokes the previous onboarding token and restricted enrollment and returns a new 24-hour one-time token only after audit commits. Deliver it over a verified external channel; never place it in a URL or log."}},
 }
 
-func resolveRoute(path, method string) (route, routeTarget, bool) {
+func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTarget, bool) {
 	if strings.HasPrefix(path, authPrefix+"/") {
 		key := strings.TrimPrefix(path, authPrefix)
 		rt, ok := routes[key]
@@ -53,6 +53,9 @@ func resolveRoute(path, method string) (route, routeTarget, bool) {
 	}
 	if target, ok := contentAssigneesTarget(path); ok {
 		return replaceContentAssigneesRoute, target, true
+	}
+	if target, ok := contentDraftTarget(path); ok && draftEditorEnabled {
+		return saveDraftRoute, target, true
 	}
 	key, id := userRoutePath(path)
 	candidates, ok := userRoutes[key]
@@ -189,6 +192,9 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
+	if path == contentDraftPath {
+		return saveDraftRoute.method
+	}
 	if path == contentAssigneesPath {
 		return replaceContentAssigneesRoute.method
 	}

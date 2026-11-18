@@ -44,7 +44,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management and versioned content assignee replacement. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -65,8 +65,8 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		}
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
-	if rt.operationID == replaceContentAssigneesOperation {
-		op.Parameters = append(op.Parameters, contentAssigneesParameters()...)
+	if rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation {
+		op.Parameters = append(op.Parameters, contentItemParameters()...)
 	}
 	return op
 }
@@ -82,6 +82,10 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 		schema, example := contentAssigneesRequest()
 		registry.Map()[name] = schema
 		return &huma.RequestBody{Required: true, Description: "One JSON object, at most 4096 bytes. Supply the complete assignee_ids array and a canonical positive int64 string as expected_version. Unknown or duplicate keys, null, incorrect types and trailing JSON are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
+	}
+	if rt.operationID == saveDraftOperation {
+		registry.Map()[name] = draftRequestContract
+		return &huma.RequestBody{Required: true, Description: "One JSON object, at most 262144 bytes. Send a canonical positive int64 string for expected_version and schema_no. Duplicate or unknown properties, null and trailing JSON are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: draftRequestExample()}}}
 	}
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
@@ -247,6 +251,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
 	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
+	schemas[contentDraftSchema] = draftResultSchema()
 	return schemas
 }
 
@@ -285,7 +290,7 @@ func constantStringSchema(value string, examples ...any) *huma.Schema {
 
 func authResponseHeaders() map[string]*huma.Param {
 	return map[string]*huma.Param{
-		requestIDHeader:          {Description: "Server-generated correlation identifier. Audited account, role and assignment mutations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
+		requestIDHeader:          {Description: "Server-generated correlation identifier. Audited account, role and content mutations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
 		"Cache-Control":          {Description: "Authentication data must never be cached.", Schema: constantStringSchema("no-store")},
 		"X-Content-Type-Options": {Description: "Disables content sniffing.", Schema: constantStringSchema("nosniff")},
 	}
@@ -298,7 +303,7 @@ func sessionCookieHeader() *huma.Param {
 func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
-	if authTag(rt) != usersTag && authTag(rt) != rolesTag && rt.operationID != replaceContentAssigneesOperation {
+	if authTag(rt) != usersTag && authTag(rt) != rolesTag && rt.operationID != replaceContentAssigneesOperation && rt.operationID != saveDraftOperation {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -321,6 +326,9 @@ func authResponses(rt route) map[string]*huma.Response {
 }
 
 func authErrorCodes(rt route) map[int][]string {
+	if rt.operationID == saveDraftOperation {
+		return draftErrorCodes()
+	}
 	if rt.operationID == replaceContentAssigneesOperation {
 		return contentAssigneesErrorCodes()
 	}
@@ -371,12 +379,17 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 		switch rt.operationID {
 		case replaceUserRolesOperation:
 			description += " Account or requested role is missing or outside the actor's assignment envelope."
+		case saveDraftOperation:
+			description += " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
 		case replaceContentAssigneesOperation:
 			description += " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
 		}
 	case 409:
 		if rt.operationID == replaceContentAssigneesOperation {
 			description += " The item version differs or a recipient in scope is inactive."
+		}
+		if rt.operationID == saveDraftOperation {
+			description += " The expected item version or pinned schema differs. Reload before editing again."
 		}
 	case 429:
 		description += authRateDescription(rt)
@@ -401,7 +414,7 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 }
 
 func authRateDescription(rt route) string {
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -434,6 +447,7 @@ func privateRoutes() map[string][]route {
 		all[path] = methods
 	}
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
+	all[contentDraftPath] = []route{saveDraftRoute}
 	return all
 }
 
@@ -460,6 +474,7 @@ func authTags() []*huma.Tag {
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation, disable and role membership replacement."},
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
+		{Name: contentDraftTag, Description: "Versioned scalar draft editing when the installation enables its draft editor."},
 	}
 }
 
@@ -474,6 +489,8 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
+	case saveDraftOperation:
+		return contentDraftTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
 	case startEnrollmentOperation, completeEnrollmentOperation:
@@ -489,6 +506,8 @@ func authSuccessDescription(rt route) string {
 		return roleSuccessDescription(rt)
 	case usersTag:
 		return userSuccessDescription(rt)
+	case contentDraftTag:
+		return "Draft and audit committed. Returns the current item version and any actor-readable draft state."
 	case contentAssigneesTag:
 		return "Complete assignee set and audit committed; returns the item UUID, assignment set and incremented version."
 	}

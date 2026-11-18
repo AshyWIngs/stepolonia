@@ -34,12 +34,18 @@ type AuthService interface {
 var _ AuthService = (*cms.AuthService)(nil)
 
 type handler struct {
-	boundary boundary
-	service  AuthService
+	boundary    boundary
+	service     AuthService
+	draftEditor DraftEditor
 }
 
 // NewHandler validates configuration without mounting any public API routes.
 func NewHandler(cfg Config, service AuthService) (http.Handler, error) {
+	return NewHandlerWithDraftEditor(cfg, service, nil)
+}
+
+// NewHandlerWithDraftEditor optionally exposes scalar draft saves on the private transport.
+func NewHandlerWithDraftEditor(cfg Config, service AuthService, editor DraftEditor) (http.Handler, error) {
 	b, err := newBoundary(cfg)
 	if err != nil {
 		return nil, err
@@ -47,7 +53,7 @@ func NewHandler(cfg Config, service AuthService) (http.Handler, error) {
 	if service == nil {
 		return nil, errors.New("CMS auth service is required")
 	}
-	return &handler{boundary: b, service: service}, nil
+	return &handler{boundary: b, service: service, draftEditor: editor}, nil
 }
 
 const maxCredentialBodyBytes = 4096
@@ -118,7 +124,7 @@ var routes = map[string]route{
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	rt, target, ok := resolveRoute(r.URL.Path, r.Method)
+	rt, target, ok := resolveRoute(r.URL.Path, r.Method, h.draftEditor != nil)
 	if !ok {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
@@ -156,6 +162,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if path == contentAssigneesPath {
 		h.serveContentAssignees(w, r, rt, target, ip)
+		return
+	}
+	if path == contentDraftPath {
+		h.serveDraftSave(w, r, rt, target, ip)
 		return
 	}
 	input, code, status := readRouteInput(w, r, rt)

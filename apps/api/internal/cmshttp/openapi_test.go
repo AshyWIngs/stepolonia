@@ -97,6 +97,14 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 		checkRoleRequestExample(t, rt, op.RequestBody.Content[jsonMediaType])
 		return op
 	}
+	if rt.operationID == saveDraftOperation {
+		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+		var input saveDraftInput
+		if err != nil || !validDraftInput(raw, &input) {
+			t.Fatal("documented draft example rejected by transport")
+		}
+		return op
+	}
 	checkCredentialProperties(t, doc, rt, op.RequestBody.Content[jsonMediaType])
 	return op
 }
@@ -263,6 +271,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 		"content-assignments":     {"contentReplaceAssignees"},
+		"content-drafts":          {"contentSaveDraft"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -328,6 +337,9 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	privateSchemaRejects(t, registry, schema, map[string]any{})
 	example := media.Example.(map[string]any)
 	for field := range schema.Properties {
+		if op.OperationID == saveDraftOperation && !slices.Contains(schema.Required, field) {
+			continue
+		}
 		if !slices.Contains(schema.Required, field) {
 			t.Fatalf("missing required field %s", field)
 		}

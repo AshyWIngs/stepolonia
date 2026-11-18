@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const fullSessionFixtureKind = "full"
+
 func TestAuthLoginSessionRotationIntegration(t *testing.T) {
 	f := authFixture(t)
 	ctx := context.Background()
@@ -51,7 +53,7 @@ func TestAuthLoginSessionRotationIntegration(t *testing.T) {
 	if stepped.Token == full.Token || stepped.CSRF == full.CSRF {
 		t.Fatal("step up fixation")
 	}
-	requireNoError(t, f.service.Logout(ctx, authReq(stepped), "full"))
+	requireNoError(t, f.service.Logout(ctx, authReq(stepped), fullSessionFixtureKind))
 	authDenied(t, f.service.WithSession(ctx, authReq(stepped), false, authAllow))
 	var text string
 	requireNoError(t, f.db.QueryRow(`SELECT string_agg(row_to_json(a)::text,' ') FROM public.security_audit a`).Scan(&text))
