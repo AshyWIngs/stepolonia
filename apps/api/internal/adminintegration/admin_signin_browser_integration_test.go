@@ -39,7 +39,7 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, reader, logger, auth, site), logger)
 	}, true)
 	assertUnpublishedAdminUnavailable(t, f)
-	publishAdminBrowserCatalog(t, f.state.db)
+	publishTestSiteCatalog(t, f.state.db)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
@@ -154,7 +154,7 @@ func assertUnpublishedAdminUnavailable(t *testing.T, f authHTTPFixture) {
 	}
 }
 
-func publishAdminBrowserCatalog(t *testing.T, db *sql.DB) {
+func publishTestSiteCatalog(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 	requireNoError(t, database.Seed(ctx, db))

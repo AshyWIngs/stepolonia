@@ -20,7 +20,7 @@ import (
 const settingsEndpoint = "/api/v1/admin/settings"
 const settingsPublishEndpoint = settingsEndpoint + "/publish"
 const settingsSignInMessage = "admin.sign_in"
-const settingsInitialFrenchSignIn = "Connexion à la rédaction"
+const settingsInitialPolishSignIn = "Zaloguj się"
 
 type settingsHTTPFixture struct {
 	server       *httptest.Server
@@ -33,7 +33,7 @@ func newSettingsHTTPFixture(t *testing.T) settingsHTTPFixture {
 	t.Helper()
 	ctx := context.Background()
 	state := authFixture(t)
-	publishAdminBrowserCatalog(t, state.db)
+	publishTestSiteCatalog(t, state.db)
 	manager := authFull(t, state)
 	role := fixturePublicationRole(t, state.db, "Support observer")
 	observer := fixturePublicationAccount(t, state, manager, "support-observer@example.test", role)
@@ -115,7 +115,7 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	f.request(t, f.manager, http.MethodPut, settingsEndpoint, saveBody, http.StatusOK)
 	draft := f.editable(t)
 	if draft.Version != "4" || !draft.HasDraft || draft.Settings.Title != title || draft.PublishedID != initialPublic.Version ||
-		draft.Catalogs["en"][settingsSignInMessage] != signIn || draft.Catalogs["fr"][settingsSignInMessage] != settingsInitialFrenchSignIn {
+		draft.Catalogs["en"][settingsSignInMessage] != signIn || draft.Catalogs["pl"][settingsSignInMessage] != settingsInitialPolishSignIn {
 		t.Fatalf("unexpected persisted draft: %+v", draft)
 	}
 	assertPublicSettingsUnchanged(t, f, initialPublic)
@@ -125,8 +125,8 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	if published.Version == initialPublic.Version || published.Settings.Title != title || published.Messages[settingsSignInMessage] != signIn {
 		t.Fatalf("publication did not expose the new title and translation: %+v", published)
 	}
-	if f.public(t, "fr").Messages[settingsSignInMessage] != settingsInitialFrenchSignIn {
-		t.Fatal("publication dropped the untouched French translation")
+	if f.public(t, "pl").Messages[settingsSignInMessage] != settingsInitialPolishSignIn {
+		t.Fatal("publication dropped the untouched Polish translation")
 	}
 	result := f.editable(t)
 	if result.Version != "5" || result.HasDraft || result.PublishedID != published.Version {
@@ -141,8 +141,8 @@ func assertInitialEditableSettings(t *testing.T, editable observedEditableSettin
 		editable.Settings.Title != "Editorial workspace" {
 		t.Fatalf("unexpected initial editable settings: %+v", editable)
 	}
-	if editable.Catalogs["fr"][settingsSignInMessage] != settingsInitialFrenchSignIn {
-		t.Fatal("editable view does not include the already published French catalog")
+	if editable.Catalogs["pl"][settingsSignInMessage] != settingsInitialPolishSignIn {
+		t.Fatal("editable view does not include the already published Polish catalog")
 	}
 }
 
