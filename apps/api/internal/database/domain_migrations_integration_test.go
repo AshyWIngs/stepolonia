@@ -57,6 +57,16 @@ func domainQASnapshot(t *testing.T, db *sql.DB) string {
 	return snapshot
 }
 
+func domainQANamespaceSnapshot(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var snapshot string
+	requireNoError(t, db.QueryRow(`SELECT json_build_array(
+ (SELECT string_agg(oid::text||':'||relname,',' ORDER BY oid) FROM pg_class WHERE relnamespace='public'::regnamespace AND relname NOT LIKE 'goose_db_version%'),
+ (SELECT string_agg(oid::text||':'||typname,',' ORDER BY oid) FROM pg_type WHERE typnamespace='public'::regnamespace AND typname NOT IN ('goose_db_version','_goose_db_version')),
+ (SELECT string_agg(oid::text||':'||proname,',' ORDER BY oid) FROM pg_proc WHERE pronamespace='public'::regnamespace))::text`).Scan(&snapshot))
+	return snapshot
+}
+
 func TestDomainMigrationsLifecycleIntegration(t *testing.T) {
 	db, role := domainQAFixture(t)
 	ctx := context.Background()
@@ -138,17 +148,18 @@ func TestDomainMigrationsForeignHistoryIntegration(t *testing.T) {
 }
 
 func TestDomainMigrationsLaterConflictPreflightIntegration(t *testing.T) {
-	for _, table := range []string{"security_audit", "grant_fields", "content_fields", "site_revisions"} {
+	for _, table := range []string{"security_audit", "grant_fields", "content_fields", "site_revisions", "content_item_assignments"} {
 		t.Run(table, func(t *testing.T) {
 			db, role := domainQAFixture(t)
 			_, err := db.Exec("CREATE TABLE public." + pgx.Identifier{table}.Sanitize() + " (foreign_payload text)")
 			requireNoError(t, err)
+			before := domainQANamespaceSnapshot(t, db)
 			if err := Up(context.Background(), db, role); err == nil {
 				t.Fatal("Up accepted later-domain foreign object")
 			}
 			var intact bool
 			requireNoError(t, db.QueryRow(`SELECT to_regclass('public.languages') IS NULL AND to_regclass('public.goose_db_version') IS NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='foreign_payload')`, table).Scan(&intact))
-			if !intact {
+			if !intact || domainQANamespaceSnapshot(t, db) != before {
 				t.Fatal("preflight changed foreign schema or created earlier domain/history")
 			}
 		})
@@ -159,13 +170,20 @@ func TestDomainMigrationsLaterNamespaceConflictIntegration(t *testing.T) {
 	cases := map[string]string{
 		"index": `CREATE TABLE public.foreign_fixture(id uuid);
 CREATE INDEX role_grants_type_idx ON public.foreign_fixture(id)`,
-		"composite type name": `CREATE TYPE public.content_fields AS ENUM ('foreign')`,
+		"composite type name":             `CREATE TYPE public.content_fields AS ENUM ('foreign')`,
+		"assignment row type name":        `CREATE TYPE public.content_item_assignments AS (foreign_payload text)`,
+		"assignment standalone type name": `CREATE TYPE public.content_item_assignments AS ENUM ('foreign')`,
+		"assignment primary index name": `CREATE TABLE public.foreign_fixture(id uuid);
+CREATE INDEX content_item_assignments_pkey ON public.foreign_fixture(id)`,
+		"assignment user index name": `CREATE TABLE public.foreign_fixture(id uuid);
+CREATE INDEX content_item_assignments_user_idx ON public.foreign_fixture(id)`,
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
 			db, role := domainQAFixture(t)
 			_, err := db.Exec(setup)
 			requireNoError(t, err)
+			before := domainQANamespaceSnapshot(t, db)
 			if err := Up(context.Background(), db, role); err == nil {
 				t.Fatal("Up accepted later-domain namespace collision")
 			}
@@ -175,11 +193,9 @@ AND to_regclass('public.goose_db_version') IS NULL`).Scan(&untouched))
 			if !untouched {
 				t.Fatal("namespace collision allowed earlier domain or history DDL")
 			}
-			var foreignExists bool
-			requireNoError(t, db.QueryRow(`SELECT to_regclass('public.role_grants_type_idx') IS NOT NULL
-OR EXISTS(SELECT 1 FROM pg_type WHERE typnamespace='public'::regnamespace AND typname='content_fields')`).Scan(&foreignExists))
-			if !foreignExists {
-				t.Fatal("preflight destroyed foreign object")
+			after := domainQANamespaceSnapshot(t, db)
+			if before != after {
+				t.Fatal("preflight changed foreign object identities")
 			}
 		})
 	}

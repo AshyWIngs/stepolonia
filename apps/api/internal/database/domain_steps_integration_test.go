@@ -27,6 +27,7 @@ func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	_, err = provider.Up(ctx)
 	requireNoError(t, err)
 	requireNoError(t, CheckSchema(ctx, db))
+	testDomainAssigneeStep(t, ctx, db)
 }
 
 func testDomainRegistryStep(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -127,17 +128,53 @@ AND to_regclass('public.role_grants') IS NULL`).Scan(&missing))
 	}
 }
 
+func testDomainAssigneeStep(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	const itemID = "d1000000-0000-0000-0000-000000000003"
+	const userID = "d1000000-0000-0000-0000-000000000006"
+	const attach = `INSERT INTO public.content_item_assignments(item_id,user_id) VALUES($1,$2)`
+	const security = "sp_security"
+	tx := beginRoleTx(t, ctx, db, security)
+	_, err := tx.ExecContext(ctx, attach, itemID, userID)
+	requireNoError(t, err)
+	var version int64
+	err = tx.QueryRowContext(ctx, `UPDATE public.content_items SET version=version+1 WHERE id=$1 RETURNING version`, itemID).Scan(&version)
+	requireNoError(t, err)
+	requireNoError(t, tx.Commit())
+	if version != 3 {
+		t.Fatalf("version of published item after assignment = %d, want 3", version)
+	}
+	for _, test := range []struct {
+		itemID, userID, sqlState string
+	}{
+		{itemID, userID, "23505"},
+		{"d1000000-0000-0000-0000-000000000099", userID, "23503"},
+		{itemID, "d1000000-0000-0000-0000-000000000099", "23503"},
+	} {
+		tx = beginRoleTx(t, ctx, db, security)
+		_, err = tx.ExecContext(ctx, attach, test.itemID, test.userID)
+		assertSQLState(t, err, test.sqlState)
+		requireNoError(t, tx.Rollback())
+	}
+}
+
 func TestDomainMigrationsSQLPreflightIntegration(t *testing.T) {
 	for _, setup := range []string{
 		`CREATE TABLE public.auth_attempts(foreign_payload text)`,
 		`CREATE TABLE public.foreign_fixture(id integer); CREATE INDEX enrollment_attempts_token_idx ON public.foreign_fixture(id)`,
 		`CREATE TYPE public.onboarding_tokens AS ENUM ('foreign')`,
 		`CREATE FUNCTION public.guard_content_item_identity() RETURNS integer LANGUAGE sql AS 'SELECT 1'`,
+		`CREATE TABLE public.content_item_assignments(foreign_payload text)`,
+		`CREATE TABLE public.foreign_fixture(id integer); CREATE INDEX content_item_assignments_pkey ON public.foreign_fixture(id)`,
+		`CREATE TABLE public.foreign_fixture(id integer); CREATE INDEX content_item_assignments_user_idx ON public.foreign_fixture(id)`,
+		`CREATE TYPE public.content_item_assignments AS (foreign_payload text)`,
+		`CREATE TYPE public.content_item_assignments AS ENUM ('foreign')`,
 	} {
 		t.Run(setup, func(t *testing.T) {
 			db, _ := domainQAFixture(t)
 			_, err := db.Exec(setup)
 			requireNoError(t, err)
+			before := domainQANamespaceSnapshot(t, db)
 			provider, err := Provider(db)
 			requireNoError(t, err)
 			_, err = provider.Up(context.Background())
@@ -149,6 +186,10 @@ func TestDomainMigrationsSQLPreflightIntegration(t *testing.T) {
 AND NOT EXISTS(SELECT 1 FROM public.goose_db_version WHERE version_id>0 AND is_applied)`).Scan(&untouched))
 			if !untouched {
 				t.Fatal("SQL preflight allowed earlier domain to commit")
+			}
+			after := domainQANamespaceSnapshot(t, db)
+			if before != after {
+				t.Fatal("SQL preflight changed foreign object identities")
 			}
 		})
 	}

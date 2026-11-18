@@ -45,11 +45,14 @@ var userRoutes = map[string][]route{
 		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. The target must still be pending and expected_version must match its current version under the write mutex. Atomically revokes the previous onboarding token and restricted enrollment and returns a new 24-hour one-time token only after audit commits. Deliver it over a verified external channel; never place it in a URL or log."}},
 }
 
-func resolveRoute(path, method string) (route, string, string, bool) {
+func resolveRoute(path, method string) (route, routeTarget, bool) {
 	if strings.HasPrefix(path, authPrefix+"/") {
 		key := strings.TrimPrefix(path, authPrefix)
 		rt, ok := routes[key]
-		return rt, key, "", ok
+		return rt, routeTarget{path: key}, ok
+	}
+	if target, ok := contentAssigneesTarget(path); ok {
+		return replaceContentAssigneesRoute, target, true
 	}
 	key, id := userRoutePath(path)
 	candidates, ok := userRoutes[key]
@@ -58,14 +61,15 @@ func resolveRoute(path, method string) (route, string, string, bool) {
 		candidates, ok = roleRoutes[key]
 	}
 	if !ok {
-		return route{}, "", "", false
+		return route{}, routeTarget{}, false
 	}
+	target := routeTarget{path: key, id: id}
 	for _, rt := range candidates {
 		if rt.method == method {
-			return rt, key, id, true
+			return rt, target, true
 		}
 	}
-	return candidates[0], key, id, true
+	return candidates[0], target, true
 }
 
 func userRoutePath(path string) (string, string) {
@@ -185,6 +189,9 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
+	if path == contentAssigneesPath {
+		return replaceContentAssigneesRoute.method
+	}
 	if rt, ok := routes[path]; ok {
 		return rt.method
 	}

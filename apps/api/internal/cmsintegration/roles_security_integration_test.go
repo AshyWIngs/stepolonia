@@ -24,7 +24,7 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 		`DELETE FROM public.roles`,
 		`UPDATE public.role_grants SET can_delegate=true`,
 		`UPDATE public.user_roles SET user_id=gen_random_uuid()`,
-		`SELECT key FROM public.content_types`,
+		`SELECT route_namespace FROM public.content_types`,
 		`SELECT display_labels FROM public.content_fields`,
 		`UPDATE public.content_fields SET key='changed'`,
 	} {

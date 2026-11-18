@@ -121,7 +121,7 @@ func checkCredentialProperties(t *testing.T, doc privateDocument, rt route, body
 		t.Fatalf("missing closed credential schema %s", rt.operationID)
 	}
 	exampleJSON, err := json.Marshal(body.Example)
-	if err != nil || !allowedObject(exampleJSON, rt.fields) {
+	if err != nil || !allowedObject(exampleJSON, rt.fields, rt.operationID == replaceContentAssigneesOperation) {
 		t.Fatalf("example rejected by actual JSON boundary: %s", rt.operationID)
 	}
 	example, ok := body.Example.(map[string]any)
@@ -262,6 +262,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
+		"content-assignments":     {"contentReplaceAssignees"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)

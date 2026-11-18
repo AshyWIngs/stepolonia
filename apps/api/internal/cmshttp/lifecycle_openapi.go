@@ -40,12 +40,14 @@ func privatePageParameters(defaultLimit, maxLimit, maxOffset int) []*huma.Param 
 	}
 }
 
-func isLifecycleOperation(operation string) bool {
-	return operation == listUsersOperation || operation == getUserOperation || operation == activateUserOperation || operation == disableUserOperation
-}
-
-func lifecycleSuccessDescription(rt route) string {
+func userSuccessDescription(rt route) string {
 	switch rt.operationID {
+	case createUserOperation:
+		return "Pending account and audit committed without credentials, roles or sessions; current version returned."
+	case issueOnboardingOperation:
+		return "Previous onboarding token and restricted enrollment revoked; new one-time token and updated user version returned after audit commit."
+	case replaceUserRolesOperation:
+		return "Complete memberships and audit committed; returns the safe account projection with its incremented version, including when the submitted set already matches."
 	case listUsersOperation:
 		return "Safe account page returned after full-session and users.read authorization; next_offset is null at the end."
 	case getUserOperation:

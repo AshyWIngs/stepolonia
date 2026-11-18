@@ -44,12 +44,14 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, and role policy reads, disabled creation, atomic editing, copying, versioned state transitions and deletion. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management and versioned content assignee replacement. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
 	})
 }
+
+const openAPIPathParameter = "path"
 
 func privateOperationSchema(registry huma.Registry, path string, rt route) *huma.Operation {
 	op := &huma.Operation{OperationID: rt.operationID, Summary: rt.summary, Description: rt.description + " " + boundaryDescription, Tags: []string{authTag(rt)}, Parameters: authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt)}
@@ -61,7 +63,10 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		if authTag(rt) == rolesTag {
 			target = "role"
 		}
-		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
+		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
+	}
+	if rt.operationID == replaceContentAssigneesOperation {
+		op.Parameters = append(op.Parameters, contentAssigneesParameters()...)
 	}
 	return op
 }
@@ -72,6 +77,11 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 		schema, example := userRolesRequestSchema(rt)
 		registry.Map()[name] = schema
 		return &huma.RequestBody{Required: true, Description: "One JSON object, at most 4096 bytes. Supply the complete role_ids array and positive expected_version. Unknown or duplicate keys, null, incorrect types and trailing JSON are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
+	}
+	if rt.operationID == replaceContentAssigneesOperation {
+		schema, example := contentAssigneesRequest()
+		registry.Map()[name] = schema
+		return &huma.RequestBody{Required: true, Description: "One JSON object, at most 4096 bytes. Supply the complete assignee_ids array and a canonical positive int64 string as expected_version. Unknown or duplicate keys, null, incorrect types and trailing JSON are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
 	}
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
@@ -236,6 +246,7 @@ func privateSchemas() map[string]*huma.Schema {
 
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
+	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
 	return schemas
 }
 
@@ -274,7 +285,7 @@ func constantStringSchema(value string, examples ...any) *huma.Schema {
 
 func authResponseHeaders() map[string]*huma.Param {
 	return map[string]*huma.Param{
-		requestIDHeader:          {Description: "Server-generated correlation identifier; user and enrollment operations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
+		requestIDHeader:          {Description: "Server-generated correlation identifier. Audited account, role and assignment mutations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
 		"Cache-Control":          {Description: "Authentication data must never be cached.", Schema: constantStringSchema("no-store")},
 		"X-Content-Type-Options": {Description: "Disables content sniffing.", Schema: constantStringSchema("nosniff")},
 	}
@@ -287,7 +298,7 @@ func sessionCookieHeader() *huma.Param {
 func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
-	if authTag(rt) != usersTag && authTag(rt) != rolesTag {
+	if authTag(rt) != usersTag && authTag(rt) != rolesTag && rt.operationID != replaceContentAssigneesOperation {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -310,6 +321,9 @@ func authResponses(rt route) map[string]*huma.Response {
 }
 
 func authErrorCodes(rt route) map[int][]string {
+	if rt.operationID == replaceContentAssigneesOperation {
+		return contentAssigneesErrorCodes()
+	}
 	if authTag(rt) == rolesTag {
 		return roleErrorCodes(rt)
 	}
@@ -354,8 +368,15 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 	description := http.StatusText(status) + ": " + strings.Join(codes, ", ") + "."
 	switch status {
 	case 404:
-		if rt.operationID == replaceUserRolesOperation {
+		switch rt.operationID {
+		case replaceUserRolesOperation:
 			description += " Account or requested role is missing or outside the actor's assignment envelope."
+		case replaceContentAssigneesOperation:
+			description += " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
+		}
+	case 409:
+		if rt.operationID == replaceContentAssigneesOperation {
+			description += " The item version differs or a recipient in scope is inactive."
 		}
 	case 429:
 		description += authRateDescription(rt)
@@ -380,7 +401,7 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 }
 
 func authRateDescription(rt route) string {
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -412,6 +433,7 @@ func privateRoutes() map[string][]route {
 	for path, methods := range roleRoutes {
 		all[path] = methods
 	}
+	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
 	return all
 }
 
@@ -437,6 +459,7 @@ func authTags() []*huma.Tag {
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation, disable and role membership replacement."},
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
+		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
 	}
 }
 
@@ -449,6 +472,8 @@ func authTag(rt route) string {
 		return rolesTag
 	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation, replaceUserRolesOperation:
 		return usersTag
+	case replaceContentAssigneesOperation:
+		return contentAssigneesTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
 	case startEnrollmentOperation, completeEnrollmentOperation:
@@ -459,11 +484,13 @@ func authTag(rt route) string {
 }
 
 func authSuccessDescription(rt route) string {
-	if authTag(rt) == rolesTag {
+	switch authTag(rt) {
+	case rolesTag:
 		return roleSuccessDescription(rt)
-	}
-	if isLifecycleOperation(rt.operationID) {
-		return lifecycleSuccessDescription(rt)
+	case usersTag:
+		return userSuccessDescription(rt)
+	case contentAssigneesTag:
+		return "Complete assignee set and audit committed; returns the item UUID, assignment set and incremented version."
 	}
 	switch rt.operationID {
 	case csrfOperation:
@@ -484,12 +511,6 @@ func authSuccessDescription(rt route) string {
 		return "Onboarding token consumed; restricted enrollment session and pending TOTP seed returned with a new CSRF token."
 	case completeEnrollmentOperation:
 		return "Password and TOTP committed; ten recovery codes returned once and cookies cleared. Account remains disabled without roles or CMS access."
-	case createUserOperation:
-		return "Pending account and audit committed without credentials, roles or sessions; current version returned."
-	case issueOnboardingOperation:
-		return "Previous onboarding token and restricted enrollment revoked; new one-time token and updated user version returned after audit commit."
-	case replaceUserRolesOperation:
-		return "Complete memberships and audit committed; returns the safe account projection with its incremented version, including when the submitted set already matches."
 	default:
 		return "Current session revoked and browser session cookies cleared; no response body."
 	}

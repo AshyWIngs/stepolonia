@@ -118,7 +118,7 @@ var routes = map[string]route{
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	rt, path, targetID, ok := resolveRoute(r.URL.Path, r.Method)
+	rt, target, ok := resolveRoute(r.URL.Path, r.Method)
 	if !ok {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
@@ -132,6 +132,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
+	path := target.path
 	if path == csrfPath && r.Method == rt.method {
 		h.csrf(w, r, ip)
 		return
@@ -146,11 +147,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isRoleRoute(path) {
-		h.serveRole(w, r, rt, targetID, ip)
+		h.serveRole(w, r, rt, target.id, ip)
 		return
 	}
 	if path == userRolesPath {
-		h.serveUserRoles(w, r, rt, targetID, ip)
+		h.serveUserRoles(w, r, rt, target.id, ip)
+		return
+	}
+	if path == contentAssigneesPath {
+		h.serveContentAssignees(w, r, rt, target, ip)
 		return
 	}
 	input, code, status := readRouteInput(w, r, rt)
@@ -158,12 +163,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, status, code)
 		return
 	}
-	h.dispatch(w, r, rt, userTarget{path, targetID}, ip, input)
+	h.dispatch(w, r, rt, target, ip, input)
 }
 
-type userTarget struct{ path, id string }
+type routeTarget struct{ path, id, typeKey string }
 
-func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, target userTarget, ip string, input credentials) {
+func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string, input credentials) {
 	path, userID := target.path, target.id
 	req, kind, err := requestSession(r, rt.kind, ip)
 	if err != nil {
@@ -239,7 +244,7 @@ func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (cr
 	if code != "" {
 		return input, code, status
 	}
-	if !allowedObject(raw, allowed) {
+	if !allowedObject(raw, allowed, false) {
 		return input, validationCode, http.StatusBadRequest
 	}
 	if json.Unmarshal(raw, &input) != nil || (allowed == expectedVersionField && input.ExpectedVersion <= 0) {
@@ -271,7 +276,7 @@ func validJSONCharset(params map[string]string) bool {
 }
 
 // Reject duplicate keys and unexpected value types before decoding the DTO.
-func allowedObject(raw []byte, allowed string) bool {
+func allowedObject(raw []byte, allowed string, textVersion bool) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	token, err := dec.Token()
 	if err != nil || token != json.Delim('{') {
@@ -288,7 +293,7 @@ func allowedObject(raw []byte, allowed string) bool {
 			return false
 		}
 		seen[key] = true
-		if !allowedValue(dec, key) {
+		if !allowedValue(dec, key, textVersion) {
 			return false
 		}
 	}
@@ -299,16 +304,19 @@ func allowedObject(raw []byte, allowed string) bool {
 	return errors.Is(err, io.EOF)
 }
 
-func allowedValue(dec *json.Decoder, key string) bool {
+func allowedValue(dec *json.Decoder, key string, textVersion bool) bool {
 	var value json.RawMessage
 	if dec.Decode(&value) != nil || len(value) == 0 {
 		return false
 	}
 	if key == expectedVersionField {
+		if textVersion {
+			return validContentVersion(value)
+		}
 		var version int64
 		return json.Unmarshal(value, &version) == nil && version > 0
 	}
-	if key == roleIDsField {
+	if key == roleIDsField || key == assigneeIDsField {
 		return value[0] == '['
 	}
 	return value[0] == '"'

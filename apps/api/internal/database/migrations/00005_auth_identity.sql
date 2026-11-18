@@ -284,6 +284,7 @@ CREATE TABLE public.security_audit (
             'roles.created', 'roles.edited', 'roles.enabled', 'roles.disabled',
             'roles.archived', 'roles.restored', 'roles.copied', 'roles.deleted',
             'users.activated', 'users.disabled', 'users.roles_replaced',
+            'content.assignees_replaced',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',

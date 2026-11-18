@@ -20,9 +20,14 @@ func TestAuthRolesMigrationBoundaryIntegration(t *testing.T) {
 	_, err = p.DownTo(ctx, 5)
 	requireNoError(t, err)
 	var removed bool
-	requireNoError(t, db.QueryRow(`SELECT NOT has_column_privilege('sp_security','public.content_types','id','SELECT') AND NOT has_column_privilege('sp_security','public.content_fields','type_id','SELECT') AND NOT has_column_privilege('sp_security','public.content_fields','field_id','SELECT')`).Scan(&removed))
+	requireNoError(t, db.QueryRow(`SELECT to_regclass('public.content_item_assignments') IS NULL
+AND NOT has_column_privilege('sp_security','public.content_types','id','SELECT')
+AND NOT has_column_privilege('sp_security','public.content_types','key','SELECT')
+AND NOT has_column_privilege('sp_security','public.content_fields','type_id','SELECT')
+AND NOT has_column_privilege('sp_security','public.content_fields','field_id','SELECT')
+AND NOT has_any_column_privilege('sp_security','public.content_items','SELECT,UPDATE')`).Scan(&removed))
 	if !removed {
-		t.Fatal("RBAC Down retained Registry identity privileges")
+		t.Fatal("RBAC Down retained assignments or content privileges")
 	}
 	_, err = p.Up(ctx)
 	requireNoError(t, err)
