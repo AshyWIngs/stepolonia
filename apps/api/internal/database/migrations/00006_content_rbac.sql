@@ -235,7 +235,7 @@ public.permission_operations,
 public.role_grants,
 public.grant_fields TO sp_security;
 
--- Role commands update policy and state. Membership writes require separate privileges.
+-- Role commands manage policy and state with column-level privileges.
 GRANT INSERT (id, name_key) ON public.roles TO sp_security;
 GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
 GRANT UPDATE (name_key, state, version) ON public.roles TO sp_security;
