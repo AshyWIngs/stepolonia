@@ -78,7 +78,7 @@ func run() error {
 	}
 	result := make(chan error, 1)
 	go func() { result <- server.Serve(listener) }()
-	fmt.Printf("Swagger UI http://127.0.0.1:%s/docs\nPublic fixture language pl, type article/event, slug welcome-to-stepolonia/community-meetup\nHistorical slug welcome-old returns 301. UI lang fr falls back to pl.\nPrivate auth routes are disabled in this public fixture. Ctrl-C removes the owned database.\n", port)
+	fmt.Printf("Swagger UI http://127.0.0.1:%s/docs\nPublic fixture language pl, type article/event, slug welcome-to-stepolonia/community-meetup\nHistorical slug welcome-old returns 301. UI lang kk falls back to pl.\nPrivate auth routes are disabled in this public fixture. Ctrl-C removes the owned database.\n", port)
 	select {
 	case err = <-result:
 		if errors.Is(err, http.ErrServerClosed) {
