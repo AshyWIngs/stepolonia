@@ -107,7 +107,7 @@ function addCatalog() {
 function removeCatalog(code: string) {
   const editable = draft.value
   if (!editable || code === editable.settings.fallback_language) return
-  delete editable.catalogs[code]
+  editable.catalogs = Object.fromEntries(Object.entries(editable.catalogs).filter(([locale]) => locale !== code))
   dirty.value = true
 }
 

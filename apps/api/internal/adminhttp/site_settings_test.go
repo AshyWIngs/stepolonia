@@ -15,7 +15,7 @@ func checkSettingsRequestExample(t *testing.T, op privateOperation, rt route) {
 }
 
 func TestSettingsMutationsRejectInvalidVersionsAndProperties(t *testing.T) {
-	for _, raw := range []string{`{}`, `{"expected_version":7}`, `{"expected_version":"01"}`,
+	for _, raw := range []string{`{}`, `{"expected_version":987}`, `{"expected_version":"01"}`,
 		`{"expected_version":"1","expected_version":"2"}`, `{"Expected_version":"1"}`,
 		`{"expected_version":"1","extra":false}`, `{"expected_version":"1"}{}`,
 	} {
