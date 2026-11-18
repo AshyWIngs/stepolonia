@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import signal
 import time
 from urllib.parse import urlsplit
 
@@ -240,8 +241,9 @@ def main(options):
             harness.command(["python3", "scripts/setup-local.py", "--site", site], log)
             config = load_config(site, override=override)
             harness.verify_owned(project, token, log, volume=volume)
+            harness.verify_unused_test_images(project, log)
             allocated = True
-            harness.command([*compose, "build", "postgres-init", "postgres", "db-tools", *SERVICES[:3]], log)
+            harness.prepare_test_images(compose, project, log, runtime=True, reuse_images=False)
             environment = prepare_database(harness, site, directory, override, compose, token, config, log)
             result.update(exercise(harness, compose, environment, project, token, options, log))
             result["status"] = "PASS"
@@ -251,8 +253,7 @@ def main(options):
                 try:
                     harness.command([*compose, "logs", "--no-color"], log)
                 finally:
-                    harness.verify_owned(project, token, log, volume=volume)
-                    harness.command([*compose, "down", "--volumes", "--remove-orphans"], log)
+                    harness.cleanup_installation(compose, project, token, volume, log)
         shutil.rmtree(directory)
         override.unlink()
         result_path.write_text(json.dumps(result, indent=2) + "\n")
@@ -260,6 +261,7 @@ def main(options):
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, load_publishing().interrupt)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seconds", type=int, default=60)
     parser.add_argument("--concurrency", type=int, default=4)
