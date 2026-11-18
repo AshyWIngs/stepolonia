@@ -291,7 +291,7 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'content identities cannot be deleted' USING ERRCODE = '23514';
     END IF;
-    IF TG_OP = 'UPDATE' THEN
+    IF TG_OP <> 'INSERT' THEN
         IF (NEW.id,NEW.type_id) IS DISTINCT FROM (OLD.id,OLD.type_id) THEN
             RAISE EXCEPTION 'item identity is immutable' USING ERRCODE = '23514';
         END IF;

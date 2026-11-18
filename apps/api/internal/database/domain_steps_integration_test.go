@@ -187,7 +187,8 @@ AND NOT EXISTS(SELECT 1 FROM public.goose_db_version WHERE version_id>0 AND is_a
 			if !untouched {
 				t.Fatal("SQL preflight allowed earlier domain to commit")
 			}
-			if after := domainQANamespaceSnapshot(t, db); before != after {
+			after := domainQANamespaceSnapshot(t, db)
+			if before != after {
 				t.Fatal("SQL preflight changed foreign object identities")
 			}
 		})

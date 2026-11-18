@@ -74,16 +74,15 @@ type assigneeItem struct {
 	version    int64
 }
 
-const assignableTypesSQL = `SELECT g.type_id FROM public.user_roles m
+func assignmentItem(ctx context.Context, tx *sql.Tx, command contentAssigneeReplacement, actor Session) (assigneeItem, error) {
+	var allowed bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+ SELECT 1 FROM public.user_roles m
  JOIN public.roles r ON r.id=m.role_id
  JOIN public.role_grants g ON g.role_id=m.role_id
  JOIN public.permission_operations o ON o.key=g.operation
  WHERE m.user_id=$1 AND r.state='active' AND g.operation=$2
- AND g.scope='content' AND o.scope='content' AND g.object_scope='any'`
-
-func assignmentItem(ctx context.Context, tx *sql.Tx, command contentAssigneeReplacement, actor Session) (assigneeItem, error) {
-	var allowed bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (`+assignableTypesSQL+`)`, actor.user, opContentAssign).Scan(&allowed)
+ AND g.scope='content' AND o.scope='content' AND g.object_scope='any')`, actor.user, opContentAssign).Scan(&allowed)
 	if err != nil {
 		return assigneeItem{}, err
 	}
@@ -100,7 +99,13 @@ func assignmentItem(ctx context.Context, tx *sql.Tx, command contentAssigneeRepl
 	item := assigneeItem{id: id}
 	err = tx.QueryRowContext(ctx, `SELECT i.type_id::text, i.version FROM public.content_items i
  JOIN public.content_types t ON t.id=i.type_id
- WHERE i.id=$3 AND t.key=$4 AND i.type_id IN (`+assignableTypesSQL+`)`,
+ WHERE i.id=$3 AND t.key=$4 AND i.type_id IN (
+ SELECT g.type_id FROM public.user_roles m
+ JOIN public.roles r ON r.id=m.role_id
+ JOIN public.role_grants g ON g.role_id=m.role_id
+ JOIN public.permission_operations o ON o.key=g.operation
+ WHERE m.user_id=$1 AND r.state='active' AND g.operation=$2
+ AND g.scope='content' AND o.scope='content' AND g.object_scope='any')`,
 		actor.user, opContentAssign, item.id, command.typeKey).Scan(&item.typeID, &item.version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return assigneeItem{}, ErrNotFound

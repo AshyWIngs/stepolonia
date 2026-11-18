@@ -193,7 +193,8 @@ AND to_regclass('public.goose_db_version') IS NULL`).Scan(&untouched))
 			if !untouched {
 				t.Fatal("namespace collision allowed earlier domain or history DDL")
 			}
-			if after := domainQANamespaceSnapshot(t, db); before != after {
+			after := domainQANamespaceSnapshot(t, db)
+			if before != after {
 				t.Fatal("preflight changed foreign object identities")
 			}
 		})
