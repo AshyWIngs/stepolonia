@@ -74,6 +74,8 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
 	case listCollectionsOperation:
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
+	case registryReadOperation, registryReviseOperation:
+		op.Parameters = append(op.Parameters, contentTypeParameter("Collection to manage."))
 	default:
 		if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
 			op.Parameters = append(op.Parameters, contentItemParameters()...)
@@ -83,6 +85,9 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 }
 
 func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
+	if isRegistryOperation(rt.operationID) {
+		return registryRequestBody(registry, rt.operationID)
+	}
 	if schema, ok := draftCandidateContracts[rt.operationID]; ok {
 		return draftCandidateRequestBody(registry, rt.operationID, schema)
 	}
@@ -278,6 +283,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
 	addContentMetadataSchemas(schemas)
+	addRegistrySchemas(schemas)
 	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
 	schemas[createdDraftSchema] = createdDraftResultSchema()
 	for name, schema := range draftListSchemas() {
@@ -342,7 +348,7 @@ func authResponses(rt route) map[string]*huma.Response {
 	tag := authTag(rt)
 	if rt.operationID == csrfOperation {
 		successHeaders[setCookieHeader] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
-	} else if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag && tag != settingsTag {
+	} else if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag && tag != settingsTag && tag != registryTag {
 		successHeaders[setCookieHeader] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -357,6 +363,9 @@ func authResponses(rt route) map[string]*huma.Response {
 			example = role
 		}
 		status := "200"
+		if rt.operationID == registryCreateOperation {
+			status = "201"
+		}
 		if rt.operationID == createDraftOperation {
 			status = "201"
 			successHeaders["Location"] = &huma.Param{
@@ -373,6 +382,9 @@ func authResponses(rt route) map[string]*huma.Response {
 }
 
 func privateErrorCodes(rt route) map[int][]string {
+	if isRegistryOperation(rt.operationID) {
+		return registryErrorCodes(rt)
+	}
 	if authTag(rt) == settingsTag {
 		return settingsErrorCodes(rt)
 	}
@@ -532,7 +544,9 @@ func privateRoutes() map[string][]route {
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
 	all[createDraftPath] = collectionDraftRoutes
 	all[contentDraftPath] = itemDraftRoutes
-	all[contentCollectionsPath] = []route{listCollectionsRoute}
+	all[contentCollectionsPath] = []route{listCollectionsRoute, registryCreateRoute}
+	all[registryCollectionPath] = []route{registryReadRoute, registryReviseRoute}
+	all[registryRenderersPath] = []route{registryRendererRoute}
 	all[draftMetadataPath] = []route{readDraftMetadataRoute}
 	for path, rt := range draftCandidateRoutes {
 		all[path] = []route{rt}
@@ -568,10 +582,14 @@ func authTags() []*huma.Tag {
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
 		{Name: settingsTag, Description: "Authorized editing and atomic publication of installation settings and interface translations."},
 		{Name: contentDraftTag, Description: "Empty draft creation, projected reads, versioned editing, readiness and publication when the installation enables its draft editor."},
+		{Name: registryTag, Description: "Managed collection schemas and explicit initial field access."},
 	}
 }
 
 func authTag(rt route) string {
+	if isRegistryOperation(rt.operationID) {
+		return registryTag
+	}
 	if rt.roleState != nil {
 		return rolesTag
 	}
@@ -595,7 +613,7 @@ func authTag(rt route) string {
 	}
 }
 
-func authSuccessDescription(rt route) string {
+func domainSuccessDescription(rt route) string {
 	switch authTag(rt) {
 	case rolesTag:
 		return roleSuccessDescription(rt)
@@ -605,8 +623,17 @@ func authSuccessDescription(rt route) string {
 		return rt.summary + "."
 	case contentDraftTag:
 		return draftSuccessDescription(rt.operationID)
+	case registryTag:
+		return rt.summary + "."
 	case contentAssigneesTag:
 		return "Complete assignee set and audit committed; returns the item UUID, assignment set and incremented version."
+	}
+	return ""
+}
+
+func authSuccessDescription(rt route) string {
+	if description := domainSuccessDescription(rt); description != "" {
+		return description
 	}
 	switch rt.operationID {
 	case csrfOperation:

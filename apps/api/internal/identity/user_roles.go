@@ -55,6 +55,9 @@ func (s *AuthService) replaceUserRoles(ctx context.Context, tx *sql.Tx, x Sessio
 	if err != nil {
 		return User{}, err
 	}
+	if err := validateExistingBoundMemberships(ctx, tx, user.ID, requested); err != nil {
+		return User{}, err
+	}
 	// Enrollment requires a pending account to have no memberships.
 	if user.State == userStatePending && len(requested) != 0 {
 		return User{}, ErrInvalidTransition
@@ -73,6 +76,21 @@ func (s *AuthService) replaceUserRoles(ctx context.Context, tx *sql.Tx, x Sessio
 		return User{}, err
 	}
 	return user, securityAudit(ctx, tx, userRolesReplacedEvent, x.user, user.ID, "")
+}
+
+func validateExistingBoundMemberships(ctx context.Context, tx *sql.Tx, userID string, requested []string) error {
+	if len(requested) == 0 {
+		return nil
+	}
+	var invalid bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+ SELECT 1 FROM public.roles r WHERE r.id=ANY($2::uuid[]) AND r.self_access_user_id IS NOT NULL
+ AND (r.self_access_user_id<>$1 OR NOT EXISTS (
+ SELECT 1 FROM public.user_roles m WHERE m.user_id=$1 AND m.role_id=r.id)))`, userID, requested).Scan(&invalid)
+	if err == nil && invalid {
+		return ErrPermissionDenied
+	}
+	return err
 }
 
 func roleAssignmentTarget(ctx context.Context, tx *sql.Tx, userID string, version int64, before accessSnapshot, actor []accessGrant) (User, error) {

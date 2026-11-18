@@ -54,24 +54,36 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 	if target, ok := contentAssigneesTarget(path); ok {
 		return replaceContentAssigneesRoute, target, true
 	}
-	if target, ok := createDraftTarget(path); ok && draftEditorEnabled {
-		return routeForMethod(method, collectionDraftRoutes), target, true
-	}
-	if target, ok := contentDraftTarget(path); ok && draftEditorEnabled {
-		return routeForMethod(method, itemDraftRoutes), target, true
-	}
-	if target, rt, ok := draftCandidateTarget(path); ok && draftEditorEnabled {
-		return rt, target, true
-	}
-	if target, rt, ok := contentMetadataTarget(path); ok && draftEditorEnabled {
-		return rt, target, true
+	if draftEditorEnabled {
+		rt, target, ok := resolveContentEditorRoute(path, method)
+		if ok {
+			return rt, target, true
+		}
 	}
 	key, id, candidates := staticAdminRoutes(path)
-	ok := len(candidates) > 0
-	if !ok {
+	if len(candidates) == 0 {
 		return route{}, routeTarget{}, false
 	}
 	return routeForMethod(method, candidates), routeTarget{path: key, id: id}, true
+}
+
+func resolveContentEditorRoute(path, method string) (route, routeTarget, bool) {
+	if target, ok := createDraftTarget(path); ok {
+		return routeForMethod(method, collectionDraftRoutes), target, true
+	}
+	if target, ok := contentDraftTarget(path); ok {
+		return routeForMethod(method, itemDraftRoutes), target, true
+	}
+	if target, rt, ok := draftCandidateTarget(path); ok {
+		return rt, target, true
+	}
+	if target, rt, ok := registryTarget(path, method); ok {
+		return rt, target, true
+	}
+	if target, rt, ok := contentMetadataTarget(path); ok {
+		return rt, target, true
+	}
+	return route{}, routeTarget{}, false
 }
 
 func routeForMethod(method string, candidates []route) route {
@@ -212,7 +224,13 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
-	if path == contentCollectionsPath || path == draftMetadataPath {
+	if path == contentCollectionsPath {
+		return "GET, POST"
+	}
+	if path == registryCollectionPath {
+		return "GET, PATCH"
+	}
+	if path == draftMetadataPath || path == registryRenderersPath {
 		return http.MethodGet
 	}
 	if rt, ok := draftCandidateRoutes[path]; ok {

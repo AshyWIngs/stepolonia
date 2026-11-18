@@ -32,17 +32,17 @@ func addContentMetadataSchemas(schemas map[string]*huma.Schema) {
 	schemas[draftMetadataSchemaName] = closedObjectSchema(
 		"Field definitions visible to the actor for the draft's pinned schema.",
 		map[string]*huma.Schema{
-			itemIDField:        uuidSchema(exampleUUID),
-			schemaNoField:      contentVersionSchema("Schema number pinned to the draft.", "1"),
-			draftVersionField:  contentVersionSchema("Item version for these metadata and publication links.", "2"),
-			currentSchemaField: contentVersionSchema("Latest sealed schema for the collection.", "2"),
-			"fields":           {Type: huma.TypeArray, Items: schemaRef(fieldSchema)},
-			"actions":          responseDTOSchema("Permissions for the draft controls. Write commands always recheck authorization.", content.DraftActions{Ready: true}),
+			itemIDField:           uuidSchema(exampleUUID),
+			schemaNoField:         contentVersionSchema("Schema number pinned to the draft.", "1"),
+			draftVersionField:     contentVersionSchema("Item version for these metadata and publication links.", "2"),
+			currentSchemaField:    contentVersionSchema("Latest sealed schema for the collection.", "2"),
+			contentFieldsProperty: {Type: huma.TypeArray, Items: schemaRef(fieldSchema)},
+			"actions":             responseDTOSchema("Permissions for the draft controls. Write commands always recheck authorization.", content.DraftActions{Ready: true}),
 			"published": {Type: huma.TypeArray, Items: responseDTOSchema("A language and link in the current public snapshot.", content.PublicTranslation{
 				Language: "pl", Slug: "warsztaty", CanonicalURL: "/pl/articles/warsztaty",
 			})},
 			"ready_locales": {Type: huma.TypeArray, Items: stringSchema("Language code with current readiness."), Description: "Enabled locales approved for the draft's current sequences, schema and language generation."},
-		}, []string{itemIDField, schemaNoField, draftVersionField, currentSchemaField, "fields", "actions", "published", "ready_locales"},
+		}, []string{itemIDField, schemaNoField, draftVersionField, currentSchemaField, contentFieldsProperty, "actions", "published", "ready_locales"},
 		content.DraftMetadata{ItemID: exampleUUID, SchemaNo: 1, Version: 2, CurrentSchemaNo: 2, Fields: []content.DraftFieldMetadata{field},
 			Actions: content.DraftActions{Ready: true}, Published: []content.PublicTranslation{}, ReadyLocales: []string{}},
 	)

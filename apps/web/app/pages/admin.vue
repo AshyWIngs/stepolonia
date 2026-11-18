@@ -59,6 +59,7 @@ const pending = ref(true)
 const notice = ref('')
 const settingsOpen = ref(false)
 const contentOpen = ref(false)
+const builderOpen = ref(false)
 const confirmingIdentity = ref(false)
 const failure = ref('')
 const limited = ref(false)
@@ -74,6 +75,7 @@ const title = computed(() => {
   if (phase.value === 'full' && confirmingIdentity.value) return 'fresh_auth'
   if (phase.value === 'full' && settingsOpen.value) return 'settings'
   if (phase.value === 'full' && contentOpen.value) return 'content'
+  if (phase.value === 'full' && builderOpen.value) return 'registry'
   switch (phase.value) {
     case 'preauth': return 'sign_in'
     case 'login': return 'two_step'
@@ -137,6 +139,7 @@ async function refresh(moveFocus = false) {
     if (restored.kind !== 'full') {
       settingsOpen.value = false
       contentOpen.value = false
+      builderOpen.value = false
       confirmingIdentity.value = false
     }
   }
@@ -184,6 +187,7 @@ async function afterAuthAction(action: AdminAuthAction) {
     login.value = ''
     settingsOpen.value = false
     contentOpen.value = false
+    builderOpen.value = false
     confirmingIdentity.value = false
     await refresh()
   }
@@ -203,6 +207,13 @@ async function changeSettingsVisibility(open: boolean) {
 
 async function changeContentVisibility(open: boolean) {
   contentOpen.value = open
+  confirmingIdentity.value = false
+  failure.value = ''
+  await focusHeading()
+}
+
+async function changeBuilderVisibility(open: boolean) {
+  builderOpen.value = open
   confirmingIdentity.value = false
   failure.value = ''
   await focusHeading()
@@ -264,7 +275,7 @@ onBeforeUnmount(() => {
 
     <section
       class="admin-card"
-      :class="{ 'admin-card--wide': settingsOpen && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
+      :class="{ 'admin-card--wide': (settingsOpen || builderOpen) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
       aria-labelledby="admin-heading"
     >
       <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
@@ -310,8 +321,13 @@ onBeforeUnmount(() => {
           v-if="contentOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
           @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeContentVisibility(false)"
         />
-        <template v-if="!settingsOpen && !contentOpen">
+        <AdminTypeBuilder
+          v-if="builderOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeBuilderVisibility(false)"
+        />
+        <template v-if="!settingsOpen && !contentOpen && !builderOpen">
           <button type="button" :disabled="blocked" @click="changeContentVisibility(true)">{{ t('admin.content') }}</button>
+          <button type="button" :disabled="blocked" @click="changeBuilderVisibility(true)">{{ t('admin.registry') }}</button>
           <button type="button" :disabled="blocked" @click="changeSettingsVisibility(true)">{{ t('admin.settings') }}</button>
           <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.sign_out') }}</button>
         </template>

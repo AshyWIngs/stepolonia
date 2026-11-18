@@ -96,6 +96,9 @@ func (s *AuthService) CopyRole(ctx context.Context, req AuthRequest, id string, 
 		if err != nil {
 			return err
 		}
+		if plan.role.bound {
+			return ErrPermissionDenied
+		}
 		out, err = s.createRole(ctx, tx, x, RoleInput{Name: name, Grants: plan.role.Grants}, plan.before, auditEvent)
 		return err
 	})

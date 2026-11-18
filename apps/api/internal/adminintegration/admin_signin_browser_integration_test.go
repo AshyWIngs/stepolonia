@@ -197,7 +197,7 @@ func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[stri
 		var placeholders sql.NullString
 		requireNoError(t, rows.Scan(&key, &placeholders))
 		en[key] = catalogFixtureValue(enLabels[key], key, placeholders.String)
-		if strings.HasPrefix(key, "admin.content") {
+		if strings.HasPrefix(key, "admin.content") || strings.HasPrefix(key, "admin.registry") {
 			en[key] = contentLabels[key]
 		}
 		fr[key] = catalogFixtureValue(frLabels[key], key, placeholders.String)

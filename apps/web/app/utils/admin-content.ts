@@ -157,3 +157,58 @@ export function commandDraft(
     ...input,
   })
 }
+
+export interface RegistryField {
+  key: string
+  kind: FieldKind
+  scope: EditorField['scope']
+  visibility: EditorField['visibility']
+  required: boolean
+  target_type_id?: string
+  config?: EditorField['config']
+  display_labels?: EditorField['display_labels']
+}
+
+export interface RegistryRenderer {
+  type_key: string
+  route_namespace: string
+  available: boolean
+  fields: RegistryField[]
+}
+
+export interface ManagedCollection {
+  type_id: string
+  type_key: string
+  route_namespace: string
+  version: string
+  schema_no: string
+  fields: RegistryField[]
+}
+
+function registryPath(type: string) {
+  return `${collectionsPath}/${encodeURIComponent(type)}`
+}
+
+export function listRegistryRenderers() {
+  return administrationRequest<{ items: RegistryRenderer[] }>(`${collectionsPath}/renderers`)
+}
+
+export function readManagedCollection(type: string) {
+  return administrationRequest<ManagedCollection>(registryPath(type))
+}
+
+export function createCollection(renderer: RegistryRenderer, fields: RegistryField[], initialize: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(collectionsPath, csrf, 'POST', {
+    route_namespace: renderer.route_namespace,
+    initial_access: initialize,
+    fields,
+  })
+}
+
+export function reviseCollection(collection: ManagedCollection, fields: RegistryField[], initialize: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(registryPath(collection.type_key), csrf, 'PATCH', {
+    expected_version: collection.version,
+    initialize_new_field_access: initialize,
+    fields,
+  })
+}

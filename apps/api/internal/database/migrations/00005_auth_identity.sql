@@ -273,6 +273,7 @@ CREATE TABLE public.security_audit (
     target_id uuid,
     request_id uuid,
     reason text NOT NULL DEFAULT '',
+    details jsonb NOT NULL DEFAULT '{}',
     CONSTRAINT security_audit_operation_check CHECK (
         operation IN (
             'bootstrap.started', 'bootstrap.restarted', 'bootstrap.completed',
@@ -289,6 +290,9 @@ CREATE TABLE public.security_audit (
             'content.draft_saved', 'content.draft_ready',
             'content.draft_published', 'content.draft_unpublished',
             'content.draft_schema_adopted',
+            'content.collection_created', 'content.collection_revised',
+            'content.initial_access_granted',
+            'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
             'settings.initialized',
             'auth.enrollment_started', 'auth.enrollment_completed',
@@ -306,6 +310,10 @@ CREATE TABLE public.security_audit (
             'invalid_credentials', 'expired', 'cancelled', 'session_revoked',
             'rate_limited', 'credential_changed'
         )
+    ),
+    CONSTRAINT security_audit_details_check CHECK (
+        jsonb_typeof(details) = 'object'
+        AND octet_length(details::text) <= 65536
     )
 );
 
@@ -327,6 +335,9 @@ COMMENT ON TABLE public.recovery_codes IS
 
 COMMENT ON TABLE public.security_audit IS
 'Append-only security events with actor and target IDs.';
+
+COMMENT ON COLUMN public.security_audit.details IS
+'Event identifiers and access changes. No credentials or content values.';
 
 COMMENT ON TABLE public.users IS
 'Account identities; activation requires verified password and MFA '

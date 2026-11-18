@@ -93,8 +93,22 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	if op.RequestBody == nil {
 		t.Fatalf("missing request body %s", path)
 	}
-	checkRegistryRequestExample(t, doc, op, rt)
+	if isRegistryOperation(rt.operationID) {
+		checkManagedCollectionExample(t, op, rt)
+	} else {
+		checkRegistryRequestExample(t, doc, op, rt)
+	}
 	return op
+}
+
+func checkManagedCollectionExample(t *testing.T, op privateOperation, rt route) {
+	t.Helper()
+	raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+	value, ok := decodeUniqueJSON(raw)
+	object, objectOK := value.(map[string]any)
+	if err != nil || !ok || !objectOK || !validRegistryInput(object, rt.operationID) {
+		t.Fatal("documented collection example rejected by transport")
+	}
 }
 
 func checkRegistryRequestExample(t *testing.T, doc privateDocument, op privateOperation, rt route) {
@@ -296,6 +310,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"portal-settings":         {"settingsReadEditable", "settingsSaveDraft", "settingsPublish"},
 		"content-assignments":     {"contentReplaceAssignees"},
 		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
+		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -361,6 +376,11 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	privateSchemaRejects(t, registry, schema, map[string]any{})
 	example := media.Example.(map[string]any)
 	for field := range schema.Properties {
+		if (op.OperationID == registryCreateOperation && field == "initial_access") ||
+			(op.OperationID == registryReviseOperation && field == "initialize_new_field_access") {
+			validatePrivateValue(t, registry, schema, op.OperationID, copyWithoutField(example, field))
+			continue
+		}
 		if op.OperationID == saveDraftOperation && !slices.Contains(schema.Required, field) {
 			continue
 		}

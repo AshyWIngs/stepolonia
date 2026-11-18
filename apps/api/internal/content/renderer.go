@@ -16,15 +16,19 @@ const (
 )
 
 func registeredNamespace(namespace string) bool { return rendererTypeKey(namespace) != "" }
+
+var rendererChoices = [...]CollectionRenderer{
+	{Key: articleTypeKey, Namespace: articlesNamespace},
+	{Key: eventTypeKey, Namespace: eventsNamespace},
+}
+
 func rendererTypeKey(namespace string) string {
-	switch namespace {
-	case articlesNamespace:
-		return articleTypeKey
-	case eventsNamespace:
-		return eventTypeKey
-	default:
-		return ""
+	for _, renderer := range rendererChoices {
+		if renderer.Namespace == namespace {
+			return renderer.Key
+		}
 	}
+	return ""
 }
 
 func validateRendererFields(fields map[string]Definition) error {

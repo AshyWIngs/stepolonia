@@ -156,6 +156,9 @@ func safeReadPath(raw string) bool {
 	if _, _, ok := contentMetadataTarget(raw); ok {
 		return true
 	}
+	if _, _, ok := registryTarget(raw, http.MethodGet); ok {
+		return true
+	}
 	role, _ := roleRoutePath(raw)
 	return role == rolesPath || role == rolePath
 }

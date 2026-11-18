@@ -107,7 +107,8 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  WHERE e.privilege IN ('SELECT','INSERT','UPDATE','REFERENCES') AND
  pg_catalog.has_column_privilege(r.oid,e.oid,col.attnum,e.privilege)<>
  (e.allowed OR $2 AND pg_catalog.has_column_privilege('sp_publisher',e.oid,col.attnum,e.privilege)
- OR e.privilege='INSERT' AND e.relname='roles' AND col.attname IN ('id','name')
+ OR e.privilege='INSERT' AND e.relname='roles'
+    AND col.attname IN ('id','name','self_access_user_id','self_access_type_id')
  OR e.privilege='UPDATE' AND e.relname='roles' AND col.attname IN ('name','state','version')
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
  OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')

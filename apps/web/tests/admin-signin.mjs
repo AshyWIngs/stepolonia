@@ -188,24 +188,46 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
-async function verifyContentWorkflow(page, context) {
+async function verifyTypeBuilder(page) {
+  await page.getByRole('button', { name: 'Type Builder', exact: true }).click()
+  const renderer = page.getByRole('combobox', { name: 'Renderer and collection', exact: true })
+  await renderer.selectOption('event')
+  const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
+  assert.equal(await initial.isChecked(), false)
+  await initial.check()
+  await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+  await page.getByText('Collection created.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
+  await page.getByLabel('Field key', { exact: true }).fill('subtitle')
+  await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
+  await page.getByRole('button', { name: 'Save schema changes', exact: true }).click()
+  await page.getByText('Current schema 2', { exact: true }).waitFor()
+  await page.getByText('Collection changes saved.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+}
+
+async function verifyContentWorkflow(page, context, { type, namespace, slug, title, checkLayout = false }) {
   await page.getByRole('button', { name: 'Content', exact: true }).click()
-  const create = page.getByRole('button', { name: 'Create draft', exact: true })
+  const collection = page.getByRole('combobox', { name: 'Collection', exact: true })
+  await collection.selectOption(type)
+  const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
   await create.waitFor()
   await create.focus()
   await page.keyboard.press('Enter')
   const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
-  await editor.getByLabel('title', { exact: false }).waitFor()
-  const title = 'Portal workflow verification'
-  await editor.getByLabel('title', { exact: false }).fill(title)
-  await editor.getByLabel('slug', { exact: false }).fill('portal-workflow')
-  await editor.getByLabel('body', { exact: false }).fill('An editorial draft.')
-  await assertEditorLayouts(page, editor)
+  await editor.getByLabel(/^title(?: \(|$)/).waitFor()
+  await editor.getByLabel(/^title(?: \(|$)/).fill(title)
+  await editor.getByLabel(/^slug(?: \(|$)/).fill(slug)
+  const bodyField = editor.getByLabel(/^body(?: \(|$)/)
+  if (await bodyField.count()) await bodyField.fill('An editorial draft.')
+  const optionalField = editor.getByLabel('subtitle', { exact: true })
+  if (await optionalField.count()) await optionalField.fill('Private editor text.')
+  if (checkLayout) await assertEditorLayouts(page, editor)
   await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
   await editor.getByText('Draft saved.', { exact: true }).waitFor()
 
-  const apiPath = '/api/v1/content/article/portal-workflow?language=en'
-  const publicPath = '/en/articles/portal-workflow'
+  const apiPath = `/api/v1/content/${type}/${slug}?language=en`
+  const publicPath = `/en/${namespace}/${slug}`
   const request = path => context.request.get(new URL(path, origin).href)
   assert.equal((await request(apiPath)).status(), 404)
   await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).click()
@@ -223,6 +245,7 @@ async function verifyContentWorkflow(page, context) {
   assert.equal(published.status(), 200)
   const body = await published.json()
   assert.equal(body.localized.title.value, title)
+  assert.equal(Object.hasOwn(body.localized, 'subtitle'), false)
   const rendered = await request(publicPath)
   assert.equal(rendered.status(), 200)
   assert.ok((await rendered.text()).includes(title))
@@ -290,7 +313,9 @@ try {
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifySettingsPublication(page, context)
-  await verifyContentWorkflow(page, context)
+  await verifyTypeBuilder(page)
+  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })
+  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slug: 'community-workshop', title: 'Community workshop' })
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')
