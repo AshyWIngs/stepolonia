@@ -13,11 +13,11 @@ OWNERSHIP_LABEL = "io.stepolonia.auth-test"
 POSTGRES_IMAGE = "postgres:18.7-alpine3.24"
 
 
-def command(arguments, *, environment=None, capture=False):
+def command(arguments, *, environment=None, capture=False, timeout=300):
     """Execute fixed tool arguments without a shell or credentials in argv."""
     result = subprocess.run(arguments, cwd=ROOT, env=environment, check=True,
                             text=True, stdout=subprocess.PIPE if capture else None,
-                            timeout=300)
+                            timeout=timeout)
     return result.stdout.strip() if capture else ""
 
 
@@ -65,9 +65,9 @@ def main():
                        "STAGE31_TEST_DATABASE_URL": f"postgres://postgres@127.0.0.1:{port}/{database}?sslmode=disable",
                        "ADMIN_HTTP_BROWSER_TEST": "1"}
         # Both packages share this PostgreSQL cluster and its installation roles.
-        command(["go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
+        command(["go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-timeout=7m", "-run",
                  "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration", "./cmd/db"],
-                environment=environment)
+                environment=environment, timeout=480)
         command(["go", "-C", "apps/api", "test", "-race", "-count=1", "./internal/adminhttp"],
                 environment=environment)
     finally:

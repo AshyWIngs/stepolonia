@@ -20,6 +20,9 @@ const (
 const (
 	rendererDependencyCode      = "renderer_dependency"
 	invalidFieldCode            = "invalid_field"
+	invalidScopeCode            = "invalid_scope"
+	invalidRelationCode         = "invalid_relation"
+	relationEditDeniedCode      = "relation_edit_denied"
 	invalidLanguageCode         = "invalid_language"
 	invalidValueCode            = "invalid_value"
 	invalidOptionsCode          = "invalid_options"

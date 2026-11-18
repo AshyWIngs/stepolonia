@@ -31,6 +31,7 @@ type Role struct {
 	ID, Name, State string
 	Version         int64
 	Grants          []RoleGrant
+	bound           bool
 }
 
 // RoleGrant is one explicit grant; no field or type wildcard is supported.
@@ -151,7 +152,7 @@ func findRole(ctx context.Context, tx *sql.Tx, id string) (Role, error) {
 	if !validGrantID(id) {
 		return out, ErrValidation
 	}
-	err := tx.QueryRowContext(ctx, `SELECT id::text,name,state,version FROM public.roles WHERE id=$1`, id).Scan(&out.ID, &out.Name, &out.State, &out.Version)
+	err := tx.QueryRowContext(ctx, `SELECT id::text,name,state,version,self_access_user_id IS NOT NULL FROM public.roles WHERE id=$1`, id).Scan(&out.ID, &out.Name, &out.State, &out.Version, &out.bound)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, ErrNotFound
 	}
@@ -294,6 +295,9 @@ func prepareRoleMutation(ctx context.Context, tx *sql.Tx, x Session, id string, 
 }
 
 func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput) (Role, error) {
+	if plan.role.bound {
+		return Role{}, ErrPermissionDenied
+	}
 	grants, err := validateRoleInput(ctx, tx, input)
 	if err != nil {
 		return Role{}, err

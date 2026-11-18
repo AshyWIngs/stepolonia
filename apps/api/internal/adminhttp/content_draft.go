@@ -25,11 +25,16 @@ const (
 // DraftEditor verifies current permissions before creating, projecting or editing a draft.
 type DraftEditor interface {
 	CreateDraftForType(context.Context, identity.AuthRequest, string, int64) (content.DraftState, error)
+	ListDraftsForType(context.Context, identity.AuthRequest, string, int, int) (identity.DraftPage, error)
+	ListReadableCollections(context.Context, identity.AuthRequest, int, int) (identity.ReadableCollectionPage, error)
+	ReadDraftMetadata(context.Context, identity.AuthRequest, string, string) (content.DraftMetadata, error)
 	ReadDraftForType(context.Context, identity.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, identity.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
 	MarkSharedReadyForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
 	MarkReadyForType(context.Context, identity.AuthRequest, string, string, string, int64, int64) (content.DraftState, error)
 	PublishForType(context.Context, identity.AuthRequest, string, string, int64, int64, []string) (content.DraftState, error)
+	AdoptSchemaForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
+	UnpublishForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)
 }
 
 type saveDraftInput struct {
@@ -38,6 +43,7 @@ type saveDraftInput struct {
 	Shared          map[string]content.FieldValue `json:"shared,omitempty"`
 	UnsetShared     []string                      `json:"unset_shared,omitempty"`
 	Locales         map[string]draftLocalePatch   `json:"locales,omitempty"`
+	RelationChanges []content.RelationChange      `json:"relation_changes,omitempty"`
 }
 
 type draftLocalePatch struct {
@@ -47,8 +53,8 @@ type draftLocalePatch struct {
 
 var saveDraftRoute = route{
 	kind: fullKind, method: http.MethodPatch, operationID: saveDraftOperation,
-	summary: "Save scalar content draft changes", response: contentDraftSchema,
-	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. Accepts scalar changes only. Changes and their audit commit together.",
+	summary: "Save content draft changes", response: contentDraftSchema,
+	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. A relation change requires read access to any newly selected target. Changes and their audit commit together.",
 }
 
 var readDraftRoute = route{
@@ -56,6 +62,11 @@ var readDraftRoute = route{
 	summary: "Read the current content draft", response: readableDraftSchema,
 	description: "Available only with a verified draft database login. A full session and current read permissions on the item's actual collection and scope are required. The response contains only actor-readable fields and relations. Send no query or request body. The request returns 503 if the draft exceeds the locale read limit or the read deadline.",
 }
+
+var (
+	collectionDraftRoutes = []route{createDraftRoute, listDraftsRoute}
+	itemDraftRoutes       = []route{saveDraftRoute, readDraftRoute}
+)
 
 func contentDraftTarget(path string) (routeTarget, bool) {
 	rest, ok := strings.CutPrefix(path, adminContentPrefix)
@@ -77,17 +88,17 @@ func (h *handler) serveDraft(w http.ResponseWriter, r *http.Request, rt route, t
 	h.serveDraftSave(w, r, rt, target, ip)
 }
 
-func (h *handler) serveDraftRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
+func draftReadRequest(w http.ResponseWriter, r *http.Request, ip string) (identity.AuthRequest, bool) {
 	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 		writeError(w, identity.ErrValidation)
-		return
+		return identity.AuthRequest{}, false
 	}
-	req, _, err := requestSession(r, fullKind, ip)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if !attachRequestID(w, &req) {
+	return requestWithID(w, r, fullKind, ip)
+}
+
+func (h *handler) serveDraftRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
+	req, ok := draftReadRequest(w, r, ip)
+	if !ok {
 		return
 	}
 	state, err := h.draftEditor.ReadDraftForType(r.Context(), req, target.typeKey, target.id)
@@ -121,7 +132,7 @@ func (input saveDraftInput) patch() content.DraftPatch {
 	for locale, patch := range input.Locales {
 		locales[locale] = content.ValuePatch{Values: patch.Values, Unset: patch.Unset}
 	}
-	return content.DraftPatch{SchemaNo: input.SchemaNo, Shared: input.Shared, UnsetShared: input.UnsetShared, Locales: locales}
+	return content.DraftPatch{SchemaNo: input.SchemaNo, Shared: input.Shared, UnsetShared: input.UnsetShared, Locales: locales, RelationChanges: input.RelationChanges}
 }
 
 func readDraftInput(w http.ResponseWriter, r *http.Request) (saveDraftInput, string, int) {

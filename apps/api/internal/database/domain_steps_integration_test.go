@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+const securityTestRole = "sp_security"
+
 func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	db, _ := domainQAFixture(t)
 	ctx := context.Background()
@@ -107,7 +109,7 @@ WHERE id='d1000000-0000-0000-0000-000000000004'`, "23514")
 
 func testDomainIdentityStep(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
-	tx := beginRoleTx(t, ctx, db, "sp_security")
+	tx := beginRoleTx(t, ctx, db, securityTestRole)
 	execSQL(t, ctx, tx, `INSERT INTO public.users(id,login_key)
 VALUES ('d1000000-0000-0000-0000-000000000006','domain-step-pending');
 INSERT INTO public.sessions(id,token_digest,csrf_digest,kind,expires_at)
@@ -116,7 +118,10 @@ INSERT INTO public.security_audit(id,operation,reason)
 VALUES (gen_random_uuid(),'auth.denied','invalid_credentials')`)
 	requireNoError(t, tx.Commit())
 	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.users`, "42501")
-	rejectSQL(t, ctx, db, "sp_security", `SELECT operation,result,reason FROM public.security_audit`, "42501")
+	auditRead := beginRoleTx(t, ctx, db, securityTestRole)
+	execSQL(t, ctx, auditRead, `SELECT operation,result,reason FROM public.security_audit`)
+	requireNoError(t, auditRead.Commit())
+	rejectSQL(t, ctx, db, securityTestRole, `SELECT details FROM public.security_audit`, "42501")
 	rejectSQL(t, ctx, db, "", `UPDATE public.security_audit SET reason=''`, "23514")
 	rejectSQL(t, ctx, db, "", `DELETE FROM public.security_state`, "23514")
 	rejectSQL(t, ctx, db, "", `UPDATE public.users SET state='active'`, "23514")
@@ -133,8 +138,7 @@ func testDomainAssigneeStep(t *testing.T, ctx context.Context, db *sql.DB) {
 	const itemID = "d1000000-0000-0000-0000-000000000003"
 	const userID = "d1000000-0000-0000-0000-000000000006"
 	const attach = `INSERT INTO public.content_item_assignments(item_id,user_id) VALUES($1,$2)`
-	const security = "sp_security"
-	tx := beginRoleTx(t, ctx, db, security)
+	tx := beginRoleTx(t, ctx, db, securityTestRole)
 	_, err := tx.ExecContext(ctx, attach, itemID, userID)
 	requireNoError(t, err)
 	var version int64
@@ -151,7 +155,7 @@ func testDomainAssigneeStep(t *testing.T, ctx context.Context, db *sql.DB) {
 		{"d1000000-0000-0000-0000-000000000099", userID, "23503"},
 		{itemID, "d1000000-0000-0000-0000-000000000099", "23503"},
 	} {
-		tx = beginRoleTx(t, ctx, db, security)
+		tx = beginRoleTx(t, ctx, db, securityTestRole)
 		_, err = tx.ExecContext(ctx, attach, test.itemID, test.userID)
 		assertSQLState(t, err, test.sqlState)
 		requireNoError(t, tx.Rollback())

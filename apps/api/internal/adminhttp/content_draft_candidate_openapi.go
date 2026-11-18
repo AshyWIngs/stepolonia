@@ -1,6 +1,8 @@
 package adminhttp
 
 import (
+	"strconv"
+
 	"github.com/danielgtaylor/huma/v2"
 	"stepolonia/apps/api/internal/content"
 )
@@ -9,6 +11,16 @@ var draftCandidateContracts = map[string]*huma.Schema{
 	readySharedOperation: draftCandidateSchema(draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1}),
 	readyLocaleOperation: draftCandidateSchema(draftCandidateInput{ExpectedVersion: 3, SchemaNo: 1, Locale: "pl"}),
 	publishOperation:     draftCandidateSchema(draftCandidateInput{ExpectedVersion: 4, SchemaNo: 1, IntendedLocales: []string{"pl"}}),
+	adoptSchemaOperation: draftTransitionSchema("The current collection schema to adopt.", draftCandidateInput{ExpectedVersion: 2, SchemaNo: 2}),
+	unpublishOperation:   draftTransitionSchema("The draft's pinned schema number.", draftCandidateInput{ExpectedVersion: 5, SchemaNo: 1}),
+}
+
+func draftTransitionSchema(description string, example draftCandidateInput) *huma.Schema {
+	schema := draftCandidateSchema(example)
+	schema.Description = "Expected item version and collection schema for the versioned draft transition."
+	schema.Properties[schemaNoField] = contentVersionSchema(description, strconv.FormatInt(example.SchemaNo, 10))
+	schema.PrecomputeMessages()
+	return schema
 }
 
 func draftCandidateSchema(example draftCandidateInput) *huma.Schema {

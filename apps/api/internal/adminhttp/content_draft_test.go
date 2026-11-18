@@ -30,6 +30,16 @@ type fakeDraftEditor struct {
 	err     error
 }
 
+func (f *fakeDraftEditor) AdoptSchemaForType(_ context.Context, req identity.AuthRequest, key, id string, version, _ int64) (content.DraftState, error) {
+	f.calls++
+	f.req, f.target, f.version = req, routeTarget{typeKey: key, id: id}, version
+	return f.state, f.err
+}
+
+func (f *fakeDraftEditor) UnpublishForType(ctx context.Context, req identity.AuthRequest, key, id string, version, schema int64) (content.DraftState, error) {
+	return f.AdoptSchemaForType(ctx, req, key, id, version, schema)
+}
+
 func (f *fakeDraftEditor) CreateDraftForType(_ context.Context, req identity.AuthRequest, key string, schemaNo int64) (content.DraftState, error) {
 	f.calls++
 	f.req, f.target, f.version = req, routeTarget{typeKey: key}, schemaNo
@@ -46,6 +56,20 @@ func (f *fakeDraftEditor) ReadDraftForType(_ context.Context, req identity.AuthR
 	f.calls++
 	f.req, f.target = req, routeTarget{typeKey: key, id: id}
 	return f.state, f.err
+}
+
+func (f *fakeDraftEditor) ListDraftsForType(_ context.Context, req identity.AuthRequest, key string, _, _ int) (identity.DraftPage, error) {
+	f.calls++
+	f.req, f.target = req, routeTarget{typeKey: key}
+	return identity.DraftPage{Items: []identity.DraftSummary{}}, f.err
+}
+
+func (f *fakeDraftEditor) ListReadableCollections(_ context.Context, _ identity.AuthRequest, _, _ int) (identity.ReadableCollectionPage, error) {
+	return identity.ReadableCollectionPage{}, f.err
+}
+
+func (f *fakeDraftEditor) ReadDraftMetadata(_ context.Context, _ identity.AuthRequest, _, _ string) (content.DraftMetadata, error) {
+	return content.DraftMetadata{}, f.err
 }
 
 func newDraftTLSServer(t *testing.T, editor DraftEditor) *httptest.Server {

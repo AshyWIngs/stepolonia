@@ -123,8 +123,12 @@ func openDraftEditorLogin(t *testing.T, owner *sql.DB) *sql.DB {
 
 func editDraftField(key, value string) content.DraftPatch {
 	return content.DraftPatch{SchemaNo: 1, Shared: map[string]content.FieldValue{
-		key: {Kind: "string", Value: json.RawMessage(value)},
+		key: draftStringValue(value),
 	}}
+}
+
+func draftStringValue(value string) content.FieldValue {
+	return content.FieldValue{Kind: "string", Value: json.RawMessage(value)}
 }
 
 func TestAdminDraftEditorFieldAuthorizationIntegration(t *testing.T) {
@@ -147,7 +151,7 @@ func TestAdminDraftEditorFieldAuthorizationIntegration(t *testing.T) {
 	_, err = f.editor.SaveDraft(ctx, f.actor, draftEditItem, 1, editDraftField("unknown", `"Unknown field"`))
 	onboardingError(t, err, identity.ErrPermissionDenied)
 	patch := editDraftField(draftHeadlineKey, `"After"`)
-	patch.Shared[draftNoteKey] = content.FieldValue{Kind: "string", Value: json.RawMessage(`"Stored but hidden"`)}
+	patch.Shared[draftNoteKey] = draftStringValue(`"Stored but hidden"`)
 	out, err = f.editor.SaveDraft(ctx, f.actor, draftEditItem, 1, patch)
 	requireNoError(t, err)
 	if out.Version != 2 || len(out.Shared) != 1 || string(out.Shared[draftHeadlineKey]) != `"After"` {
@@ -214,9 +218,7 @@ func TestAdminDraftEditorRevocationIntegration(t *testing.T) {
 		{"session", func(ctx context.Context, f draftEditorFixture) error {
 			return f.auth.Logout(ctx, f.actor, fullSessionFixtureKind)
 		}, identity.ErrAuthenticationRequired},
-		{"role", func(ctx context.Context, f draftEditorFixture) error {
-			return revokeDraftAccess(ctx, f.owner, `UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)
-		}, identity.ErrNotFound},
+		{"role", disableDraftFixtureRole, identity.ErrNotFound},
 		{"assignment", func(ctx context.Context, f draftEditorFixture) error {
 			return revokeDraftAccess(ctx, f.owner, `DELETE FROM public.content_item_assignments WHERE user_id=$1`, f.userID)
 		}, identity.ErrPermissionDenied},
@@ -225,6 +227,10 @@ func TestAdminDraftEditorRevocationIntegration(t *testing.T) {
 		t.Run(tc.name+"/edit-first", func(t *testing.T) { checkDraftRevocationOrder(t, tc, true) })
 		t.Run(tc.name+"/revoke-first", func(t *testing.T) { checkDraftRevocationOrder(t, tc, false) })
 	}
+}
+
+func disableDraftFixtureRole(ctx context.Context, f draftEditorFixture) error {
+	return revokeDraftAccess(ctx, f.owner, `UPDATE public.roles SET state='disabled' WHERE id=$1`, f.roleID)
 }
 
 func revokeDraftAccess(ctx context.Context, db *sql.DB, statement, id string) error {

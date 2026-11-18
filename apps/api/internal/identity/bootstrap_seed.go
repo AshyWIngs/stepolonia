@@ -8,8 +8,8 @@ import (
 
 const seedAdminName = "Site Admin"
 
-var bootstrapContentOperations = []string{opContentCreate, string(OpContentRead), string(OpContentUpdate), string(OpContentReady), string(OpContentPublish), "content.items.unpublish", opContentAssign}
-var bootstrapInstallationOperations = []string{string(OpContentTypesManage), opContentInitializeAccess, opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", opRolesAssign, opRolesDisable, opRolesEnable, opRolesArchive, opRolesRestore, "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage}
+var bootstrapContentOperations = []string{opContentCreate, string(OpContentRead), string(OpContentUpdate), string(OpContentReady), string(OpContentPublish), string(OpContentUnpublish), opContentAssign}
+var bootstrapInstallationOperations = []string{string(OpContentTypesManage), opContentInitializeAccess, opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", opRolesAssign, opRolesDisable, opRolesEnable, opRolesArchive, opRolesRestore, "roles.delete", opSessionsRevokeAny, opAuditRead, opSettingsManage}
 
 func seedBootstrapRoles(ctx context.Context, tx *sql.Tx) error {
 	if err := checkBootstrapOperations(ctx, tx); err != nil {

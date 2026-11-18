@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"maps"
+	"slices"
 )
 
 const (
-	draftCreatedEvent   = "content.draft_created"
-	draftSavedEvent     = "content.draft_saved"
-	draftReadyEvent     = "content.draft_ready"
-	draftPublishedEvent = "content.draft_published"
+	draftCreatedEvent       = "content.draft_created"
+	draftSavedEvent         = "content.draft_saved"
+	draftReadyEvent         = "content.draft_ready"
+	draftPublishedEvent     = "content.draft_published"
+	draftUnpublishedEvent   = "content.draft_unpublished"
+	draftSchemaAdoptedEvent = "content.draft_schema_adopted"
 )
 
 // WithDraftCreate authorizes a new draft on the requested collection and commits
@@ -75,9 +79,17 @@ func (s *AuthService) WithDraftCandidate(ctx context.Context, req AuthRequest, o
 		return s.withDraftCommand(ctx, req, draftReadyEvent, itemID, command)
 	case OpContentPublish:
 		return s.withDraftCommand(ctx, req, draftPublishedEvent, itemID, command)
+	case OpContentUnpublish:
+		return s.withDraftCommand(ctx, req, draftUnpublishedEvent, itemID, command)
 	default:
 		return ErrPermissionDenied
 	}
+}
+
+// WithDraftSchemaAdoption uses the same guarded transaction as draft updates
+// and records schema adoption separately from scalar edits.
+func (s *AuthService) WithDraftSchemaAdoption(ctx context.Context, req AuthRequest, itemID string, command func(context.Context, *sql.Tx, Session, string) error) error {
+	return s.withDraftCommand(ctx, req, draftSchemaAdoptedEvent, itemID, command)
 }
 
 func (s *AuthService) withDraftCommand(ctx context.Context, req AuthRequest, event, itemID string, command func(context.Context, *sql.Tx, Session, string) error) error {
@@ -112,6 +124,11 @@ func (a ContentItemAccess) AllowsField(fieldID string) bool {
 	return ok
 }
 
+// FieldIDs returns the IDs for SQL projections within the authorizing transaction.
+func (a ContentItemAccess) FieldIDs() []string {
+	return slices.Collect(maps.Keys(a.fields))
+}
+
 // LoadContentItemAccess resolves permissions against the persisted item type and
 // assignment before collecting field IDs from the qualifying grants.
 func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operation Operation, itemID string) (ContentItemAccess, error) {
@@ -119,7 +136,7 @@ func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operatio
 		return ContentItemAccess{}, ErrPermissionDenied
 	}
 	switch operation {
-	case OpContentRead, OpContentUpdate, OpContentReady, OpContentPublish:
+	case OpContentRead, OpContentUpdate, OpContentReady, OpContentPublish, OpContentUnpublish:
 	default:
 		return ContentItemAccess{}, ErrPermissionDenied
 	}

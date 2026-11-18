@@ -81,3 +81,38 @@ function postAuth(action: AdminAuthAction, options: RequestInit): Promise<Respon
     case 'logout': return fetch('/api/v1/admin/auth/logout', options)
   }
 }
+
+export type RestrictedEntryMode = 'enrollment' | 'recovery'
+
+export async function startRestrictedEntry(mode: RestrictedEntryMode, csrf: string, fields: Record<string, string>) {
+  const options = restrictedRequest(csrf, fields)
+  const result = await checkedResponse(mode === 'enrollment'
+    ? fetch('/api/v1/admin/auth/enrollment', options)
+    : fetch('/api/v1/admin/auth/recovery', options))
+  const value: unknown = await result.json()
+  if (!value || typeof value !== 'object' || !('secret' in value) || typeof value.secret !== 'string' ||
+      !/^[A-Z2-7]{32}$/u.test(value.secret)) throw new AdminAuthError(503)
+  return { csrf: csrfToken(value), secret: value.secret }
+}
+
+export async function finishRestrictedEntry(mode: RestrictedEntryMode, csrf: string, code: string) {
+  const options = restrictedRequest(csrf, { code })
+  const result = await checkedResponse(mode === 'enrollment'
+    ? fetch('/api/v1/admin/auth/enrollment/complete', options)
+    : fetch('/api/v1/admin/auth/recovery/complete', options))
+  const value: unknown = await result.json()
+  if (!value || typeof value !== 'object' || !('recovery_codes' in value) || !Array.isArray(value.recovery_codes) ||
+      value.recovery_codes.length !== 10 || !value.recovery_codes.every(item => typeof item === 'string' && /^[a-f\d]{32}$/u.test(item))) {
+    throw new AdminAuthError(503)
+  }
+  return value.recovery_codes as string[]
+}
+
+function restrictedRequest(csrf: string, fields: Record<string, string>): RequestInit {
+  return {
+    ...requestOptions(),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(fields),
+  }
+}

@@ -49,6 +49,16 @@ const (
 	draftReadTimeout = 8 * time.Second
 )
 
+// ListDraftsForType returns one page of draft identities visible to the actor.
+func (e *DraftEditor) ListDraftsForType(ctx context.Context, req identity.AuthRequest, typeKey string, limit, offset int) (identity.DraftPage, error) {
+	if e == nil || e.auth == nil {
+		return identity.DraftPage{}, identity.ErrSecurityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
+	defer cancel()
+	return e.auth.ReadDraftPage(ctx, req, typeKey, limit, offset)
+}
+
 // ReadDraftForType returns the actor-readable draft for the persisted collection.
 func (e *DraftEditor) ReadDraftForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string) (DraftState, error) {
 	if e == nil || e.auth == nil {
@@ -120,6 +130,8 @@ func (e *DraftEditor) saveDraft(ctx context.Context, req identity.AuthRequest, t
 	if e == nil || e.auth == nil {
 		return DraftState{}, identity.ErrSecurityUnavailable
 	}
+	ctx, cancel := context.WithTimeout(ctx, draftCandidateTimeout)
+	defer cancel()
 	var out DraftState
 	err := e.auth.WithDraftUpdate(ctx, req, itemID, func(ctx context.Context, tx *sql.Tx, session identity.Session, itemID string) error {
 		update, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentUpdate, itemID)
@@ -150,6 +162,9 @@ func draftCommandResult(out DraftState, err error) (DraftState, error) {
 }
 
 func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Session, update identity.ContentItemAccess, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+	if err := checkDraftReadSize(ctx, tx, itemID); err != nil {
+		return DraftState{}, err
+	}
 	state, err := loadDraft(ctx, tx, itemID)
 	if err != nil {
 		return DraftState{}, databaseError(err)
@@ -174,7 +189,9 @@ func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Sessi
 			writeOnly[field.Key] = true
 		}
 	}
-	if err := applyDraftPatch(ctx, tx, &state, schema, patch, writeOnly); err != nil {
+	if err := applyDraftPatch(ctx, tx, &state, schema, patch, writeOnly, func(relation Relation) (bool, error) {
+		return canReadRelation(ctx, tx, session, relation)
+	}); err != nil {
 		return DraftState{}, databaseError(err)
 	}
 	return draftUpdateResponse(ctx, tx, session, state, schema, read)
@@ -208,6 +225,11 @@ func checkDraftPatchFields(update identity.ContentItemAccess, schema TypeSchema,
 	}
 	for _, key := range patchKeys(schema, patch) {
 		if !update.AllowsField(fieldsByKey[key]) {
+			return identity.ErrPermissionDenied
+		}
+	}
+	for _, change := range patch.RelationChanges {
+		if !update.AllowsField(change.FieldID) {
 			return identity.ErrPermissionDenied
 		}
 	}

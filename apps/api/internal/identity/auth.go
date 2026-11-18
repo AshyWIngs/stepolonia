@@ -216,6 +216,13 @@ func (s *AuthService) WithSession(ctx context.Context, req AuthRequest, unsafe b
 		return fn(ctx, tx, x)
 	})
 }
+
+// Credential changes invalidate session snapshots and stale account mutations.
+func advanceCredentialVersion(ctx context.Context, tx *sql.Tx, userID string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE public.users SET credential_version=credential_version+1,version=version+1 WHERE id=$1`, userID)
+	return err
+}
+
 func revokeSession(ctx context.Context, tx *sql.Tx, id string) error {
 	_, err := tx.ExecContext(ctx, `UPDATE public.sessions SET revoked_at=clock_timestamp() WHERE id=$1 AND revoked_at IS NULL`, id)
 	return err

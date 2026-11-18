@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"stepolonia/apps/api/internal/apiexamples"
+	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/siteconfig"
@@ -26,18 +28,20 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	if os.Getenv("ADMIN_UI_BROWSER_TEST") != "1" {
 		t.Skip("NOT RUN: build Nuxt and set ADMIN_UI_BROWSER_TEST=1")
 	}
-	f := newAuthHTTPFixtureWithSettings(t, func(state authFixtureState, auth http.Handler) http.Handler {
+	f := newAuthHTTPFixtureWithEditors(t, func(state authFixtureState, auth http.Handler) http.Handler {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		site := siteconfig.NewReader(openPublicationRuntimeLogin(t, state.db))
-		public := httptest.NewServer(platform.Handler(nil, nil, logger, site))
+		runtime := openPublicationRuntimeLogin(t, state.db)
+		site := siteconfig.NewReader(runtime)
+		reader := content.NewPublicReader(runtime)
+		public := httptest.NewServer(platform.Handler(nil, reader, logger, site))
 		t.Cleanup(public.Close)
 		web := startAdminFrontend(t, public.URL)
-		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, nil, logger, auth, site), logger)
+		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, reader, logger, auth, site), logger)
 	}, true)
 	assertUnpublishedAdminUnavailable(t, f)
-	publishAdminBrowserCatalog(t, f.state.db)
+	publishTestSiteCatalog(t, f.state.db)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "../../../web/tests/admin-signin.mjs")
 	code := bootstrapCode(t, f.state.db, f.state.secret)
@@ -58,7 +62,7 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	requireNoError(t, f.state.db.QueryRow(`SELECT
  count(*) FILTER (WHERE revoked_at IS NULL), count(*) FILTER (WHERE revoked_at IS NOT NULL)
  FROM public.sessions WHERE kind='full'`).Scan(&active, &revoked))
-	if active != 0 || revoked != 1 {
+	if active != 0 || revoked != 3 {
 		t.Fatalf("logout storage state: active full=%d revoked full=%d", active, revoked)
 	}
 }
@@ -150,60 +154,19 @@ func assertUnpublishedAdminUnavailable(t *testing.T, f authHTTPFixture) {
 	}
 }
 
-func publishAdminBrowserCatalog(t *testing.T, db *sql.DB) {
+func publishTestSiteCatalog(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 	requireNoError(t, database.Seed(ctx, db))
-	languages, err := database.ReadLanguages(strings.NewReader("code,name,native_name,direction\nfr,French,Français (rédaction QA),ltr\n"))
+	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('en','kk','pl','ru')")
 	requireNoError(t, err)
-	requireNoError(t, database.ImportLanguages(ctx, db, languages))
-	_, err = db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('en','fr')")
-	requireNoError(t, err)
-
-	en, fr := adminBrowserCatalogs(t, db)
+	site := apiexamples.DemoSite()
+	site.Settings.Title = "Editorial workspace"
+	site.Settings.DefaultLanguage = "en"
+	site.Settings.FallbackLanguage = "en"
 	service := siteconfig.NewService(db)
-	version, err := service.SaveDraft(ctx, 1, siteconfig.Draft{
-		Settings: siteconfig.Settings{Title: "Editorial workspace", Accent: "#205746", DefaultLanguage: "en", FallbackLanguage: "en"},
-		Catalogs: map[string]map[string]string{"en": en, "fr": fr},
-	})
+	version, err := service.SaveDraft(ctx, 1, site)
 	requireNoError(t, err)
 	_, _, err = service.Publish(ctx, version)
 	requireNoError(t, err)
-}
-
-func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[string]string) {
-	t.Helper()
-	enLabels := map[string]string{
-		"admin.language": "Language", "admin.theme": "Theme", "admin.sign_in": "Sign in", "admin.login": "Login",
-		"admin.password": "Password", "admin.continue": "Continue", "admin.two_step": "Two-step verification",
-		"admin.code": "Verification code", "admin.signed_in": "Signed in", "admin.sign_out": "Sign out",
-		"admin.settings": "Portal settings", "admin.portal_name": "Portal name", "admin.save_draft": "Save draft",
-		"admin.publish_draft": "Publish draft", "admin.confirm_publish": "Publish the saved settings and interface texts?",
-		"admin.settings_invalid": "Complete each selected translation.",
-		"admin.draft_saved":      "Draft saved.", "admin.published": "Settings published.", "admin.close": "Close",
-	}
-	frLabels := map[string]string{"admin.language": "Langue", "admin.sign_in": "Connexion à la rédaction"}
-	en, fr := map[string]string{}, map[string]string{}
-	rows, err := db.Query(`SELECT message_key, array_to_string(placeholders, '} {') FROM public.ui_message_keys`)
-	requireNoError(t, err)
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var key string
-		var placeholders sql.NullString
-		requireNoError(t, rows.Scan(&key, &placeholders))
-		en[key] = catalogFixtureValue(enLabels[key], key, placeholders.String)
-		fr[key] = catalogFixtureValue(frLabels[key], key, placeholders.String)
-	}
-	requireNoError(t, rows.Err())
-	return en, fr
-}
-
-func catalogFixtureValue(label, key, placeholders string) string {
-	if label == "" {
-		label = "QA " + key
-	}
-	if placeholders != "" {
-		label += " {" + placeholders + "}"
-	}
-	return label
 }

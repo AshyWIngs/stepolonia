@@ -1,0 +1,96 @@
+.access-panel {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.access-panel h2, .access-panel p {
+  margin: .25rem 0;
+}
+
+.access-panel form, .access-rows, .access-codes {
+  display: grid;
+  gap: .75rem;
+}
+
+.access-panel :is(input, button, select, summary) {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  max-width: 100%;
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+  padding: .5rem .75rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+  font: inherit;
+}
+
+.access-panel :is(button, summary) {
+  cursor: pointer;
+}
+
+.access-panel button[type="submit"] {
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+}
+
+.access-panel :focus-visible {
+  outline: 3px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.access-panel [role="alert"] {
+  color: var(--admin-error);
+}
+
+.access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.access-rows {
+  padding: 0;
+  margin-block: .5rem;
+  list-style: none;
+}
+
+.access-rows > li {
+  padding: .75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+}
+
+.access-panel dt {
+  font-weight: 650;
+}
+
+.access-panel dd {
+  margin-inline-start: 0;
+  margin-block-end: .4rem;
+}
+
+.access-panel .access-check {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  min-height: 44px;
+}
+
+.access-panel .access-check > input {
+  flex: none;
+  width: 1.125rem;
+  min-height: auto;
+  height: 1.125rem;
+}
+
+.access-confirm, .access-panel fieldset {
+  min-width: 0;
+  margin-block: .5rem;
+  padding: .75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+}

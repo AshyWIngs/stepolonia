@@ -105,6 +105,10 @@
   max-width: 52rem;
 }
 
+.admin-card--workspace {
+  max-width: 75rem;
+}
+
 .admin-card h1 {
   margin: 0 0 1.25rem;
   color: var(--admin-text);
@@ -175,4 +179,16 @@
   border-inline-start: 3px solid var(--admin-error);
   background: var(--admin-error-bg);
   color: var(--admin-error);
+}
+
+nav.access-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+nav.access-navigation [aria-pressed="true"] {
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
 }

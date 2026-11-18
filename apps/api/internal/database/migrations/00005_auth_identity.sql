@@ -273,13 +273,15 @@ CREATE TABLE public.security_audit (
     target_id uuid,
     request_id uuid,
     reason text NOT NULL DEFAULT '',
+    details jsonb NOT NULL DEFAULT '{}',
     CONSTRAINT security_audit_operation_check CHECK (
         operation IN (
             'bootstrap.started', 'bootstrap.restarted', 'bootstrap.completed',
             'bootstrap.denied', 'auth.login_started', 'auth.login_completed',
             'auth.denied',
             'auth.logout',
-            'auth.sessions_revoked',
+            'auth.session_revoked', 'auth.sessions_revoked',
+            'auth.password_changed',
             'auth.step_up',
             'users.created', 'users.onboarding_issued',
             'roles.created', 'roles.edited', 'roles.enabled', 'roles.disabled',
@@ -287,13 +289,19 @@ CREATE TABLE public.security_audit (
             'users.activated', 'users.disabled', 'users.roles_replaced',
             'content.assignees_replaced', 'content.draft_created',
             'content.draft_saved', 'content.draft_ready',
-            'content.draft_published',
+            'content.draft_published', 'content.draft_unpublished',
+            'content.draft_schema_adopted',
+            'content.collection_created', 'content.collection_revised',
+            'content.initial_access_granted',
+            'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
             'settings.initialized',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
-            'mfa.recovery_expired', 'mfa.recovery_completed'
+            'mfa.recovery_expired', 'mfa.recovery_completed',
+            'mfa.replacement_started', 'mfa.replaced',
+            'mfa.recovery_codes_regenerated'
         )
     ),
     CONSTRAINT security_audit_result_check CHECK (
@@ -305,8 +313,15 @@ CREATE TABLE public.security_audit (
             'invalid_credentials', 'expired', 'cancelled', 'session_revoked',
             'rate_limited', 'credential_changed'
         )
+    ),
+    CONSTRAINT security_audit_details_check CHECK (
+        jsonb_typeof(details) = 'object'
+        AND octet_length(details::text) <= 65536
     )
 );
+
+CREATE INDEX security_audit_recent_idx
+ON public.security_audit (occurred_at DESC, id DESC);
 
 COMMENT ON TABLE public.security_state IS
 'Installation binding and irreversible one-time operator bootstrap marker.';
@@ -326,6 +341,9 @@ COMMENT ON TABLE public.recovery_codes IS
 
 COMMENT ON TABLE public.security_audit IS
 'Append-only security events with actor and target IDs.';
+
+COMMENT ON COLUMN public.security_audit.details IS
+'Event identifiers and access changes. No credentials or content values.';
 
 COMMENT ON TABLE public.users IS
 'Account identities; activation requires verified password and MFA '
@@ -518,6 +536,9 @@ public.enrollment_attempts TO sp_security;
 GRANT DELETE ON public.auth_attempt_buckets, public.sessions TO sp_security;
 
 GRANT INSERT ON public.security_audit TO sp_security;
+GRANT SELECT (
+    id, occurred_at, operation, result, reason, actor_id, target_id, request_id
+) ON public.security_audit TO sp_security;
 
 -- +goose Down
 DROP TABLE public.enrollment_attempts;

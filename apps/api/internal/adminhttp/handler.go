@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"stepolonia/apps/api/internal/identity"
 )
@@ -163,6 +164,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
 	path := target.path
+	if rt.operationID == readRoleGrantOptionsOperation {
+		h.serveRoleGrantOptions(w, r, rt, ip)
+		return
+	}
+	if rt.operationID == readUserRolesOperation || rt.operationID == readContentAssigneesOperation {
+		h.serveAccessReadSet(w, r, rt, target, ip)
+		return
+	}
+	if _, ok := accountRoutes[path]; ok {
+		h.serveAccount(w, r, rt, target, ip)
+		return
+	}
 	if settingsRoutes[path] != nil {
 		h.serveSettings(w, r, rt, ip)
 		return
@@ -175,20 +188,7 @@ func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt rout
 		h.serveUserRoles(w, r, rt, target.id, ip)
 		return
 	}
-	if path == contentAssigneesPath {
-		h.serveContentAssignees(w, r, rt, target, ip)
-		return
-	}
-	if path == createDraftPath {
-		h.serveDraftCreate(w, r, rt, target, ip)
-		return
-	}
-	if _, ok := draftCandidateRoutes[path]; ok {
-		h.serveDraftCandidate(w, r, rt, target, ip)
-		return
-	}
-	if path == contentDraftPath {
-		h.serveDraft(w, r, rt, target, ip)
+	if h.serveContentOperation(w, r, rt, target, ip) {
 		return
 	}
 	input, code, status := readRouteInput(w, r, rt)
@@ -197,6 +197,39 @@ func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt rout
 		return
 	}
 	h.dispatch(w, r, rt, target, ip, input)
+}
+
+func (h *handler) serveContentOperation(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) bool {
+	path := target.path
+	if isRegistryOperation(rt.operationID) {
+		h.serveRegistry(w, r, rt, target, ip)
+		return true
+	}
+	if path == contentCollectionsPath || path == draftMetadataPath {
+		h.serveContentMetadata(w, r, target, ip)
+		return true
+	}
+	if path == contentAssigneesPath {
+		h.serveContentAssignees(w, r, rt, target, ip)
+		return true
+	}
+	if path == createDraftPath {
+		if rt.operationID == listDraftsOperation {
+			h.serveDraftList(w, r, target, ip)
+			return true
+		}
+		h.serveDraftCreate(w, r, rt, target, ip)
+		return true
+	}
+	if _, ok := draftCandidateRoutes[path]; ok {
+		h.serveDraftCandidate(w, r, rt, target, ip)
+		return true
+	}
+	if path == contentDraftPath {
+		h.serveDraft(w, r, rt, target, ip)
+		return true
+	}
+	return false
 }
 
 type routeTarget struct{ path, id, typeKey string }
@@ -277,7 +310,7 @@ func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (cr
 	if code != "" {
 		return input, code, status
 	}
-	if !allowedObject(raw, allowed, false) {
+	if !utf8.Valid(raw) || !allowedObject(raw, allowed, false) {
 		return input, validationCode, http.StatusBadRequest
 	}
 	if json.Unmarshal(raw, &input) != nil || (allowed == expectedVersionField && input.ExpectedVersion <= 0) {

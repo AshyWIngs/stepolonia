@@ -38,7 +38,7 @@ var userRoutes = map[string][]route{
 	userPath:         {getUserRoute},
 	activateUserPath: {activateUserRoute},
 	disableUserPath:  {disableUserRoute},
-	userRolesPath:    {replaceUserRolesRoute},
+	userRolesPath:    {readUserRolesRoute, replaceUserRolesRoute},
 	usersPath: {listUsersRoute, {kind: fullKind, fields: requestFields(createUserInput{}), method: http.MethodPost, operationID: createUserOperation, summary: "Create a pending account", response: pendingUserSchema,
 		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. Creates a pending account without credentials, roles or sessions. The actor and permissions come exclusively from the verified server session. The successful write and audit commit atomically."}},
 	onboardingTokenPath: {{kind: fullKind, fields: expectedVersionField, method: http.MethodPost, operationID: issueOnboardingOperation, summary: "Issue or replace a pending user's onboarding token", response: "OnboardingToken",
@@ -52,39 +52,63 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 		return rt, routeTarget{path: key}, ok
 	}
 	if target, ok := contentAssigneesTarget(path); ok {
-		return replaceContentAssigneesRoute, target, true
+		return routeForMethod(method, []route{readContentAssigneesRoute, replaceContentAssigneesRoute}), target, true
 	}
-	if target, ok := createDraftTarget(path); ok && draftEditorEnabled {
-		return createDraftRoute, target, true
-	}
-	if target, ok := contentDraftTarget(path); ok && draftEditorEnabled {
-		if method == http.MethodGet {
-			return readDraftRoute, target, true
-		}
-		return saveDraftRoute, target, true
-	}
-	if target, rt, ok := draftCandidateTarget(path); ok && draftEditorEnabled {
-		return rt, target, true
-	}
-	key, id, candidates := staticAdminRoutes(path)
-	ok := len(candidates) > 0
-	if !ok {
-		return route{}, routeTarget{}, false
-	}
-	target := routeTarget{path: key, id: id}
-	for _, rt := range candidates {
-		if rt.method == method {
+	if draftEditorEnabled {
+		rt, target, ok := resolveContentEditorRoute(path, method)
+		if ok {
 			return rt, target, true
 		}
 	}
-	return candidates[0], target, true
+	key, id, candidates := staticAdminRoutes(path)
+	if len(candidates) == 0 {
+		return route{}, routeTarget{}, false
+	}
+	return routeForMethod(method, candidates), routeTarget{path: key, id: id}, true
+}
+
+func resolveContentEditorRoute(path, method string) (route, routeTarget, bool) {
+	if target, ok := createDraftTarget(path); ok {
+		return routeForMethod(method, collectionDraftRoutes), target, true
+	}
+	if target, ok := contentDraftTarget(path); ok {
+		return routeForMethod(method, itemDraftRoutes), target, true
+	}
+	if target, rt, ok := draftCandidateTarget(path); ok {
+		return rt, target, true
+	}
+	if target, rt, ok := registryTarget(path, method); ok {
+		return rt, target, true
+	}
+	if target, rt, ok := contentMetadataTarget(path); ok {
+		return rt, target, true
+	}
+	return route{}, routeTarget{}, false
+}
+
+func routeForMethod(method string, candidates []route) route {
+	for _, rt := range candidates {
+		if rt.method == method {
+			return rt
+		}
+	}
+	return candidates[0]
 }
 
 func staticAdminRoutes(path string) (string, string, []route) {
+	if path == roleGrantOptionsPath {
+		return path, "", []route{readRoleGrantOptionsRoute}
+	}
+	if key, id := accountTarget(path); key != "" {
+		return key, id, []route{accountRoutes[key]}
+	}
 	if candidates := settingsRoutes[path]; candidates != nil {
 		return path, "", candidates
 	}
 	key, id := userRoutePath(path)
+	if key == targetSessionsPath {
+		return key, id, []route{accountRoutes[key]}
+	}
 	if candidates := userRoutes[key]; candidates != nil {
 		return key, id, candidates
 	}
@@ -116,6 +140,8 @@ func userRoutePath(path string) (string, string) {
 			return disableUserPath, segments[0]
 		case "roles":
 			return userRolesPath, segments[0]
+		case "sessions":
+			return targetSessionsPath, segments[0]
 		}
 	}
 	return "", ""
@@ -209,17 +235,32 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
+	if path == roleGrantOptionsPath {
+		return http.MethodGet
+	}
+	if rt, ok := accountRoutes[path]; ok {
+		return rt.method
+	}
+	if path == contentCollectionsPath {
+		return "GET, POST"
+	}
+	if path == registryCollectionPath {
+		return "GET, PATCH"
+	}
+	if path == draftMetadataPath || path == registryRenderersPath {
+		return http.MethodGet
+	}
 	if rt, ok := draftCandidateRoutes[path]; ok {
 		return rt.method
 	}
 	if path == createDraftPath {
-		return createDraftRoute.method
+		return listDraftsRoute.method + ", " + createDraftRoute.method
 	}
 	if path == contentDraftPath {
 		return readDraftRoute.method + ", " + saveDraftRoute.method
 	}
 	if path == contentAssigneesPath {
-		return replaceContentAssigneesRoute.method
+		return "GET, PUT"
 	}
 	if rt, ok := routes[path]; ok {
 		return rt.method

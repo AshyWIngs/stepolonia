@@ -4,6 +4,20 @@ CREATE TABLE public.roles (
     name text COLLATE "C" NOT NULL CONSTRAINT roles_name_key UNIQUE,
     state text NOT NULL DEFAULT 'disabled',
     version bigint NOT NULL DEFAULT 1,
+    self_access_user_id uuid,
+    self_access_type_id uuid,
+    CONSTRAINT roles_self_access_owner_key UNIQUE (
+        self_access_user_id, self_access_type_id
+    ),
+    CONSTRAINT roles_self_access_user_fkey FOREIGN KEY (
+        self_access_user_id
+    ) REFERENCES public.users (id) ON DELETE RESTRICT,
+    CONSTRAINT roles_self_access_type_fkey FOREIGN KEY (
+        self_access_type_id
+    ) REFERENCES public.content_types (id) ON DELETE RESTRICT,
+    CONSTRAINT roles_self_access_pair_check CHECK (
+        (self_access_user_id IS null) = (self_access_type_id IS null)
+    ),
     CONSTRAINT roles_name_check CHECK (
         length(name) BETWEEN 1 AND 128 AND name = btrim(name)
     ),
@@ -155,6 +169,60 @@ CREATE TABLE public.grant_fields (
 
 CREATE INDEX grant_fields_field_idx ON public.grant_fields (type_id, field_id);
 
+-- +goose StatementBegin
+CREATE FUNCTION public.guard_bound_role_identity() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+ IF NEW.self_access_user_id IS DISTINCT FROM OLD.self_access_user_id
+ OR NEW.self_access_type_id IS DISTINCT FROM OLD.self_access_type_id THEN
+  RAISE EXCEPTION 'role binding is immutable' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.guard_bound_role_membership() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM public.roles r WHERE r.id=NEW.role_id
+ AND r.self_access_user_id IS NOT NULL
+ AND r.self_access_user_id IS DISTINCT FROM NEW.user_id) THEN
+  RAISE EXCEPTION 'role belongs to another account' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.guard_bound_role_grant() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM public.roles r WHERE r.id=NEW.role_id
+ AND r.self_access_type_id IS NOT NULL
+ AND (r.self_access_type_id IS DISTINCT FROM NEW.type_id OR NEW.scope<>'content'
+      OR NEW.can_delegate OR NEW.operation='content.items.assign')) THEN
+  RAISE EXCEPTION 'grant is outside the bound role policy' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+
+CREATE TRIGGER role_binding_immutable
+BEFORE UPDATE OF self_access_user_id, self_access_type_id ON public.roles
+FOR EACH ROW EXECUTE FUNCTION public.guard_bound_role_identity();
+
+CREATE TRIGGER role_binding_membership
+BEFORE INSERT OR UPDATE ON public.user_roles
+FOR EACH ROW EXECUTE FUNCTION public.guard_bound_role_membership();
+
+CREATE TRIGGER role_binding_grant
+BEFORE INSERT OR UPDATE ON public.role_grants
+FOR EACH ROW EXECUTE FUNCTION public.guard_bound_role_grant();
+
+REVOKE ALL ON FUNCTION public.guard_bound_role_identity(),
+public.guard_bound_role_membership(),
+public.guard_bound_role_grant() FROM public;
+
 COMMENT ON TABLE public.grant_fields IS
 'Exact field identities in a concrete content grant; no implicit future '
 'fields.';
@@ -165,6 +233,12 @@ COMMENT ON TABLE public.roles IS
 
 COMMENT ON COLUMN public.roles.state IS
 'Only active roles grant permissions; restore returns disabled.';
+
+COMMENT ON COLUMN public.roles.self_access_user_id IS
+'Sole eligible member of a collection access role.';
+
+COMMENT ON COLUMN public.roles.self_access_type_id IS
+'Only collection that grants in this role can address.';
 
 COMMENT ON TABLE public.user_roles IS
 'Explicit account-role memberships; inactive accounts and roles '
@@ -260,13 +334,14 @@ public.role_grants,
 public.grant_fields TO sp_security;
 
 -- Role commands manage policy and state with column-level privileges.
-GRANT INSERT (id, name) ON public.roles TO sp_security;
+GRANT INSERT (id, name, self_access_user_id, self_access_type_id)
+ON public.roles TO sp_security;
 GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
 GRANT UPDATE (name, state, version) ON public.roles TO sp_security;
 GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
 GRANT INSERT, DELETE ON public.user_roles TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;
-GRANT SELECT (type_id, field_id) ON public.content_fields TO sp_security;
+GRANT SELECT (type_id, field_id, key) ON public.content_fields TO sp_security;
 
 REVOKE ALL ON public.content_item_assignments FROM public;
 GRANT SELECT, INSERT, DELETE ON public.content_item_assignments TO sp_security;
@@ -298,7 +373,8 @@ GRANT EXECUTE ON FUNCTION public.delete_archived_role(
 -- +goose Down
 DROP FUNCTION public.delete_archived_role(uuid, bigint);
 REVOKE SELECT (id, key) ON public.content_types FROM sp_security;
-REVOKE SELECT (type_id, field_id) ON public.content_fields FROM sp_security;
+REVOKE SELECT (type_id, field_id, key)
+ON public.content_fields FROM sp_security;
 REVOKE SELECT (id, type_id, version), UPDATE (version)
 ON public.content_items FROM sp_security;
 DROP TABLE public.content_item_assignments;
@@ -307,3 +383,6 @@ DROP TABLE public.role_grants;
 DROP TABLE public.permission_operations;
 DROP TABLE public.user_roles;
 DROP TABLE public.roles;
+DROP FUNCTION public.guard_bound_role_grant();
+DROP FUNCTION public.guard_bound_role_membership();
+DROP FUNCTION public.guard_bound_role_identity();

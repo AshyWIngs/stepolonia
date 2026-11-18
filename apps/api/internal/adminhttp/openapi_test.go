@@ -93,8 +93,40 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	if op.RequestBody == nil {
 		t.Fatalf("missing request body %s", path)
 	}
-	checkRegistryRequestExample(t, doc, op, rt)
+	switch {
+	case isRegistryOperation(rt.operationID):
+		checkManagedCollectionExample(t, op, rt)
+	case rt.operationID == accountFactorOperation:
+		checkFactorRequestExamples(t, doc, op, rt)
+	default:
+		checkRegistryRequestExample(t, doc, op, rt)
+	}
 	return op
+}
+
+func checkFactorRequestExamples(t *testing.T, doc privateDocument, op privateOperation, rt route) {
+	t.Helper()
+	media := op.RequestBody.Content[jsonMediaType]
+	schema := doc.Components.Schemas[strings.TrimPrefix(media.Schema.Ref, schemaPrefix)]
+	if schema == nil || len(schema.OneOf) != 2 {
+		t.Fatal("replacement requires preparation and confirmation request variants")
+	}
+	for _, variant := range schema.OneOf {
+		raw, err := json.Marshal(variant.Examples[0])
+		if err != nil || variant.AdditionalProperties != false || !allowedObject(raw, rt.fields, false) {
+			t.Fatal("replacement example rejected by its JSON boundary")
+		}
+	}
+}
+
+func checkManagedCollectionExample(t *testing.T, op privateOperation, rt route) {
+	t.Helper()
+	raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+	value, ok := decodeUniqueJSON(raw)
+	object, objectOK := value.(map[string]any)
+	if err != nil || !ok || !objectOK || !validRegistryInput(object, rt.operationID) {
+		t.Fatal("documented collection example rejected by transport")
+	}
 }
 
 func checkRegistryRequestExample(t *testing.T, doc privateDocument, op privateOperation, rt route) {
@@ -291,11 +323,13 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"authentication-sessions": {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
-		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
-		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
+		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
+		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 		"portal-settings":         {"settingsReadEditable", "settingsSaveDraft", "settingsPublish"},
-		"content-assignments":     {"contentReplaceAssignees"},
-		"content-drafts":          {"contentCreateDraft", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish"},
+		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
+		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
+		"account-security":        {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
+		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -354,13 +388,23 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	t.Helper()
 	media := op.RequestBody.Content[jsonMediaType]
 	schema := registry.SchemaFromRef(media.Schema.Ref)
-	if op.OperationID == "authLogout" || op.OperationID == "authCancelRecovery" {
+	switch op.OperationID {
+	case accountFactorOperation:
+		validatePrivateValue(t, registry, schema, op.OperationID, map[string]any{})
+		privateSchemaRejects(t, registry, schema, map[string]any{"replacement_token": strings.Repeat("A", 80)})
+		return
+	case "authLogout", "authCancelRecovery", accountCodesOperation, revokeSessionOperation, revokeAllSessionsOperation:
 		validatePrivateValue(t, registry, schema, op.OperationID, map[string]any{})
 		return
 	}
 	privateSchemaRejects(t, registry, schema, map[string]any{})
 	example := media.Example.(map[string]any)
 	for field := range schema.Properties {
+		if (op.OperationID == registryCreateOperation && field == "initial_access") ||
+			(op.OperationID == registryReviseOperation && field == "initialize_new_field_access") {
+			validatePrivateValue(t, registry, schema, op.OperationID, copyWithoutField(example, field))
+			continue
+		}
 		if op.OperationID == saveDraftOperation && !slices.Contains(schema.Required, field) {
 			continue
 		}

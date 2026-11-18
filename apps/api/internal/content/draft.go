@@ -84,7 +84,7 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, item string, expec
 				return err
 			}
 		}
-		if err := applyDraftPatch(ctx, tx, &state, schema, patch, nil); err != nil {
+		if err := applyDraftPatch(ctx, tx, &state, schema, patch, nil, nil); err != nil {
 			return err
 		}
 		out, err = s.commandResponse(ctx, tx, actor, item)
@@ -149,7 +149,10 @@ func patchValues(schema TypeSchema, scope string, current ScalarValues, patch Va
 	after, _ := json.Marshal(values)
 	return values, !bytes.Equal(before, after), nil
 }
-func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, patch DraftPatch, writeOnlyFields map[string]bool) error {
+func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, patch DraftPatch, writeOnlyFields map[string]bool, readable relationAccess) error {
+	if err := validateDraftLocaleLimit(state.Locales, patch.Locales); err != nil {
+		return err
+	}
 	sharedPatch := ValuePatch{patch.Shared, patch.UnsetShared}
 	changed, err := saveSharedPatch(ctx, tx, *state, schema, sharedPatch, touchesWriteOnlyField(sharedPatch, writeOnlyFields))
 	if err != nil {
@@ -159,20 +162,43 @@ func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema 
 	if err != nil {
 		return err
 	}
-	changed = changed || localeChanged
-	if patch.ReplaceRelations {
-		fresh, err := loadDraft(ctx, tx, state.ItemID)
-		if err != nil {
-			return err
-		}
-		relationsChanged, err := replaceRelations(ctx, tx, fresh, schema, patch.Relations)
-		if err != nil {
-			return err
-		}
-		changed = changed || relationsChanged
+	relationsChanged, err := applyDraftRelationPatch(ctx, tx, *state, schema, patch, readable)
+	if err != nil {
+		return err
 	}
-	if changed {
+	if changed || localeChanged || relationsChanged {
 		return advanceVersion(ctx, tx, state)
+	}
+	return nil
+}
+
+func applyDraftRelationPatch(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, patch DraftPatch, readable relationAccess) (bool, error) {
+	if len(patch.RelationChanges) != 0 {
+		if readable == nil || patch.ReplaceRelations {
+			return false, problem(Forbidden, relationEditDeniedCode)
+		}
+		err := applyDraftRelationChanges(ctx, tx, state, schema, patch.RelationChanges, readable)
+		return err == nil, err
+	}
+	if !patch.ReplaceRelations {
+		return false, nil
+	}
+	fresh, err := loadDraft(ctx, tx, state.ItemID)
+	if err != nil {
+		return false, err
+	}
+	return replaceRelations(ctx, tx, fresh, schema, patch.Relations)
+}
+
+func validateDraftLocaleLimit(existing map[string]LocaleDraft, changes map[string]ValuePatch) error {
+	total := len(existing)
+	for locale := range changes {
+		if _, found := existing[locale]; !found {
+			total++
+			if total > MaxDraftLocales {
+				return problem(Validation, "draft_locale_limit")
+			}
+		}
 	}
 	return nil
 }
@@ -284,5 +310,6 @@ func adoptDraftSchema(ctx context.Context, tx *sql.Tx, state *DraftState, curren
 	if err := advanceVersion(ctx, tx, state); err != nil {
 		return err
 	}
+	state.SchemaNo = current
 	return nil
 }

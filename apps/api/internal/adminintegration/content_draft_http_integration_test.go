@@ -41,8 +41,13 @@ func sendDraftRequest(t *testing.T, server *httptest.Server, method, token strin
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, server.URL+input.path, strings.NewReader(input.body))
 	requireNoError(t, err)
-	setAuthHTTPHeaders(req, server.URL, input.csrf)
-	req.AddCookie(&http.Cookie{Name: "__Host-sp_session", Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	if method == http.MethodGet {
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.Header.Set("Referer", server.URL+"/admin")
+	} else {
+		setAuthHTTPHeaders(req, server.URL, input.csrf)
+	}
+	req.AddCookie(&http.Cookie{Name: authFullSessionCookie, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	res, err := server.Client().Do(req)
 	requireNoError(t, err)
 	defer func() { _ = res.Body.Close() }()
@@ -133,5 +138,8 @@ func TestAdminDraftReadLocaleLimitHTTPSIntegration(t *testing.T) {
 	requireNoError(t, err)
 	req.status = http.StatusServiceUnavailable
 	sendDraftRequest(t, server, http.MethodGet, f.actor.Token, req)
+	req.body = `{"expected_version":"1","schema_no":"1","shared":{"headline":{"kind":"string","value":"Rejected"}}}`
+	req.csrf = f.actor.CSRF
+	sendDraftPatch(t, server, f.actor.Token, req)
 	assertDraftEditState(t, f.owner, draftEditItem, 1, initialDraftHeadline, initialDraftNote)
 }

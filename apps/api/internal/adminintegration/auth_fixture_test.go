@@ -19,11 +19,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"stepolonia/apps/api/internal/adminhttp"
+	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/testpostgres"
 )
+
+const previousTOTPCounterSQL = `UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`
 
 const currentDatabaseSQL = "SELECT current_database()"
 const publisherTestRole = "sp_publisher"
@@ -54,7 +57,7 @@ func authFixtureFromBootstrap(t *testing.T, db *sql.DB, bootstrap *identity.Boot
 	requireNoError(t, err)
 	// Use a previous accepted step so login tests never wait for a wall clock tick.
 	requireNoError(t, identity.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`, enrollment.UserID)
+		_, err := tx.ExecContext(ctx, previousTOTPCounterSQL, enrollment.UserID)
 		return err
 	}))
 	service, err := identity.NewAuthService(db, config)
@@ -112,12 +115,16 @@ func newAuthHTTPFixture(t *testing.T) authHTTPFixture {
 
 func newAuthHTTPFixtureWithHandler(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler) authHTTPFixture {
 	t.Helper()
-	return newAuthHTTPFixtureWithSettings(t, wrap, false)
+	return newAuthHTTPFixtureWithEditors(t, wrap, false)
 }
 
-func newAuthHTTPFixtureWithSettings(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler, settingsEnabled bool) authHTTPFixture {
+func newAuthHTTPFixtureWithEditors(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler, editorsEnabled bool) authHTTPFixture {
 	t.Helper()
-	f := authFixture(t)
+	owner, bootstrap, config := bootstrapFixture(t)
+	if editorsEnabled {
+		requireNoError(t, content.SeedInitialRegistry(context.Background(), owner))
+	}
+	f := authFixtureFromBootstrap(t, owner, bootstrap, config)
 	cfg := testpostgres.AdminConfig(t)
 	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	role := cfg.Database + "_auth"
@@ -135,14 +142,15 @@ func newAuthHTTPFixtureWithSettings(t *testing.T, wrap func(authFixtureState, ht
 	requireNoError(t, err)
 	requireNoError(t, service.CheckReady(context.Background()))
 	var settings *identity.AuthService
-	if settingsEnabled {
+	var editor adminhttp.DraftEditor
+	if editorsEnabled {
 		settingsDB := openDraftEditorLogin(t, f.db)
-		_, err := database.NewDraftEditor(context.Background(), settingsDB, f.config)
+		editor, err = database.NewDraftEditor(context.Background(), settingsDB, f.config)
 		requireNoError(t, err)
 		settings, err = identity.NewAuthService(settingsDB, f.config)
 		requireNoError(t, err)
 	}
-	server := newAuthTLSServerWithSettings(t, service, settings, func(auth http.Handler) http.Handler { return wrap(f, auth) })
+	server := newAuthTLSServerWithEditors(t, service, editor, settings, func(auth http.Handler) http.Handler { return wrap(f, auth) })
 	client := server.Client()
 	client.Jar, err = cookiejar.New(nil)
 	requireNoError(t, err)
@@ -151,15 +159,15 @@ func newAuthHTTPFixtureWithSettings(t *testing.T, wrap func(authFixtureState, ht
 
 func newAuthTLSServer(t *testing.T, service *identity.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
 	t.Helper()
-	return newAuthTLSServerWithSettings(t, service, nil, wrap)
+	return newAuthTLSServerWithEditors(t, service, nil, nil, wrap)
 }
 
-func newAuthTLSServerWithSettings(t *testing.T, service, settings *identity.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
+func newAuthTLSServerWithEditors(t *testing.T, service *identity.AuthService, editor adminhttp.DraftEditor, settings *identity.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
 	origin := "https://" + server.Listener.Addr().String()
-	auth, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: origin}, service, nil, settings)
+	auth, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: origin}, service, editor, settings)
 	requireNoError(t, err)
 	server.Config.Handler = wrap(auth)
 	server.StartTLS()

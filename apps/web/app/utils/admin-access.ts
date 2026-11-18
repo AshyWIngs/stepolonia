@@ -1,0 +1,136 @@
+import { administrationCommand, administrationRequest } from './admin-request'
+
+const usersPath = '/api/v1/admin/users'
+const rolesPath = '/api/v1/admin/roles'
+
+export interface AccessUser {
+  id: string
+  login: string
+  state: 'pending' | 'disabled' | 'active'
+  version: number
+}
+
+export interface AccessRole {
+  id: string
+  name: string
+  state: 'disabled' | 'active' | 'archived'
+  version: number
+  grants: RoleGrant[]
+}
+
+export interface RoleGrant {
+  operation: string
+  scope: 'installation' | 'content'
+  can_delegate: boolean
+  type_id?: string
+  object_scope?: 'type' | 'assigned' | 'any'
+  field_ids?: string[]
+  target_scope?: 'installation' | 'type'
+  object_ceiling?: 'assigned' | 'any'
+  may_delegate_content?: boolean
+  delegate_operations?: string[]
+}
+
+export interface RoleGrantOption extends Omit<RoleGrant, 'field_ids'> {
+  type_key?: string
+  fields?: { id: string, key: string }[]
+}
+
+export interface NamedSetOption {
+  id: string
+  state: string
+}
+
+export interface Membership extends NamedSetOption {
+  name: string
+}
+
+export interface Assignee extends NamedSetOption {
+  login: string
+}
+
+export interface MembershipSet {
+  user_id: string
+  version: number
+  role_ids: string[]
+  options: Membership[]
+  max_roles: number
+}
+
+export interface AssigneeSet {
+  item_id: string
+  version: string
+  assignee_ids: string[]
+  options: Assignee[]
+  max_assignees: number
+}
+
+interface OnboardingToken { token: string, expires_at: string, user: AccessUser }
+interface Page<T> { items: T[], next_offset: number | null }
+
+export type RoleAction = 'enable' | 'disable' | 'archive' | 'restore' | 'delete'
+
+function recordPath(path: string, id: string) {
+  return `${path}/${encodeURIComponent(id)}`
+}
+
+export function listAccessUsers(offset = 0) {
+  return administrationRequest<Page<AccessUser>>(`${usersPath}?offset=${offset}`)
+}
+
+export function createAccessUser(login: string, csrf: string) {
+  return administrationRequest<AccessUser>(usersPath, csrf, 'POST', { login })
+}
+
+export function issueInvitation(user: AccessUser, csrf: string) {
+  return administrationRequest<OnboardingToken>(`${recordPath(usersPath, user.id)}/onboarding-token`, csrf, 'POST', { expected_version: user.version })
+}
+
+export function changeUserState(user: AccessUser, command: 'activate' | 'disable', csrf: string) {
+  return administrationRequest<AccessUser>(`${recordPath(usersPath, user.id)}/${command}`, csrf, 'POST', { expected_version: user.version })
+}
+
+export function readMembership(user: AccessUser) {
+  return administrationRequest<MembershipSet>(`${recordPath(usersPath, user.id)}/roles`)
+}
+
+export function replaceMembership(set: MembershipSet, role_ids: string[], csrf: string) {
+  return administrationRequest<AccessUser>(`${recordPath(usersPath, set.user_id)}/roles`, csrf, 'PUT', { expected_version: set.version, role_ids })
+}
+
+export function listAccessRoles(offset = 0) {
+  return administrationRequest<Page<AccessRole>>(`${rolesPath}?offset=${offset}`)
+}
+
+export function roleGrantOptions() {
+  return administrationRequest<{ options: RoleGrantOption[] }>(`${rolesPath}/grant-options`)
+}
+
+export function saveAccessRole(role: AccessRole | undefined, name: string, grants: RoleGrant[], csrf: string) {
+  return role
+    ? administrationRequest<AccessRole>(recordPath(rolesPath, role.id), csrf, 'PATCH', { name, grants, expected_version: role.version })
+    : administrationRequest<AccessRole>(rolesPath, csrf, 'POST', { name, grants })
+}
+
+export function copyAccessRole(role: AccessRole, name: string, csrf: string) {
+  return administrationRequest<AccessRole>(`${recordPath(rolesPath, role.id)}/copy`, csrf, 'POST', { name, expected_version: role.version })
+}
+
+export function updateRoleState(role: AccessRole, action: RoleAction, csrf: string) {
+  const path = recordPath(rolesPath, role.id)
+  const payload = { expected_version: role.version }
+  if (action === 'delete') return administrationCommand(path, csrf, payload, 'DELETE')
+  return administrationRequest<AccessRole>(`${path}/${action}`, csrf, 'POST', payload)
+}
+
+function assigneePath(type: string, itemID: string) {
+  return `/api/v1/admin/content/${encodeURIComponent(type)}/${encodeURIComponent(itemID)}/assignees`
+}
+
+export function readAssignees(type: string, itemID: string) {
+  return administrationRequest<AssigneeSet>(assigneePath(type, itemID))
+}
+
+export function replaceAssignees(type: string, set: AssigneeSet, assignee_ids: string[], csrf: string) {
+  return administrationRequest<{ version: string }>(assigneePath(type, set.item_id), csrf, 'PUT', { expected_version: set.version, assignee_ids })
+}

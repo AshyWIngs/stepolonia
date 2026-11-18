@@ -88,7 +88,7 @@ func markLocaleReady(ctx context.Context, tx *sql.Tx, state *DraftState, schema 
 }
 func (s *Service) Unpublish(ctx context.Context, actor Actor, item string, expected, schemaNo int64) (DraftState, error) {
 	var out DraftState
-	err := s.withTx(ctx, actor, "content.items.unpublish", "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(identity.OpContentUnpublish), "", item, nil, func(ctx context.Context, tx *sql.Tx) error {
 		state, err := loadDraft(ctx, tx, item)
 		if err != nil {
 			return err
@@ -96,22 +96,27 @@ func (s *Service) Unpublish(ctx context.Context, actor Actor, item string, expec
 		if err := validateDraftVersions(state, expected, schemaNo); err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, actor, "content.items.unpublish", state.TypeID, item, nil); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(identity.OpContentUnpublish), state.TypeID, item, nil); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE public.content_items SET published_id=NULL WHERE id=$1`, item); err != nil {
-			return err
-		}
-		if err := resetReady(ctx, tx, item); err != nil {
-			return err
-		}
-		if err := advanceVersion(ctx, tx, &state); err != nil {
+		if err := unpublishDraft(ctx, tx, &state); err != nil {
 			return err
 		}
 		out, err = s.commandResponse(ctx, tx, actor, item)
 		return err
 	})
 	return out, err
+}
+
+func unpublishDraft(ctx context.Context, tx *sql.Tx, state *DraftState) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.content_items SET published_id=NULL WHERE id=$1`, state.ItemID); err != nil {
+		return err
+	}
+	if err := resetReady(ctx, tx, state.ItemID); err != nil {
+		return err
+	}
+	state.PublicationID = ""
+	return advanceVersion(ctx, tx, state)
 }
 
 func validateLocaleCandidate(schema TypeSchema, state DraftState, local LocaleDraft) error {

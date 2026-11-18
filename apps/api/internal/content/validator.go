@@ -65,7 +65,7 @@ func ValidateType(input TypeInput) error {
 }
 func validateDefinition(field Definition) error {
 	if field.Scope != scopeShared && field.Scope != scopeLocalized {
-		return problem(Validation, "invalid_scope")
+		return problem(Validation, invalidScopeCode)
 	}
 	if field.Visibility != visibilityPublic && field.Visibility != visibilityPrivate {
 		return problem(Validation, "invalid_visibility")
@@ -85,7 +85,7 @@ func validateConfig(field Definition, config fieldConfig) error {
 	}
 	if field.Kind == kindRelation {
 		if field.Required || field.TargetTypeID == "" {
-			return problem(Validation, "invalid_relation")
+			return problem(Validation, invalidRelationCode)
 		}
 	} else if field.TargetTypeID != "" {
 		return problem(Validation, "invalid_target")

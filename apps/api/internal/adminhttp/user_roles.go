@@ -64,7 +64,11 @@ func readUserRolesInput(w http.ResponseWriter, r *http.Request, rt route) (repla
 }
 
 func replacementRequest(w http.ResponseWriter, r *http.Request, rt route, ip string) (identity.AuthRequest, bool) {
-	req, _, err := requestSession(r, rt.kind, ip)
+	return requestWithID(w, r, rt.kind, ip)
+}
+
+func requestWithID(w http.ResponseWriter, r *http.Request, kind, ip string) (identity.AuthRequest, bool) {
+	req, _, err := requestSession(r, kind, ip)
 	if err != nil {
 		writeError(w, err)
 		return identity.AuthRequest{}, false

@@ -92,10 +92,25 @@ func (b boundary) check(r *http.Request) (string, string) {
 	if !b.validRequestOrigin(r, origins) {
 		return "", originCode
 	}
-	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && (r.Method != http.MethodGet || (r.URL.Path != usersPath && r.URL.Path != rolesPath)) {
+	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && !allowsPageQuery(r) {
 		return "", validationCode
 	}
 	return ip, ""
+}
+
+func allowsPageQuery(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	switch r.URL.Path {
+	case usersPath, rolesPath, contentCollectionsPath, accountSessionsPath, auditPath:
+		return true
+	}
+	if path, _ := userRoutePath(r.URL.Path); path == targetSessionsPath {
+		return true
+	}
+	_, collection := createDraftTarget(r.URL.Path)
+	return collection
 }
 
 func validPort(u *url.URL) bool {
@@ -128,17 +143,7 @@ func (b boundary) validRequestOrigin(r *http.Request, origins []string) bool {
 	return err == nil && ref.Scheme == httpsScheme && ref.Host == b.authority && ref.User == nil && ref.Opaque == "" && ref.Fragment == ""
 }
 
-func safeReadPath(raw string) bool {
-	if raw == authPrefix+"/csrf" || raw == settingsPath {
-		return true
-	}
-	user, _ := userRoutePath(raw)
-	if user == usersPath || user == userPath {
-		return true
-	}
-	if _, ok := contentDraftTarget(raw); ok {
-		return true
-	}
-	role, _ := roleRoutePath(raw)
-	return role == rolesPath || role == rolePath
+func safeReadPath(path string) bool {
+	rt, _, ok := resolveRoute(path, http.MethodGet, true)
+	return ok && rt.method == http.MethodGet
 }

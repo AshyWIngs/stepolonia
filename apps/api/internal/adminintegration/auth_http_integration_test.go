@@ -76,7 +76,7 @@ func authResponseRequestID(t *testing.T, res *http.Response) string {
 func assertAuthCookiesCleared(t *testing.T, res *http.Response) {
 	t.Helper()
 	expected := map[string]bool{
-		"__Host-sp_session":    true,
+		authFullSessionCookie:  true,
 		"__Host-sp_preauth":    true,
 		"__Host-sp_login":      true,
 		"__Host-sp_recovery":   true,

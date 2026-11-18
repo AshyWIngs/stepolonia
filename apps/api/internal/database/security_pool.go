@@ -107,12 +107,14 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  WHERE e.privilege IN ('SELECT','INSERT','UPDATE','REFERENCES') AND
  pg_catalog.has_column_privilege(r.oid,e.oid,col.attnum,e.privilege)<>
  (e.allowed OR $2 AND pg_catalog.has_column_privilege('sp_publisher',e.oid,col.attnum,e.privilege)
- OR e.privilege='INSERT' AND e.relname='roles' AND col.attname IN ('id','name')
+ OR e.privilege='INSERT' AND e.relname='roles'
+    AND col.attname IN ('id','name','self_access_user_id','self_access_type_id')
  OR e.privilege='UPDATE' AND e.relname='roles' AND col.attname IN ('name','state','version')
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
  OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')
  OR e.relname='content_items' AND col.attname IN ('id','type_id','version')
- OR e.relname='content_fields' AND col.attname IN ('type_id','field_id'))))
+ OR e.relname='content_fields' AND col.attname IN ('type_id','field_id','key')
+ OR e.relname='security_audit' AND col.attname IN ('id','occurred_at','operation','result','reason','actor_id','target_id','request_id'))))
  FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login, contentEditor).Scan(&safe)
 	if err != nil {
 		return fmt.Errorf("check authentication pool privileges: %w", err)

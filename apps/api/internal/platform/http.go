@@ -62,14 +62,19 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
+		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit"} {
+			mux.Handle("/api/v1/admin/"+path, auth)
+		}
 		mux.Handle("/api/v1/admin/settings", auth)
 		mux.Handle("/api/v1/admin/settings/publish", auth)
 		mux.Handle("/api/v1/admin/users", auth)
 		mux.Handle("/api/v1/admin/users/", auth)
 		mux.Handle("/api/v1/admin/roles", auth)
 		mux.Handle("/api/v1/admin/roles/", auth)
+		mux.Handle("/api/v1/admin/content-types", auth)
+		mux.Handle("/api/v1/admin/content-types/{type_key}", auth)
 		const draftPath = "/api/v1/admin/content/{type_key}/{item_id}"
-		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish"} {
+		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish", "/schema", "/adopt-schema", "/unpublish"} {
 			mux.Handle(draftPath+suffix, auth)
 		}
 		mux.Handle("/api/v1/admin/content/{type_key}", auth)

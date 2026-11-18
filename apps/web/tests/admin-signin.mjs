@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
 assert.equal(endpoint.protocol, 'https:')
@@ -147,7 +148,7 @@ async function verifySettingsPublication(page, context) {
   await publishDraft.click()
   const messageAlert = page.getByRole('alert')
   await messageAlert.waitFor()
-  assert.equal(await messageAlert.textContent(), 'Complete each selected translation.')
+  assert.equal(await messageAlert.textContent(), 'Check the portal fields and complete each selected translation.')
   assert.equal(await confirmation.count(), 0)
   assert.deepEqual(await readPublicSite(context), oldSite)
 
@@ -188,21 +189,127 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
+async function verifyTypeBuilder(page) {
+  await page.getByRole('button', { name: 'Type Builder', exact: true }).click()
+  const renderer = page.getByRole('combobox', { name: 'Renderer and collection', exact: true })
+  await renderer.selectOption('event')
+  const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
+  assert.equal(await initial.isChecked(), false)
+  await initial.check()
+  await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+  await page.getByText('Collection created.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
+  await page.getByLabel('Field key', { exact: true }).fill('subtitle')
+  await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
+  await page.getByRole('button', { name: 'Save schema changes', exact: true }).click()
+  await page.getByText('Current schema 2', { exact: true }).waitFor()
+  await page.getByText('Collection changes saved.', { exact: true }).waitFor()
+  const articleSchema = '**/api/v1/admin/content-types/article'
+  await page.route(articleSchema, route => route.fulfill({ status: 503, json: { code: 'security_unavailable' } }))
+  await renderer.selectOption('article')
+  await page.getByRole('alert').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Save schema changes', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Create collection', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
+  await page.unroute(articleSchema)
+  await page.getByRole('button', { name: 'Reload collection', exact: true }).click()
+  await page.getByRole('group', { name: 'title', exact: true }).waitFor()
+  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+}
+
+async function verifyContentWorkflow(page, context, { type, namespace, slug, title, checkLayout = false }) {
+  await page.getByRole('button', { name: 'Content', exact: true }).click()
+  const collection = page.getByRole('combobox', { name: 'Collection', exact: true })
+  await collection.selectOption(type)
+  const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
+  await create.waitFor()
+  await create.focus()
+  await page.keyboard.press('Enter')
+  const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
+  await editor.getByLabel(/^title(?: \(|$)/).waitFor()
+  await editor.getByLabel(/^title(?: \(|$)/).fill(title)
+  await editor.getByLabel(/^slug(?: \(|$)/).fill(slug)
+  const bodyField = editor.getByLabel(/^body(?: \(|$)/)
+  if (await bodyField.count()) await bodyField.fill('An editorial draft.')
+  const optionalField = editor.getByLabel('subtitle', { exact: true })
+  if (await optionalField.count()) await optionalField.fill('Private editor text.')
+  if (checkLayout) await assertEditorLayouts(page, editor)
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+
+  const apiPath = `/api/v1/content/${type}/${slug}?language=en`
+  const publicPath = `/en/${namespace}/${slug}`
+  const request = path => context.request.get(new URL(path, origin).href)
+  assert.equal((await request(apiPath)).status(), 404)
+  await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).click()
+  await editor.getByText('Shared fields are ready.', { exact: true }).waitFor()
+  await editor.getByRole('button', { name: 'Mark translation ready', exact: true }).click()
+  await editor.getByText('This translation is ready.', { exact: true }).waitFor()
+
+  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  const publish = editor.getByRole('region', { name: 'Publish the selected translations?', exact: true })
+  await publish.getByRole('button', { name: 'Confirm', exact: true }).click()
+  const link = editor.getByRole('link', { name: publicPath, exact: true })
+  await link.waitFor()
+  assert.equal(await link.getAttribute('href'), publicPath)
+  const published = await request(apiPath)
+  assert.equal(published.status(), 200)
+  const body = await published.json()
+  assert.equal(body.localized.title.value, title)
+  assert.equal(Object.hasOwn(body.localized, 'subtitle'), false)
+  const rendered = await request(publicPath)
+  assert.equal(rendered.status(), 200)
+  assert.ok((await rendered.text()).includes(title))
+
+  await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
+  const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
+  await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
+  await editor.getByText('Publication removed.', { exact: true }).waitFor()
+  assert.equal((await request(apiPath)).status(), 404)
+  assert.equal((await request(publicPath)).status(), 404)
+  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+}
+
+async function assertEditorLayouts(page, editor) {
+  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
+  const verifyViewport = async (width, height) => {
+    await page.setViewportSize({ width, height })
+    const verifyTheme = async value => {
+      await theme.selectOption(value)
+      await assertTheme(page, value, value)
+      await assertFit(page)
+      assert.ok(await editor.getByRole('button', { name: 'Save draft', exact: true }).isVisible())
+      console.log(`Draft editor visible at ${width}×${height} in ${value} mode`)
+    }
+    await verifyTheme('light')
+    await verifyTheme('dark')
+  }
+  await verifyViewport(1440, 900)
+  await verifyViewport(768, 1024)
+  await verifyViewport(390, 844)
+  await page.setViewportSize({ width: 320, height: 844 })
+  await assertFit(page)
+}
+
 async function assertPublishedLocales(page) {
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
   const language = page.getByRole('combobox', { name: 'Language', exact: true })
-  assert.deepEqual(await language.getByRole('option').allTextContents(), ['English', 'Français (rédaction QA)'])
-  await language.selectOption('fr')
-  await heading(page, 'Connexion à la rédaction').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'fr')
+  assert.deepEqual(await language.getByRole('option').evaluateAll(options => options.map(option => option.value)), ['en', 'kk', 'pl', 'ru'])
+  await eachInOrder([['kk', 'Кіру'], ['ru', 'Вход'], ['pl', 'Zaloguj się']], async ([locale, name]) => {
+    await page.locator('#admin-language').selectOption(locale)
+    await heading(page, name).waitFor()
+    await page.waitForFunction(value => document.documentElement.lang === value, locale)
+  })
   const localized = await page.reload()
   assert.equal(localized.status(), 200)
-  assert.match(await localized.text(), /<html[^>]+lang="fr"/u)
-  await heading(page, 'Connexion à la rédaction').waitFor()
-  const langue = page.getByRole('combobox', { name: 'Langue', exact: true })
-  assert.equal(await langue.inputValue(), 'fr')
-  await langue.selectOption('en')
+  assert.match(await localized.text(), /<html[^>]+lang="pl"/u)
+  await heading(page, 'Zaloguj się').waitFor()
+  const polish = page.getByRole('combobox', { name: 'Język', exact: true })
+  assert.equal(await polish.inputValue(), 'pl')
+  await polish.selectOption('en')
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
 }
@@ -220,6 +327,10 @@ try {
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifySettingsPublication(page, context)
+  await verifyTypeBuilder(page)
+  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })
+  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slug: 'community-workshop', title: 'Community workshop' })
+  await verifyAccessAdministration(browser, page, origin, assertTheme, assertFit)
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')
