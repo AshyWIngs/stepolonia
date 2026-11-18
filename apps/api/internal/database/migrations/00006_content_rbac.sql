@@ -243,7 +243,29 @@ GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;
 GRANT SELECT (type_id, field_id) ON public.content_fields TO sp_security;
 
+-- Every field dependency belongs to a role grant.
+-- +goose StatementBegin
+CREATE FUNCTION public.delete_archived_role(
+    role_id uuid, expected_version bigint
+) RETURNS boolean
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+ WITH deleted AS (
+  DELETE FROM public.roles AS r
+  WHERE r.id = $1 AND r.version = $2 AND r.state = 'archived'
+  AND NOT EXISTS (SELECT 1 FROM public.user_roles AS m WHERE m.role_id = r.id)
+  AND NOT EXISTS (SELECT 1 FROM public.role_grants AS g WHERE g.role_id = r.id)
+  RETURNING r.id
+ )
+ SELECT EXISTS (SELECT 1 FROM deleted);
+$$;
+-- +goose StatementEnd
+REVOKE ALL ON FUNCTION public.delete_archived_role(uuid, bigint) FROM public;
+GRANT EXECUTE ON FUNCTION public.delete_archived_role(
+    uuid, bigint
+) TO sp_security;
+
 -- +goose Down
+DROP FUNCTION public.delete_archived_role(uuid, bigint);
 REVOKE SELECT (id) ON public.content_types FROM sp_security;
 REVOKE SELECT (type_id, field_id) ON public.content_fields FROM sp_security;
 DROP TABLE public.grant_fields;

@@ -64,7 +64,8 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relowner=r.oid)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=r.oid)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace
- AND pg_catalog.has_function_privilege(r.oid,p.oid,'EXECUTE'))
+ AND pg_catalog.has_function_privilege(r.oid,p.oid,'EXECUTE')<>
+ (p.oid='public.delete_archived_role(uuid,bigint)'::regprocedure))
  AND pg_catalog.has_schema_privilege(r.oid,'public','USAGE')
  AND NOT EXISTS (SELECT 1 FROM expected e WHERE
  pg_catalog.has_table_privilege(r.oid,e.oid,e.privilege)<>e.allowed)

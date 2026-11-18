@@ -282,7 +282,7 @@ CREATE TABLE public.security_audit (
             'auth.step_up',
             'users.created', 'users.onboarding_issued',
             'roles.created', 'roles.edited', 'roles.enabled', 'roles.disabled',
-            'roles.archived', 'roles.restored',
+            'roles.archived', 'roles.restored', 'roles.copied', 'roles.deleted',
             'users.activated', 'users.disabled',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',

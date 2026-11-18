@@ -41,6 +41,7 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	defer func() { _ = security.Close() }()
 	requireNoError(t, CheckSecurity(ctx, security))
 	testSecurityLoginIdentity(t, cfg)
+	testRestrictedRoleDelete(t, db, security)
 	for _, query := range []string{
 		`SELECT * FROM public.public_content_items`,
 		`SELECT * FROM public.security_audit`,
@@ -68,6 +69,44 @@ func TestAuthSchemaIntegration(t *testing.T) {
 		t.Fatal("authentication pool accepted publisher membership")
 	}
 	_, err = db.Exec("REVOKE sp_publisher FROM " + quoted)
+	requireNoError(t, err)
+	requireNoError(t, CheckSecurity(ctx, security))
+}
+
+func testRestrictedRoleDelete(t *testing.T, owner, security *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	const deleteRole = "SELECT public.delete_archived_role($1,$2)"
+	var roleID string
+	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'disposable') RETURNING id`).Scan(&roleID))
+	assertDelete := func(version int64, want bool) {
+		t.Helper()
+		var deleted bool
+		requireNoError(t, security.QueryRow(deleteRole, roleID, version).Scan(&deleted))
+		if deleted != want {
+			t.Fatalf("delete_archived_role version %d returned %v, want %v", version, deleted, want)
+		}
+	}
+	assertDelete(1, false)
+	_, err := owner.Exec(`UPDATE public.roles SET state='archived',version=2 WHERE id=$1`, roleID)
+	requireNoError(t, err)
+	assertDelete(1, false)
+	_, err = owner.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,'roles.read')`, roleID)
+	requireNoError(t, err)
+	assertDelete(2, false)
+	_, err = owner.Exec(`DELETE FROM public.role_grants WHERE role_id=$1`, roleID)
+	requireNoError(t, err)
+	assertDelete(2, true)
+	assertDelete(2, false)
+
+	_, err = owner.Exec(`REVOKE EXECUTE ON FUNCTION public.delete_archived_role(uuid,bigint) FROM sp_security`)
+	requireNoError(t, err)
+	if CheckSecurity(ctx, security) == nil {
+		t.Fatal("missing restricted delete privilege accepted")
+	}
+	_, err = security.Exec(deleteRole, roleID, 2)
+	assertSQLState(t, err, "42501")
+	_, err = owner.Exec(`GRANT EXECUTE ON FUNCTION public.delete_archived_role(uuid,bigint) TO sp_security`)
 	requireNoError(t, err)
 	requireNoError(t, CheckSecurity(ctx, security))
 }

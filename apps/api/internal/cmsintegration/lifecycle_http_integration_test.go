@@ -135,13 +135,16 @@ const assert=require('node:assert/strict');
   async function send(path,body,csrf,status,method='POST') {
    const result=await page.evaluate(async({path,body,csrf,method})=>{
     const response=await fetch(path,body===undefined?{}:{method,headers:{'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:JSON.stringify(body)});
-    return {status:response.status,body:await response.json(),cache:response.headers.get('Cache-Control')};
+    return {status:response.status,body:response.status===204?await response.text():await response.json(),cache:response.headers.get('Cache-Control')};
    },{path,body,csrf,method});
    assert.equal(result.status,status,'Unexpected status at '+path);assert.equal(result.cache,'no-store');return result.body;
   }
   const auth='/api/v1/admin/auth',users='/api/v1/admin/users';
   const pre=await send(auth+'/csrf',undefined,undefined,200);
   const login=await send(auth+'/login',{login:process.env.LIFECYCLE_LOGIN,password:process.env.LIFECYCLE_PASSWORD},pre.csrf_token,200);
+  const roleProbe='/api/v1/admin/roles/00000000-0000-4000-8000-000000000099';
+  await send(roleProbe+'/copy',{name:'Restricted clone',expected_version:1},login.csrf_token,401);
+  await send(roleProbe,{expected_version:1},login.csrf_token,401,'DELETE');
   const full=await send(auth+'/mfa/verify',{code:process.env.LIFECYCLE_CODE},login.csrf_token,200);
   const cookies=await context.cookies(origin);const cookie=cookies.find(c=>c.name==='__Host-sp_session');
   assert(cookie&&cookie.secure&&cookie.httpOnly&&cookie.sameSite==='Strict'&&cookie.path==='/');
@@ -169,6 +172,19 @@ const assert=require('node:assert/strict');
   assert.equal(edited.state,'disabled');assert.equal(edited.version,2);assert.deepEqual(edited.grants,[]);
   const stale=await send(rolePath,patch,full.csrf_token,409,'PATCH');assert.equal(stale.code,'version_conflict');
   await send(rolePath,{...patch,expected_version:2,actor_id:created.id},full.csrf_token,400,'PATCH');
+  const cloneBody={name:'Browser clone',expected_version:edited.version};
+  await send(rolePath+'/copy',cloneBody,undefined,403);
+  await send(rolePath+'/copy',{...cloneBody,grants:[]},full.csrf_token,400);
+  const clone=await send(rolePath+'/copy',cloneBody,full.csrf_token,200);
+  assert.notEqual(clone.id,edited.id);assert.equal(clone.state,'disabled');assert.equal(clone.version,1);
+  const clonePath=roles+'/'+clone.id;
+  const invalidDelete=await send(clonePath,{expected_version:clone.version},full.csrf_token,409,'DELETE');
+  assert.equal(invalidDelete.code,'invalid_transition');
+  const archived=await send(clonePath+'/archive',{expected_version:clone.version},full.csrf_token,200);
+  await send(clonePath,{expected_version:archived.version},undefined,403,'DELETE');
+  await send(clonePath,{expected_version:archived.version,grants:[]},full.csrf_token,400,'DELETE');
+  assert.equal(await send(clonePath,{expected_version:archived.version},full.csrf_token,204,'DELETE'),'');
+  await send(clonePath,undefined,undefined,404);
   let version=edited.version;
   for (const [action,state] of [['enable','active'],['disable','disabled'],['archive','archived'],['restore','disabled']]) {
    const path=rolePath+'/'+action, body={expected_version:version};

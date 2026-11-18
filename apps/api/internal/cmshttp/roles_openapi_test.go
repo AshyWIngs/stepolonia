@@ -10,8 +10,8 @@ const expectedRolesTag = "roles"
 
 func TestPrivateRolesContract(t *testing.T) {
 	doc, _ := readPrivateDocument(t)
-	for _, path := range []string{rolesPath, rolePath} {
-		if len(doc.Paths[path]) != 2 {
+	for path, count := range map[string]int{rolesPath: 2, rolePath: 3} {
+		if len(doc.Paths[path]) != count {
 			t.Fatal("role operation registry drifted", path)
 		}
 		assertRoleReadContract(t, doc.Paths[path]["get"])
@@ -90,14 +90,53 @@ func TestPrivateRoleStateContract(t *testing.T) {
 	}
 }
 
+const expectedRoleVersionProperty = "expected_version"
+
 func assertRoleVersionSchema(t *testing.T, doc privateDocument, op privateOperation) {
 	t.Helper()
 	input := doc.Components.Schemas[op.OperationID+"Request"]
-	if input == nil || len(input.Properties) != 1 || !slices.Equal(input.Required, []string{"expected_version"}) || input.AdditionalProperties != false {
+	if input == nil || len(input.Properties) != 1 || !slices.Equal(input.Required, []string{expectedRoleVersionProperty}) || input.AdditionalProperties != false {
 		t.Fatal("role state command must accept only expected_version", op.OperationID)
 	}
-	version := input.Properties["expected_version"]
+	version := input.Properties[expectedRoleVersionProperty]
 	if version.Type != "integer" || version.Minimum == nil || *version.Minimum != 1 {
 		t.Fatal("role version must be positive", op.OperationID)
+	}
+}
+
+func TestPrivateRoleCopyDeleteContract(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	copyOp := doc.Paths["/api/v1/admin/roles/{id}/copy"]["post"]
+	deleteOp := doc.Paths["/api/v1/admin/roles/{id}"]["delete"]
+	if copyOp.OperationID != "rolesCopy" || deleteOp.OperationID != "rolesDelete" {
+		t.Fatal("role copy/delete operation identities drifted")
+	}
+	assertRoleCommandSecurity(t, copyOp)
+	assertRoleCommandSecurity(t, deleteOp)
+	assertRoleVersionSchema(t, doc, deleteOp)
+	if _, ok := deleteOp.Responses["409"].Content["application/problem+json"].Examples["role_in_use"]; !ok {
+		t.Fatal("missing role_in_use delete conflict")
+	}
+	input := doc.Components.Schemas[copyOp.OperationID+"Request"]
+	if input == nil || input.AdditionalProperties != false || len(input.Properties) != 2 || !slices.Equal(input.Required, []string{"name", expectedRoleVersionProperty}) {
+		t.Fatal("copy must accept only a new name and source version")
+	}
+	if copyOp.Responses["200"].Content["application/json"].Schema.Ref != "#/components/schemas/Role" {
+		t.Fatal("copy must return a role")
+	}
+	if success, ok := deleteOp.Responses["204"]; !ok || len(success.Content) != 0 {
+		t.Fatal("delete must return an empty response")
+	}
+}
+
+func assertRoleCommandSecurity(t *testing.T, op privateOperation) {
+	t.Helper()
+	if !slices.Equal(op.Tags, []string{expectedRolesTag}) || len(op.Security) != 1 || op.Security[0]["__Host-sp_session"] == nil {
+		t.Fatal("role command group or auth scheme drifted", op.OperationID)
+	}
+	for _, status := range []string{"403", "404", "409", "429", "503"} {
+		if _, ok := op.Responses[status]; !ok {
+			t.Fatal("missing role command response", op.OperationID, status)
+		}
 	}
 }

@@ -90,6 +90,10 @@ func TestAuthRolesCapacityIntegration(t *testing.T) {
 	requireNoError(t, err)
 	_, err = f.service.CreateRole(context.Background(), authReq(full), rolesInput("Over capacity"))
 	onboardingError(t, err, cms.ErrInvalidTransition)
+	var sourceID string
+	requireNoError(t, f.db.QueryRow(`SELECT id FROM public.roles WHERE name_key='role-cap-1'`).Scan(&sourceID))
+	_, err = f.service.CopyRole(context.Background(), authReq(full), sourceID, 1, "Copy over capacity")
+	onboardingError(t, err, cms.ErrInvalidTransition)
 	_, err = f.db.Exec(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'drift over capacity')`)
 	requireNoError(t, err)
 	_, err = f.service.ListRoles(context.Background(), authReq(full), cms.RolePage{})
