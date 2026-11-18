@@ -7,8 +7,8 @@ import (
 	"stepolonia/apps/api/internal/content"
 )
 
-// Up проверяет известную структуру до goose и обновляет публичные права после миграций.
-// Повторный запуск также проверяет дрейф, хотя goose уже не выполняет SQL миграций.
+// Up checks the existing schema before Goose and refreshes public grants afterward.
+// Repeated runs check for drift even when no migration runs.
 func Up(ctx context.Context, db *sql.DB, runtime string) error {
 	if err := CheckRuntime(ctx, db, runtime); err != nil {
 		return err
@@ -50,11 +50,11 @@ func CheckSchema(ctx context.Context, db *sql.DB) error {
 	return checkDefinitions(ctx, db, true)
 }
 
-// Down допускает откат только в явно помеченной одноразовой БД.
-// Токен передаётся вызывающим кодом из окружения, а не из аргументов процесса.
+// Down rolls back only an explicitly marked disposable database.
+// Callers obtain the disposable token from the environment.
 func Down(ctx context.Context, db *sql.DB, token string) error {
 	if token == "" {
-		return fmt.Errorf("для down требуется DB_DISPOSABLE_TOKEN одноразовой БД")
+		return fmt.Errorf("down requires DB_DISPOSABLE_TOKEN for the disposable database")
 	}
 	var disposable bool
 	err := db.QueryRowContext(ctx, `SELECT left(current_database(),8)='stage12_'
@@ -64,7 +64,7 @@ func Down(ctx context.Context, db *sql.DB, token string) error {
 		return err
 	}
 	if !disposable {
-		return fmt.Errorf("down разрешён только для помеченной одноразовой БД stage12_")
+		return fmt.Errorf("down requires a marked disposable stage12_ database")
 	}
 	if err := CheckSchema(ctx, db); err != nil {
 		return err

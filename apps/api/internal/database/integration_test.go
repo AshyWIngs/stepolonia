@@ -39,7 +39,7 @@ func disposableDatabaseConfig(t *testing.T) *pgx.ConnConfig {
 	return cfg
 }
 
-// Пути задаёт собственный disposable harness, а не внешний запрос.
+// The disposable test harness supplies these paths.
 func readDisposablePassword(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -89,4 +89,4 @@ func assertSQLState(t *testing.T, err error, want string) {
 	}
 }
 
-// Наблюдаем реальное ожидание блокировки PostgreSQL; timeout только ограничивает сломанный тест.
+// Observe a real PostgreSQL lock wait with a timeout for test failures.

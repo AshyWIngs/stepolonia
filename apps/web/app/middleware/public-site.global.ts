@@ -7,8 +7,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const error = useError().value
   const serializedError: Partial<ReturnType<NuxtError['toJSON']>> | undefined = error ?? undefined
   const unavailable = (error?.status ?? serializedError?.statusCode) === 503
-  // Nuxt повторяет middleware при SSR ошибки и её гидрации. Повторный запрос
-  // недоступного API удвоил бы timeout до предела внешнего proxy вместо готового 503.
+  // Nuxt reruns middleware during error rendering and hydration. Retrying the
+  // unavailable API could hit the proxy timeout before rendering the 503 response.
   if (unavailable && (import.meta.server || app.isHydrating)) return
   await usePublicSite().load(to.fullPath, import.meta.client && !app.isHydrating)
 })

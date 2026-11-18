@@ -10,7 +10,7 @@ defineOptions({ name: 'PortalHomePage' })
 
 const { publication } = usePublicSite()
 const saved = useContentLanguageCookie()
-// Только сериализованный SSR header: navigator.languages мог бы изменить выбор после гидрации.
+// Use the serialized SSR header to keep the language choice stable through hydration.
 const accepted = useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 if (!publication.value) throw publicError(503)
 const content = usePublicContent()

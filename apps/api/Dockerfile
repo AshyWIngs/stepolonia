@@ -1,5 +1,5 @@
 FROM golang:1.27.4-alpine3.24 AS dependencies
-# Доступные обновления musl/zlib из репозитория той же ветки Alpine.
+# Apply musl and zlib updates from the same Alpine release.
 RUN apk upgrade --no-cache musl zlib
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -11,9 +11,9 @@ RUN test -s go.sum && test -d /go/pkg/mod/github.com
 FROM dependencies AS source
 COPY . .
 
-# Проверки запускаются явно: make test / docker build --target checks.
+# Run source checks with make test or the Docker checks target.
 FROM source AS checks
-# C compiler нужен race detector; production-бинарник собирается с CGO_ENABLED=0.
+# The race detector requires a C compiler. The production binary disables CGO.
 RUN apk add --no-cache gcc musl-dev \
     && test -z "$(gofmt -l .)" \
     && go vet ./... \

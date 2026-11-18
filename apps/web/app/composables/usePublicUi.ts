@@ -9,7 +9,7 @@ export function usePublicUi() {
   watchEffect(() => {
     const current = publication.value
     if (!current) return
-    // Go уже выбрал опубликованный каталог или DB fallback; старые сообщения не участвуют в поиске.
+    // Use the published catalog selected by the Go API, including its fallback when needed.
     setLocaleMessage(current.language.code, current.messages)
     fallbackLocale.value = false
     locale.value = current.language.code

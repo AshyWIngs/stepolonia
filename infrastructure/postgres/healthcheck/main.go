@@ -19,11 +19,11 @@ func main() {
 func check() error {
 	user, database := os.Getenv("DB_USER"), os.Getenv("POSTGRES_DB")
 	if user == "" || database == "" {
-		return fmt.Errorf("не заданы DB_USER и POSTGRES_DB")
+		return fmt.Errorf("DB_USER and POSTGRES_DB are required")
 	}
 	password, err := os.ReadFile("/run/secrets/db_app_password")
 	if err != nil || strings.TrimSpace(string(password)) == "" {
-		return fmt.Errorf("не удалось прочитать пароль runtime-роли")
+		return fmt.Errorf("could not read the runtime role password")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -33,12 +33,12 @@ func check() error {
 	cmd := exec.CommandContext(ctx, "/usr/libexec/postgresql18/psql",
 		"-X", "--no-password", "--host=127.0.0.1", "--username="+user,
 		"--dbname="+database, "--set=ON_ERROR_STOP=1", "--tuples-only", "--no-align", "--command="+query)
-	// Пароль не попадает в argv, вывод healthcheck или конфигурацию контейнера.
+	// Keep the password out of argv, probe output, and container configuration.
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+strings.TrimSpace(string(password)),
 		"PGCONNECT_TIMEOUT=2", "PGOPTIONS=-c statement_timeout=1500")
 	output, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(output)) != "t" {
-		return fmt.Errorf("проверка соединения или прав runtime-роли не пройдена")
+		return fmt.Errorf("runtime connection or privilege check failed")
 	}
 	return nil
 }

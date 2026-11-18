@@ -8,6 +8,11 @@ import (
 	"stepolonia/apps/api/internal/content"
 )
 
+const (
+	articleRouteNamespace = "articles"
+	eventRouteNamespace   = "events"
+)
+
 // Article returns the published Article shown in the public API documentation.
 func Article() content.PublicItem {
 	return localizedItem(content.PublicItem{
@@ -16,7 +21,7 @@ func Article() content.PublicItem {
 		PublicationID: "22222222-2222-4222-8222-222222222222",
 		Language:      "pl", Slug: "welcome-to-stepolonia",
 		Shared: map[string]content.PublicFieldValue{}, Relations: []content.PublicRelation{},
-	}, "articles", "Welcome to Stepolonia", "Community stories and **events**.")
+	}, articleRouteNamespace, "Witaj w Stepolonii", "Historie naszej społeczności i zapowiedzi **wydarzeń**.")
 }
 
 // SecondArticle provides a second published item for offset pagination examples.
@@ -28,7 +33,7 @@ func SecondArticle() content.PublicItem {
 		PublicationID: "99999999-9999-4999-8999-999999999999",
 		Language:      article.Language, Slug: "community-news",
 		Shared: map[string]content.PublicFieldValue{}, Relations: []content.PublicRelation{},
-	}, "articles", "Community news", "Read the latest community news.")
+	}, articleRouteNamespace, "Aktualności społeczności", "Przeczytaj najnowsze wiadomości z naszej społeczności.")
 }
 
 // Event returns the published Event with exact scalar codecs and an Article relation.
@@ -48,7 +53,7 @@ func Event() content.PublicItem {
 				{ItemID: article.ItemID, CanonicalURL: article.CanonicalURL},
 			}},
 		},
-	}, "events", "Community meetup", "Meet the **Stepolonia** community.")
+	}, eventRouteNamespace, "Spotkanie społeczności", "Poznaj społeczność **Stepolonii**.")
 }
 
 // EventSchema defines the pinned Registry schema used by the synthetic Event.
@@ -64,7 +69,7 @@ func EventSchema(articleTypeID string) content.TypeSchema {
 	event := Event()
 	schema := content.TypeSchema{
 		TypeID: "66666666-6666-4666-8666-666666666666",
-		Key:    event.TypeKey, Version: 1, SchemaNo: 1, RouteNamespace: "events",
+		Key:    event.TypeKey, Version: 1, SchemaNo: 1, RouteNamespace: eventRouteNamespace,
 		Fields: []content.Definition{
 			{Key: "title", Kind: shortTextKind, Scope: localizedScope, Visibility: publicVisibility, Required: true, Config: json.RawMessage(`{"min_length":1,"max_length":500}`)},
 			{Key: "slug", Kind: shortTextKind, Scope: localizedScope, Visibility: publicVisibility, Required: true, Config: json.RawMessage(`{"slug":true,"max_length":200}`)},

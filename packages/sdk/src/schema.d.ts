@@ -253,7 +253,7 @@ export interface components {
          *       "localized": {
          *         "body": {
          *           "kind": "markdown",
-         *           "value": "Community stories and **events**."
+         *           "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
          *         },
          *         "slug": {
          *           "kind": "string",
@@ -261,7 +261,7 @@ export interface components {
          *         },
          *         "title": {
          *           "kind": "string",
-         *           "value": "Welcome to Stepolonia"
+         *           "value": "Witaj w Stepolonii"
          *         }
          *       },
          *       "relations": []
@@ -477,7 +477,7 @@ export interface components {
          *           "localized": {
          *             "body": {
          *               "kind": "markdown",
-         *               "value": "Community stories and **events**."
+         *               "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
          *             },
          *             "slug": {
          *               "kind": "string",
@@ -485,7 +485,7 @@ export interface components {
          *             },
          *             "title": {
          *               "kind": "string",
-         *               "value": "Welcome to Stepolonia"
+         *               "value": "Witaj w Stepolonii"
          *             }
          *           },
          *           "relations": []
@@ -623,7 +623,7 @@ export interface components {
             default_language: string;
             /**
              * @description Published site description as plain text.
-             * @example Discover community stories and events.
+             * @example Poznaj historie i wydarzenia naszej społeczności.
              */
             description: string;
             /**
@@ -638,7 +638,7 @@ export interface components {
             notice: string;
             /**
              * @description Short site tagline. An empty string means no tagline.
-             * @example Stories and events from our community
+             * @example Historie naszej społeczności
              */
             tagline: string;
             /**

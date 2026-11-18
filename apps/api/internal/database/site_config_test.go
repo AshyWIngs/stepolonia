@@ -128,7 +128,7 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	f.testSDK(t, ctx, false)
 }
 
-// Проверяем экспортируемый SDK через настоящий HTTP и runtime-подключение к PostgreSQL.
+// Test the exported SDK over HTTP using the restricted PostgreSQL runtime connection.
 func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable bool) {
 	t.Helper()
 	command := exec.CommandContext(ctx, nodeExecutable, "../../../../packages/sdk/tests/site-live.mjs")
@@ -174,7 +174,7 @@ func (f *siteTestFixture) testPlaceholders(t *testing.T, ctx context.Context) {
 		requireNoError(t, e)
 	}()
 	d := siteFixture()
-	// Кавычки и SQL-комментарий в редакторском тексте остаются данными bind-параметра.
+	// Quotes and SQL comment markers in editorial text remain bound data.
 	sqlLiteral := "x'); DELETE FROM public.site_state; --"
 	d.Settings.Notice = sqlLiteral
 	for _, m := range d.Catalogs {

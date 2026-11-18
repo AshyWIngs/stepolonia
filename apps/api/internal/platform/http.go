@@ -89,7 +89,7 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) (*http.ServeMux, huma.API) {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
-	// Контракт генерируется из операций вне HTTP; служебные маршруты закрыты.
+	// Generate the contract from registered operations outside HTTP serving.
 	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
 	cfg.CreateHooks = nil
 	cfg.Tags = []*huma.Tag{

@@ -39,10 +39,10 @@ function effectivePreference(code: string, ranges: Map<string, Preference>): Pre
 }
 
 function eligible(code: string, effective: Map<string, Preference | undefined>, requested: Preference): boolean {
-  // Более точный диапазон перекрывает wildcard и общий языковой диапазон.
+  // A specific range takes precedence over a wildcard or broader range.
   const match = effective.get(code)
   if (!match) return true
-  // Явный диапазон сохраняет свой q, wildcard не повышает его приоритет.
+  // Keep the quality weight of an explicit range even when the wildcard has a higher weight.
   if (match.range.length > requested.range.length) return false
   return match.quality > 0 || match.range.length < requested.range.length
 }
@@ -54,7 +54,7 @@ function lookup(preference: Preference, codes: string[], codeSet: Set<string>, e
     if (codeSet.has(candidate) && eligible(candidate, effective, preference)) return candidate
     const match = codes.find(code => rangeMatches(candidate, code) && eligible(code, effective, preference))
     if (match) return match
-    // RFC 4647 lookup отбрасывает регион и одиночный extension subtag вместе с его значением.
+    // RFC 4647 lookup removes trailing subtags and leaves no dangling extension singleton.
     candidate = candidate.replace(/(?:-[a-z0-9])?-[a-z0-9]+$/u, '')
     if (candidate === range) return undefined
     range = candidate
@@ -65,7 +65,7 @@ function lookup(preference: Preference, codes: string[], codeSet: Set<string>, e
 export function preferredContentLanguage(codes: string[], fallback: string, saved: string | null | undefined, header: string): string {
   if (saved && codes.includes(saved)) return saved
   const preferences = header.split(',').map(parsePreference).filter((item): item is Preference => item !== undefined)
-  // Недоверенный заголовок индексируем один раз, чтобы повторяющиеся и уникальные диапазоны не давали квадратичную работу.
+  // Index the untrusted header once to avoid quadratic scans.
   const ranges = new Map<string, Preference>()
   for (const preference of preferences) {
     if (preference.quality > (ranges.get(preference.range)?.quality ?? -1)) ranges.set(preference.range, preference)

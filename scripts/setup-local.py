@@ -10,7 +10,7 @@ from site_config import load_config, site_directory
 
 
 def setup_secrets(root):
-    """Меняем права только проверенных inode, не переходя по ссылкам."""
+    """Change permissions through validated file descriptors."""
     root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         try:
@@ -21,7 +21,7 @@ def setup_secrets(root):
                                dir_fd=root_fd)
         try:
             if os.fstat(directory_fd).st_uid != os.geteuid():
-                raise ValueError("Каталог секретов должен принадлежать текущему пользователю")
+                raise ValueError("The secrets directory must belong to the current user")
             os.fchmod(directory_fd, 0o700)
             for name in ("db_owner_password", "db_app_password"):
                 created = False
@@ -30,18 +30,18 @@ def setup_secrets(root):
                                  0o600, dir_fd=directory_fd)
                     created = True
                 except FileExistsError:
-                    # NONBLOCK исключает зависание на FIFO до проверки типа inode.
+                    # NONBLOCK prevents a FIFO from blocking before type validation.
                     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                                  dir_fd=directory_fd)
                 try:
                     metadata = os.fstat(fd)
                     if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
                             or metadata.st_uid != os.geteuid()):
-                        raise ValueError("Секрет должен быть обычным файлом владельца без жёстких ссылок")
+                        raise ValueError("A secret must be an owner-owned regular file without hard links")
                     if created:
                         with os.fdopen(os.dup(fd), "w") as output:
                             output.write(secrets.token_urlsafe(32) + "\n")
-                    # Bind mount доступен non-root UID контейнера; на хосте каталог 0700.
+                    # The container UID needs read access. The host directory uses mode 0700.
                     os.fchmod(fd, 0o444)
                 finally:
                     os.close(fd)
@@ -74,7 +74,7 @@ def setup(site, port=None):
         fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as output:
             output.write(text)
-    # Проверяем выбранную установку до создания и изменения секретов.
+    # Validate the selected installation before touching its secrets.
     load_config(site)
     setup_secrets(root)
     print(f"Configuration ready: {site}; existing settings and credentials were preserved.")

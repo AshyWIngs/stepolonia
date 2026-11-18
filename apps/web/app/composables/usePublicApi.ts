@@ -6,12 +6,12 @@ export function usePublicApi() {
   const config = useRuntimeConfig()
   const requestId = useRequestHeader('x-request-id')?.trim() || (import.meta.server ? crypto.randomUUID() : undefined)
   const baseUrl = import.meta.server ? config.apiOrigin : window.location.origin
-  // SDK-контекст привязан к текущему запросу и явно заданным параметрам fetch.
+  // Scope SDK options to the current request.
   const client = createPublicClient({
     baseUrl,
     fetch: (input, init) => globalThis.fetch(input, {
       ...init, credentials: 'omit', cache: 'no-store',
-      // Пять секунд учитывают трёхсекундный API timeout, сеть и сериализацию.
+      // Allow five seconds for the three-second API timeout, transport, and serialization.
       signal: AbortSignal.any([...(input instanceof Request ? [input.signal] : []), AbortSignal.timeout(5000)]),
     }),
   })
@@ -24,7 +24,7 @@ export function usePublicApi() {
     }
     catch (error) {
       diagnostic('api_connection_failed', failureCode(error))
-      // Безопасная публичная ошибка защищает внутренние адреса из исключений fetch.
+      // Use a safe public error so fetch exceptions cannot expose internal addresses.
       throw publicError(503)
     }
   }

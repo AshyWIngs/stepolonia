@@ -6,7 +6,7 @@ import { publicError, routeSegment } from '~/utils/public-content'
 type Publication = components['schemas']['Publication']
 
 export function usePublicSite() {
-  // useState изолирует установки и SSR-запросы; payload сохраняет ту же публикацию при гидрации.
+  // useState scopes data to the SSR request and retains the publication during hydration.
   const publication = useState<Publication | null>('public-site', () => null)
   const loadedPath = useState<string | null>('public-site-path', () => null)
   const generation = useState('public-site-generation', () => 0)
@@ -20,15 +20,15 @@ export function usePublicSite() {
     try { language = segment ? routeSegment(decodeURIComponent(segment)).toLowerCase() : undefined }
     catch { throw publicError(400) }
     const { client, request } = usePublicApi()
-    // Один атомарный ответ исключает смешивание настроек и каталога разных публикаций.
+    // A single response keeps settings and the catalog on the same publication.
     try {
       let result = await request(() => client.getSite(language ? { query: { lang: language } } : undefined))
       if (generation.value !== currentGeneration) return
-      // Неизвестный языковой код может не пройти нормализацию UI API. Контентный маршрут
-      // проверит его по динамическому справочнику и вернёт 404 с опубликованным DB fallback.
+      // The UI API may reject an unknown language code. The content route validates it
+      // against the language catalog and returns 404 using the published fallback.
       if (language && result.response.status === 400) result = await request(() => client.getSite())
       const { data, response } = result
-      // Ответ или ошибка отменённой навигации не заменяют состояние нового перехода.
+      // Keep results from canceled navigation out of the current state.
       if (generation.value !== currentGeneration) return
       if (!data) throw publicError(response.status)
       publication.value = data

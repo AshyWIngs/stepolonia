@@ -15,14 +15,14 @@ const oldPath = '/fr/articles/stage15-fr-first'
 const articleTitle = 'Bonjour de Stepolonia'
 const seoOrigin = process.env.STAGE23_ORIGIN ?? ''
 
-// Старый SDK-сценарий остаётся самостоятельным для Go/HTTP tests без Nuxt.
+// The standalone SDK scenario supports Go HTTP tests without Nuxt.
 if (['--published', '--unavailable', '--restored'].includes(mode)) await import('../../../packages/sdk/tests/live.mjs')
 
 async function documentResponse(path, status, headers) {
-  // Адрес соединения фиксирован loopback-портом harness; Location не меняет назначение запроса.
-  // Accept явно выбирает SSR-документ, поскольку Nitro поддерживает также JSON-ошибки.
+  // Connect to the harness loopback port without following Location.
+  // Request the SSR document explicitly because Nitro also serves JSON errors.
   const incoming = await new Promise((resolve, reject) => {
-    // Внешний бюджет включает внутренний API timeout 5 с и последующий SSR страницы ошибки.
+    // Allow the five-second API timeout and subsequent error page rendering.
     get({ hostname: '127.0.0.1', port, path, headers: { Accept: 'text/html', ...headers }, signal: AbortSignal.timeout(15000) }, resolve).on('error', reject)
   })
   const chunks = []
@@ -110,8 +110,8 @@ async function checkBrowser() {
     await safeBrowserArticle(page)
     const redirectResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === oldPath && response.request().isNavigationRequest())
-    // Публичный Vue Router API инициирует клиентский переход на исторический URL,
-    // которого уже нет среди ссылок актуального списка.
+    // Use Vue Router to navigate to the historical URL even though the current
+    // list no longer links to it.
     await page.evaluate(path => document.querySelector('#__nuxt').__vue_app__.config.globalProperties.$router.push(path), oldPath)
       .catch(error => { if (!error.message.includes('Execution context was destroyed')) throw error })
     const redirected = await redirectResponse
@@ -173,7 +173,7 @@ async function checkLanguageSelection() {
     entryRedirect(base, { 'Accept-Language': 'ru;q=0.1,*;q=0.8' }, 'en'),
     entryRedirect(base, { Cookie: 'sp_content_language=pl', 'Accept-Language': 'en' }, 'en'),
     entryRedirect(base, { Cookie: 'sp_content_language=fr', 'Accept-Language': 'en' }, 'fr'),
-    // Допустимый по размеру header не должен вызывать повторные обходы всего списка предпочтений.
+    // A size-limited header must not trigger repeated full scans of preferences.
     entryRedirect(base, { 'Accept-Language': `en;q=0,fr;q=0,kk;q=0,ru;q=0${',*'.repeat(7500)}` }, 'ru', AbortSignal.timeout(2000)),
   ])
   const direct = await documentResponse(currentPath, 200, {
@@ -223,7 +223,7 @@ async function checkLanguageBrowser() {
     assert.equal(saved.sameSite, 'Lax')
     assert.equal(saved.secure, false)
     assert.ok(saved.expires > Date.now() / 1000 + 86400)
-    // Новый browser context получает только постоянное cookie-состояние пользователя.
+    // Transfer only persistent user cookies to the new browser context.
     const resumed = await browser.newContext({ locale: 'ru-RU', storageState: await context.storageState() })
     const resumedPage = await resumed.newPage()
     await resumedPage.goto(`${base}/`)
@@ -321,7 +321,7 @@ function assertSeoHTML(html, expected, robots = true) {
 
 async function browserSeo(page, expected) {
   await page.waitForLoadState('networkidle')
-  // Router завершает переход до разрешения Nuxt Suspense и обновления head.
+  // The router can finish navigation before Nuxt Suspense resolves and head updates.
   try {
     await page.waitForFunction(expected => {
       const links = [...document.querySelectorAll('head link[rel="canonical"], head link[rel="alternate"]')]
@@ -400,8 +400,8 @@ async function checkSeo() {
     await browserSeo(page, [])
     await page.goto(`${base}${currentPath}`)
     await browserSeo(page, articleSeo(seoOrigin))
-    // Обрыв браузерного API-запроса проверяет очистку head при клиентской 503.
-    // Реальную остановку API/БД отдельно выполняет recovery-сценарий harness.
+    // Abort the browser API request to check head cleanup on a client-side 503.
+    // The harness tests actual API and database shutdown in separate recovery scenarios.
     await page.route('**/api/v1/content/**', route => route.abort('connectionrefused'))
     await routeTo(page, '/ru/articles/stage22-ru-current')
     await browserSeo(page, [])

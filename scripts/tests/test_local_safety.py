@@ -1,4 +1,4 @@
-"""Проверки границ файловой системы и запрета разрушительных операций до Docker."""
+"""Verify filesystem boundaries and cleanup guards before Docker."""
 import importlib.util
 import io
 import json
@@ -233,7 +233,7 @@ class DisposableDownTests(unittest.TestCase):
     def test_foreign_resource_label_stops_cleanup(self):
         inspected = json.dumps([{"Config": {"Labels": {publishing.OWNERSHIP_LABEL: "foreign-owner"}}}])
         with patch.object(publishing, "command", side_effect=["own-name-collision", inspected]) as command:
-            with self.assertRaisesRegex(RuntimeError, "Очистка запрещена"):
+            with self.assertRaisesRegex(RuntimeError, "Cleanup refused"):
                 publishing.verify_owned(self.marker["project"], self.marker["token"], io.StringIO())
         self.assertEqual(command.call_count, 2)
 
@@ -241,7 +241,7 @@ class DisposableDownTests(unittest.TestCase):
         volume = self.marker["volume"]
         inspected = json.dumps([{"Name": volume, "Labels": None}])
         with patch.object(publishing, "command", side_effect=[volume, inspected]) as command:
-            with self.assertRaisesRegex(RuntimeError, "Очистка запрещена"):
+            with self.assertRaisesRegex(RuntimeError, "Cleanup refused"):
                 publishing.verify_owned(self.marker["project"], self.marker["token"],
                                         io.StringIO(), volume=volume)
         self.assertEqual(command.call_count, 2)

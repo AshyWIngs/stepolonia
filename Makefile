@@ -31,7 +31,7 @@ ci-build:
 
 lint: lint-go lint-python lint-web lint-sql duplicates sdk-check
 
-# Во время разработки запускаем только нужную подсистему; перед merge полный verify.
+# Use targeted checks during development and run full Verify before merging.
 check-go: lint-go api-checks
 
 check-python: lint-python python-tests
@@ -40,7 +40,7 @@ check-web: lint-web web-checks
 
 check-db: db-test
 
-# Только прикладные Goose-миграции. Пустой список и пропуск файла являются ошибкой.
+# Check application Goose migrations. Empty input and skipped files fail verification.
 lint-sql:
 	@test "$$(sqlfluff --version)" = "sqlfluff, version 4.5.0"
 	@test -n "$(wildcard apps/api/internal/database/migrations/*.sql)"
@@ -62,7 +62,7 @@ duplicates:
 	mkdir -p reports
 	docker build --progress=plain -f infrastructure/quality/Dockerfile --target duplicates -t sp-quality-duplicates:verify . > reports/duplicates.log 2>&1 || { cat reports/duplicates.log; exit 1; }
 
-# Каждый prerequisite исполняется один раз, включая lint -> duplicates.
+# Each prerequisite runs once, including duplicates through lint.
 verify: lint config test build db-test publishing-test auth-test image-audit
 
 auth-test:
@@ -71,12 +71,12 @@ auth-test:
 resource-test:
 	python3 scripts/test-resources.py
 
-# Сканируем содержимое собранных образов; daemon socket и секреты сканеру не передаются.
-# Ошибка загрузки CVE DB также блокирует проверку. High/Critical без ignore-unfixed.
+# Scan image archives without exposing the Docker socket or secrets.
+# An unavailable CVE database fails the check. High and Critical findings fail even without a fix.
 image-audit: lint build
 	$(MAKE) --no-print-directory ci-image-audit
 
-# Используем уже собранные образы на том же runner; отдельный job не нужен.
+# Reuse images built on the same runner.
 ci-image-audit:
 	mkdir -p reports/images
 	docker image inspect $(GRYPE_IMAGE) >/dev/null 2>&1 || docker pull $(GRYPE_IMAGE)
@@ -114,14 +114,14 @@ docker-check:
 test: setup docker-check python-tests api-checks web-checks
 	$(MAKE) --no-print-directory ci-service-checks
 
-# Только проверки Caddy/PostgreSQL: prerequisites выполняются вызывающим Make.
+# Run Caddy and PostgreSQL checks after the calling Make target's prerequisites.
 ci-service-checks:
 	mkdir -p reports
 	docker build --progress=plain --target checks --output type=cacheonly infrastructure/caddy > reports/caddy-checks.log 2>&1 || { cat reports/caddy-checks.log; exit 1; }
 	docker build --progress=plain --target checks --output type=cacheonly infrastructure/postgres > reports/postgres-checks.log 2>&1 || { cat reports/postgres-checks.log; exit 1; }
 
 python-version-check:
-	python3 -c 'import platform, sys; from pathlib import Path; expected = Path(".python-version").read_text().strip(); actual = platform.python_version(); print(sys.executable, actual); sys.exit(0 if platform.python_implementation() == "CPython" and actual == expected else "Требуется CPython " + expected)'
+	python3 -c 'import platform, sys; from pathlib import Path; expected = Path(".python-version").read_text().strip(); actual = platform.python_version(); print(sys.executable, actual); sys.exit(0 if platform.python_implementation() == "CPython" and actual == expected else "Required CPython version: " + expected)'
 
 python-tests: python-version-check
 	mkdir -p reports
@@ -147,7 +147,7 @@ isolation: setup
 	python3 scripts/check-isolation.py --site "$(SITE)"
 
 migrate seed import-languages:
-	@test "$(origin SITE)" = "command line" || { echo 'Укажите SITE в командной строке для обслуживания БД'; exit 2; }
+	@test "$(origin SITE)" = "command line" || { echo 'Specify SITE on the command line for database maintenance'; exit 2; }
 	python3 scripts/db_tools.py --site "$(SITE)" $@ $(if $(filter migrate,$@),$(or $(ACTION),up)) $(if $(filter import-languages,$@),"$(FILE)") $(if $(and $(filter migrate,$@),$(filter down,$(ACTION)),$(filter 1,$(DISPOSABLE))),--disposable)
 
 db-test: sdk-check

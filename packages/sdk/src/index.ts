@@ -4,7 +4,7 @@ import type { operations, paths } from './schema.d.ts'
 export type { paths, components, operations } from './schema.d.ts'
 
 export function createPublicClient(options: { baseUrl: string; fetch?: typeof globalThis.fetch }) {
-  // Отдельный экземпляр для каждого SSR-запроса; 301 нужен вызывающему коду для canonical redirect.
+  // Use one client per SSR request. Callers read 301 to issue a canonical redirect.
   const client = createClient<paths>({ ...options, redirect: 'manual' })
   return {
     getSite(params?: operations['getSite']['parameters']) {
@@ -18,8 +18,8 @@ export function createPublicClient(options: { baseUrl: string; fetch?: typeof gl
     },
     async getContent(params: operations['getContent']['parameters']) {
       const result = await client.GET('/api/v1/content/{type_key}/{slug}', { params })
-      // openapi-fetch разбирает 301 как error, но его ErrorStatus включает только 4xx/5xx.
-      // Явная ветка сохраняет фактический JSON null в публичном типе результата.
+      // openapi-fetch sends 301 through its error path, whose ErrorStatus covers only 4xx and 5xx.
+      // Handle the redirect explicitly to retain the JSON null result type.
       if (result.response.status === 301) {
         return { data: undefined, response: result.response, error: null }
       }

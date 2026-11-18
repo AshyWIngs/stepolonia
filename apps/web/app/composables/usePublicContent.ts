@@ -32,7 +32,7 @@ export function usePublicContent() {
     const { selected, languages } = await language(code)
     const result = await request(() => client.getContent({ path: { type_key: contentType(namespace), slug }, query: { language: selected.code } }))
     const source = contentPath(namespace, selected.code, slug)
-    // Браузер скрывает Location при manual redirect. Полный переход возвращает обработку 301 серверу.
+    // Manual redirects hide Location in browsers. Navigate normally so the server handles the 301.
     if (import.meta.client && result.response.type === 'opaqueredirect') {
       return { kind: 'redirect' as const, path: source }
     }

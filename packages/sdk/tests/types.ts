@@ -1,6 +1,6 @@
 import type { createPublicClient, operations } from '@stepolonia/sdk'
 
-// Проверки компилятора защищают обязательные параметры и форму контрактных ответов.
+// Compiler checks cover required parameters and response shapes.
 export async function checkClientTypes(client: ReturnType<typeof createPublicClient>) {
   void client.getSite()
   void client.getSite({})
@@ -10,11 +10,11 @@ export async function checkClientTypes(client: ReturnType<typeof createPublicCli
   const site = await client.getSite({ query: { lang: 'pl', version: '00000000-0000-0000-0000-000000000001' } })
   const publication: Publication | undefined = site.data
   const siteProblem: SiteConflict | SiteUnavailable | undefined = site.error
-  // @ts-expect-error Язык передаётся строкой.
+  // @ts-expect-error Language must be a string.
   void client.getSite({ query: { lang: 1 } })
-  // @ts-expect-error Версия публикации передаётся строкой.
+  // @ts-expect-error Publication version must be a string.
   void client.getSite({ query: { version: 1 } })
-  // @ts-expect-error Публичная операция не принимает Cookie.
+  // @ts-expect-error The public operation accepts no Cookie header.
   void client.getSite({ cookie: { session: 'private' } })
   void client.listLanguages()
   void client.listContent({ path: { type_key: 'article' }, query: { language: 'pl' } })
@@ -24,9 +24,9 @@ export async function checkClientTypes(client: ReturnType<typeof createPublicCli
   const problem: Problem | null | undefined = detail.error
   // @ts-expect-error Language is required.
   void client.listContent({ path: { type_key: 'article' }, query: { limit: 20 } })
-  // @ts-expect-error Пагинация требует числового значения.
+  // @ts-expect-error Pagination requires a numeric value.
   void client.listContent({ path: { type_key: 'article' }, query: { language: 'pl', limit: '20' } })
-  // @ts-expect-error Адрес статьи обязателен.
+  // @ts-expect-error The article slug is required.
   void client.getContent({ query: { language: 'pl' } })
   return { article, problem, publication, siteProblem }
 }
@@ -50,7 +50,7 @@ export function checkSiteResponseTypes(site: Publication, conflict: SiteConflict
   const messages: Record<string, string> = site.messages
   const conflictCode: string = conflict.code
   const unavailableStatus: number = unavailable.status
-  // @ts-expect-error Редакционная версия закрыта публичному клиенту.
+  // @ts-expect-error The editorial version is private.
   const draftVersion: number = site.draft_version
   return [version, defaultLanguage, fallbackLanguage, requestedLanguage, language, direction, languages, messages, conflictCode, unavailableStatus, draftVersion]
 }
@@ -62,9 +62,9 @@ export function checkResponseTypes(redirect: Redirect, article: Content, problem
   const translations: { language: string; slug: string }[] = article.translations
   const status: number = problem.status
   const catalog: Languages = languages
-  // @ts-expect-error Внутренняя ревизия не входит в публичный DTO.
+  // @ts-expect-error The internal revision is private.
   const internalRevision: string = article.revision_id
-  // @ts-expect-error Успешный каталог является массивом.
+  // @ts-expect-error The successful catalog is an array.
   const nullCatalog: Languages = null
   return [location, emptyBody, id, translations, status, catalog, internalRevision, nullCatalog]
 }

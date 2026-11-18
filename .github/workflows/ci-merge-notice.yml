@@ -1,7 +1,7 @@
 name: PR Merge Notice
 
 on:
-  # Исполняется доверенная версия workflow из base branch, а не код PR.
+  # Use the trusted workflow from the base branch.
   pull_request_target:
     types: [closed]
 
@@ -15,16 +15,16 @@ jobs:
     permissions:
       issues: write
     steps:
-      # Не использовать checkout, артефакты, команды или скрипты из PR.
+      # Keep pull request checkouts, artifacts, and scripts outside this workflow.
       - uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request
             const marker = '<!-- stepolonia-ci-watch:merged:' + pr.merge_commit_sha + ' -->'
-            const message = marker + '\nSquash merge выполнен: ' + pr.merge_commit_sha +
-              '. Все обязательные GitHub Gate остаются в истории PR.'
+            const message = marker + '\nSquash merge completed: ' + pr.merge_commit_sha +
+              '. Required checks are available in the pull request history.'
             await core.summary.addRaw('PR #' + pr.number +
-              ' слит в main: `' + pr.merge_commit_sha + '`\n').write()
+              ' merged into main: `' + pr.merge_commit_sha + '`\n').write()
             try {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -37,7 +37,7 @@ jobs:
                   !String(error.message).includes('Resource not accessible by integration')) {
                 throw error
               }
-              // Не повышаем права и не запрашиваем отдельные токены.
-              core.warning('GitHub не разрешил комментарий к слитому PR #' + pr.number +
-                '; результат merge остаётся в Actions Job Summary.')
+              // Keep the existing token permissions.
+              core.warning('GitHub refused to comment on merged PR #' + pr.number +
+                '. The merge is recorded in the Actions job summary.')
             }

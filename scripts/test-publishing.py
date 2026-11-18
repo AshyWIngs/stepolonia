@@ -29,26 +29,26 @@ def command(arguments, log, *, env=None, capture=False, cwd=ROOT):
 
 
 def verify_named_volume(project, token, volume, log):
-    """Проверяем точный том: чужой том может не попасть в фильтр Compose project."""
+    """Inspect the exact volume because the Compose project filter can miss foreign volumes."""
     existing = command(["docker", "volume", "ls", "--format", "{{.Name}}"], log, capture=True).splitlines()
     if volume not in existing:
         return
     inspected = json.loads(command(["docker", "volume", "inspect", volume], log, capture=True))
     if len(inspected) != 1 or (inspected[0].get("Labels") or {}).get(OWNERSHIP_LABEL) != token:
-        raise RuntimeError(f"Очистка запрещена: том {volume} не принадлежит тесту {project}")
+        raise RuntimeError(f"Cleanup refused: test {project} does not own volume {volume}")
 
 
 def verify_resource_owner(item, resource, project, token):
-    """Отсутствующий или чужой маркер запрещает очистку найденного ресурса."""
+    """Refuse cleanup when the resource lacks the expected ownership marker."""
     metadata = item.get("Config", {}) if resource == "container" else item
     labels = metadata.get("Labels") or {}
     if labels.get(OWNERSHIP_LABEL) != token:
-        raise RuntimeError(f"Очистка запрещена: другой маркер владельца ресурса {resource}; "
-                           f"проект {project}. Сохраните ресурсы и проверьте их владельца вручную")
+        raise RuntimeError(f"Cleanup refused: ownership marker mismatch for {resource} in "
+                           f"project {project}. Verify ownership before removing resources")
 
 
 def verify_owned(project, token, log, *, volume=None):
-    # Имена ресурсов недостаточны: удалять можно только ресурсы с нашим маркером.
+    # Require the expected marker before removing any resource.
     if volume is not None:
         verify_named_volume(project, token, volume, log)
     for resource, listing, inspect in (
@@ -66,7 +66,7 @@ def verify_owned(project, token, log, *, volume=None):
 
 
 def prepare_installation(site, project, database, token, *, runtime=False):
-    """Создаём новую одноразовую конфигурацию с маркерами владельца ресурсов."""
+    """Create a disposable installation with resource ownership markers."""
     directory = site_directory(site)
     directory.mkdir(mode=0o700, exist_ok=False)
     reports = ROOT / "reports"
@@ -92,7 +92,7 @@ def prepare_installation(site, project, database, token, *, runtime=False):
 
 
 def installation_override(project, token, volume, *, runtime=False, images_project=None, fast_start=True):
-    """Один источник конфигурации ресурсов для основной и второй одноразовых установок."""
+    """Share the resource override between both disposable installations."""
     images = images_project or project
     labels = {OWNERSHIP_LABEL: token}
     services = {
@@ -114,12 +114,12 @@ def installation_override(project, token, volume, *, runtime=False, images_proje
 
 
 def check_cli(site, directory, override, compose, config, log):
-    """Проверяем поставляемый CLI и защиту Down до SQL-сценариев Go."""
-    # Проверяем поставляемый CLI, включая защищённый Down, до SQL-тестов Go.
+    """Check the packaged CLI and guarded Down before Go integration tests."""
+    # Check the packaged CLI before running Go integration tests.
     run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
     run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
-    # Обходим Python guard только в этом отрицательном тесте настоящего Go CLI.
-    # Сравниваем всю историю версий и publishing-каталог, чтобы заметить выполненный Down.
+    # Call the Go CLI directly to test its own Down guard.
+    # Compare migration history and the publishing catalog to detect an unexpected Down.
     snapshot_query = """SELECT json_build_object(
  'migration_history', (SELECT json_agg(row_to_json(v) ORDER BY id) FROM public.goose_db_version v),
  'relations', (SELECT json_agg(json_build_array(relname,relkind,oid,relowner,relacl,reloptions) ORDER BY relname)
@@ -133,10 +133,10 @@ def check_cli(site, directory, override, compose, config, log):
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log.write(rejected_down.stdout)
     after_down = command([*compose, *postgres_sql_args(config, snapshot_query)], log, capture=True)
-    if (rejected_down.returncode == 0 or "для down требуется DB_DISPOSABLE_TOKEN" not in rejected_down.stdout
+    if (rejected_down.returncode == 0 or "down requires DB_DISPOSABLE_TOKEN" not in rejected_down.stdout
             or before_down != after_down):
-        raise RuntimeError("CLI Down с пустым токеном должен отказать без изменения каталога и версий")
-    log.write("PASS: CLI Down с пустым токеном отклонён; catalog/version сохранены\n")
+        raise RuntimeError("CLI Down must reject an empty token and preserve the catalog and history")
+    log.write("PASS: CLI Down rejected an empty token and preserved the catalog and history\n")
     run_prebuilt_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
     run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
     run_prebuilt_tool(site, ["seed"], override=override, log=log)
@@ -150,11 +150,11 @@ def published_port(compose, service, target, token, log):
     containers = command([*compose, "ps", "-q", service], log, capture=True).split()
     inspected = json.loads(command(["docker", "inspect", *containers], log, capture=True))
     if len(inspected) != 1 or inspected[0]["Config"]["Labels"].get(OWNERSHIP_LABEL) != token:
-        raise RuntimeError(f"Не совпадает идентичность контейнера {service}")
+        raise RuntimeError(f"Unexpected container identity for {service}")
     bindings = inspected[0]["NetworkSettings"]["Ports"].get(f"{target}/tcp") or []
     if (len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1"
             or not bindings[0]["HostPort"].isdecimal()):
-        raise RuntimeError("Тестовый порт должен быть доступен только на loopback")
+        raise RuntimeError("The test port must bind to loopback")
     return int(bindings[0]["HostPort"])
 
 
@@ -176,7 +176,7 @@ def prepare_test_images(compose, project, log, *, runtime, reuse_images):
 
 
 def check_runtime(site, directory, override, compose, environment, project, token, log):
-    """Принимаем контейнерный Publishing без повторения ранее принятых SQL-сценариев."""
+    """Check Publishing on the Compose installation."""
     run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
     run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
     run_prebuilt_tool(site, ["seed"], override=override, log=log)
@@ -192,20 +192,20 @@ def check_runtime(site, directory, override, compose, environment, project, toke
     smoke.COMPOSE = compose
     with redirect_stdout(log):
         smoke.check_publishing(base)
-        # Перед реальной остановкой БД повторно подтверждаем владельца всех ресурсов.
+        # Verify resource ownership again before stopping the database.
         verify_owned(project, token, log)
         smoke.check_publishing_recovery(base)
     check_localization(base, project, compose, log)
 
 
 def localization_browser(base, mode, log, **environment):
-    """Один browser harness проверяет реальные установки через Caddy."""
+    """Use one browser harness to check both installations through Caddy."""
     command(["node", "apps/web/tests/live.mjs", mode], log,
             env={**os.environ, "STAGE14_API_URL": base, **environment})
 
 
 def check_localization(base, images_project, primary_compose, log):
-    """Вторая изолированная БД исключает смешивание материалов и предпочтений."""
+    """Use a second database to verify content and preference isolation."""
     token = secrets.token_hex(6)
     site = f"stage22-{token}.test"
     project = f"sp-stage22-{token}"
@@ -220,7 +220,7 @@ def check_localization(base, images_project, primary_compose, log):
         command(["python3", "scripts/setup-local.py", "--site", site], log)
         config = load_config(site, override=override)
         if config["name"] != project or config["volumes"]["postgres_data"]["name"] != volume:
-            raise RuntimeError("Не совпадает идентичность второй временной установки")
+            raise RuntimeError("Unexpected secondary installation identity")
         verify_owned(project, token, log, volume=volume)
         resources_owned = True
         command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
@@ -261,7 +261,7 @@ def check_localization(base, images_project, primary_compose, log):
 
 
 def seo_origin(compose, origin, log):
-    # Отдельный overlay меняет только origin, не переписывая конфигурацию владения ресурсами.
+    # Use an override for the origin so ownership settings remain in place.
     configuration = {"services": {"web": {"environment": {"NUXT_PUBLIC_SITE_ORIGIN": origin}}}}
     with NamedTemporaryFile("w", prefix="seo-origin-", suffix=".compose.json", dir=ROOT / "reports") as overlay:
         json.dump(configuration, overlay)
@@ -270,7 +270,7 @@ def seo_origin(compose, origin, log):
 
 
 def check_seo(base, second, primary_compose, compose, config, environment, log):
-    """SEO проверяется на общих образах, разных БД и только owned disposable-данных."""
+    """Check SEO with shared images and separate disposable databases."""
     primary_origin = "https://primary.stepolonia.kz"
     second_origin = "https://secondary.stepolonia.kz"
     seo_origin(primary_compose, primary_origin, log)
@@ -282,14 +282,14 @@ def check_seo(base, second, primary_compose, compose, config, environment, log):
             log, env={**environment, "STAGE32_CONTENT_FIXTURE": "seo"}, cwd=ROOT / "apps/api")
     localization_browser(second, "--seo-unsupported", log, STAGE23_ORIGIN=second_origin)
     logs = command([*compose, "logs", "--no-color", "web"], log, capture=True)
-    if "Набор hreflang пропущен: неподдерживаемые коды языков" not in logs or "qaa" not in logs:
-        raise RuntimeError("Нет диагностики пропущенного hreflang")
+    if "Skipped hreflang set: unsupported language codes" not in logs or "qaa" not in logs:
+        raise RuntimeError("Missing warning for the skipped hreflang set")
     command([*compose, *postgres_sql_args(config,
              "UPDATE public.languages SET is_enabled=false WHERE code='qaa'")], log)
     localization_browser(second, "--seo-pagination", log, STAGE23_ORIGIN=second_origin)
     insecure_origin = urlsplit("https://public.stepolonia.kz")._replace(scheme="http").geturl()
-    # TEST-NET-1 используется только как отклоняемое значение конфигурации, не адрес соединения.
-    # Все HTTP-проверки harness соединяются с отдельным фиксированным loopback-портом.
+    # TEST-NET-1 is an invalid configuration fixture, not a connection target.
+    # The HTTP probes connect to the installation loopback port.
     mapped_address = IPv4Address(bytes((192, 0, 2, 1)))
     for origin in ("", insecure_origin, "https://user:password@public.stepolonia.kz",
                    "https://public.stepolonia.kz/path", "https://public.stepolonia.kz?query=1",
@@ -300,13 +300,13 @@ def check_seo(base, second, primary_compose, compose, config, environment, log):
 
 
 def publish_site_fixture(environment, mode, log):
-    """Go service публикует только в БД с проверенным disposable-маркером."""
+    """Publish through the Go service after verifying the disposable database marker."""
     command(["go", "test", "-count=1", "-run", "^TestSiteRuntimeFixture$", "./internal/database"],
             log, env={**environment, "STAGE22_SITE_FIXTURE": mode}, cwd=ROOT / "apps/api")
 
 
 def check_language_configuration(base, compose, config, environment, log):
-    """DB-default и публикации меняются без пересоздания web; сломанные ссылки дают 503."""
+    """Check settings live while the web container stays up. Broken references return 503."""
     for query in ("UPDATE public.languages SET is_enabled=false WHERE code='pl'",
                   "UPDATE public.languages SET is_enabled=false"):
         command([*compose, *postgres_sql_args(config, query)], log)
@@ -319,7 +319,7 @@ def check_language_configuration(base, compose, config, environment, log):
     publish_site_fixture(environment, "draft", log)
     localization_browser(base, "--site-draft", log)
     publish_site_fixture(environment, "secondary", log)
-    # Default pl остаётся enabled: отдельно ломаем именно опубликованный fallback en.
+    # Keep pl enabled and disable the published en fallback.
     command([*compose, *postgres_sql_args(config,
              "UPDATE public.languages SET is_enabled=false WHERE code='en'")], log)
     localization_browser(base, "--config-unavailable", log)
@@ -327,10 +327,10 @@ def check_language_configuration(base, compose, config, environment, log):
 
 def main(runtime=False, *, reuse_images=False):
     if shutil.which("go") is None:
-        raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
+        raise SystemExit("Database integration checks require Go 1.27")
     node = shutil.which("node")
     if node is None:
-        raise SystemExit("Для интеграционной проверки SDK нужен Node.js 26")
+        raise SystemExit("SDK integration checks require Node.js 26")
     token = secrets.token_hex(6)
     site = f"stage12-{token}.test"
     project = f"sp-stage12-{token}"
@@ -343,17 +343,17 @@ def main(runtime=False, *, reuse_images=False):
         subprocess.run(["python3", "scripts/setup-local.py", "--site", site], cwd=ROOT, check=True)
         config = load_config(site, override=override)
         if config["name"] != project or config["volumes"]["postgres_data"]["name"] != volume:
-            raise RuntimeError("Не совпадает идентичность временной установки")
-        print(f"Проверка временной установки {site}; лог: {log_path}", flush=True)
+            raise RuntimeError("Unexpected disposable installation identity")
+        print(f"Checking disposable installation {site}. Log: {log_path}", flush=True)
         with log_path.open("w") as log:
-            # Compose может принять существующий именованный том без наших labels.
-            # Проверяем точное имя до первого запуска, а затем и перед удалением.
+            # Compose can attach a named volume with no ownership label.
+            # Inspect the exact volume before startup and cleanup.
             verify_owned(project, token, log, volume=volume)
             resources_owned = True
             prepare_test_images(compose, project, log, runtime=runtime, reuse_images=reuse_images)
             command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
             port = published_port(compose, "postgres", 5432, token, log)
-            # Метку БД создаёт только владелец новой тестовой установки после проверки ресурсов.
+            # Set the database marker after verifying resource ownership.
             verify_owned(project, token, log, volume=volume)
             query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
             command([*compose, *postgres_sql_args(config, query)], log)
@@ -369,7 +369,7 @@ def main(runtime=False, *, reuse_images=False):
                 check_runtime(site, directory, override, compose, environment, project, token, log)
             else:
                 check_cli(site, directory, override, compose, config, log)
-                # Unit/HTTP tests уже выполняет make test; здесь нужен реальный PostgreSQL.
+                # Run the database integration tests against PostgreSQL.
                 command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestContentSchemaIntegration$",
                          "./internal/database"], log, env=environment, cwd=ROOT / "apps/api")
                 command(["go", "test", "-count=1", "-race", "-v", "-run", "^TestContentIntegration$",
@@ -383,10 +383,10 @@ def main(runtime=False, *, reuse_images=False):
         shutil.rmtree(directory)
         override.unlink()
     if success:
-        print(f"PASS: схема PostgreSQL, CLI и интеграционные проверки; временные ресурсы удалены. Лог: {log_path}")
+        print(f"PASS: PostgreSQL schema, CLI and integration checks passed. Disposable resources removed. Log: {log_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runtime", action="store_true", help="Приёмка Publishing через Compose/Caddy")
+    parser.add_argument("--runtime", action="store_true", help="Check Publishing through Compose and Caddy")
     main(parser.parse_args().runtime, reuse_images=os.environ.get("VERIFY_REUSE_IMAGES") == "1")

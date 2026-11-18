@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	// Проверяем реальный приватный HTTP listener, а не только синтаксис Caddyfile.
+	// Probe the private HTTP listener.
 	client := &http.Client{Timeout: 2 * time.Second}
 	response, err := client.Get("http://127.0.0.1:8081/health/live")
 	if err != nil {

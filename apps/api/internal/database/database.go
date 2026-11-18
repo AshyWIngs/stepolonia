@@ -48,7 +48,7 @@ func PrepareRoles(ctx context.Context, db *sql.DB) error {
 		if err == sql.ErrNoRows {
 			_, err = tx.ExecContext(ctx, "CREATE ROLE "+pgx.Identifier{name}.Sanitize()+" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS")
 		} else if err == nil && !safe {
-			return fmt.Errorf("роль %s имеет несовместимые права", name)
+			return fmt.Errorf("role %s has incompatible privileges", name)
 		}
 		if err != nil {
 			return err
@@ -57,10 +57,10 @@ func PrepareRoles(ctx context.Context, db *sql.DB) error {
 	return tx.Commit()
 }
 
-// CheckRuntime отклоняет привилегированную runtime-роль до изменения схемы.
+// CheckRuntime rejects privileged runtime roles before schema changes.
 func CheckRuntime(ctx context.Context, db *sql.DB, name string) error {
 	if name == "" {
-		return fmt.Errorf("RUNTIME_DB_USER обязателен")
+		return fmt.Errorf("RUNTIME_DB_USER is required")
 	}
 	var safe bool
 	err := db.QueryRowContext(ctx, `SELECT NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
@@ -86,12 +86,12 @@ func CheckRuntime(ctx context.Context, db *sql.DB, name string) error {
 		return err
 	}
 	if !safe {
-		return fmt.Errorf("runtime-роль должна быть отдельной непривилегированной ролью")
+		return fmt.Errorf("the runtime role must be a distinct unprivileged role")
 	}
 	return nil
 }
 
-// GrantRuntime оставляет runtime только чтение публичной read model без черновиков и истории.
+// GrantRuntime limits the runtime role to the public read model.
 func GrantRuntime(ctx context.Context, db *sql.DB, name string) error {
 	if err := CheckRuntime(ctx, db, name); err != nil {
 		return err
