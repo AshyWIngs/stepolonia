@@ -43,16 +43,8 @@ func contentMetadataTarget(path string) (routeTarget, route, bool) {
 }
 
 func (h *handler) serveContentMetadata(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
-	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
-		writeError(w, identity.ErrValidation)
-		return
-	}
-	req, _, err := requestSession(r, fullKind, ip)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if !attachRequestID(w, &req) {
+	req, ok := draftReadRequest(w, r, ip)
+	if !ok {
 		return
 	}
 	if target.path == contentCollectionsPath {

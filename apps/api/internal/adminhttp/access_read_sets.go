@@ -59,14 +59,23 @@ type contentAssignmentSetResponse struct {
 	MaxAssignees int                     `json:"max_assignees" minimum:"1"`
 }
 
-func (h *handler) serveAccessReadSet(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
-	req, _, err := requestSession(r, rt.kind, ip)
+// unpagedReadRequest restricts private reads to a session and a bodyless URL.
+func unpagedReadRequest(w http.ResponseWriter, r *http.Request, kind, ip string) (identity.AuthRequest, bool) {
+	req, _, err := requestSession(r, kind, ip)
 	if err != nil {
 		writeError(w, err)
-		return
+		return identity.AuthRequest{}, false
 	}
 	if r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 		writeError(w, identity.ErrValidation)
+		return identity.AuthRequest{}, false
+	}
+	return req, true
+}
+
+func (h *handler) serveAccessReadSet(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
+	req, ok := unpagedReadRequest(w, r, rt.kind, ip)
+	if !ok {
 		return
 	}
 	service, ok := h.service.(accessReadSetsService)

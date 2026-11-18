@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { changeUserState, createAccessUser, issueInvitation, listAccessUsers, readMembership, replaceMembership } from '~/utils/admin-access'
 import type { AccessUser, MembershipSet } from '~/utils/admin-access'
-import { accessNotice } from '~/utils/admin-access-feedback'
+import { useAccessActions } from '~/utils/admin-access-feedback'
 
 const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
 const emit = defineEmits<{ 'step-up': [], 'session-changed': [] }>()
@@ -17,28 +17,14 @@ const name = ref('')
 const issue = ref<{ token: string, expires_at: string }>()
 const panel = ref<HTMLElement>()
 const confirmation = ref<'disable' | 'activate' | 'invite' | 'memberships'>()
-const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
+const { active, busy, error, feedback, run } = useAccessActions(() => emit('step-up'), () => emit('session-changed'))
 const additions = computed(() => chosen.value.filter(id => !membership.value?.role_ids.includes(id)).length)
 const removals = computed(() => membership.value?.role_ids.filter(id => !chosen.value.includes(id)).length ?? 0)
-let active = true
-
-async function run(action: () => Promise<void>) {
-  if (busy.value) return
-  busy.value = true
-  error.value = ''
-  feedback.value = ''
-  try { await action() }
-  catch (problem: unknown) {
-    if (active) error.value = accessNotice(problem, () => emit('step-up'), () => emit('session-changed'))
-  } finally { busy.value = false }
-}
 
 function load(offset = 0) {
   return run(async () => {
     const page = await listAccessUsers(offset)
-    if (!active) return
+    if (!active.value) return
     users.value = page.items
     pageOffset.value = offset
     nextOffset.value = page.next_offset
@@ -61,13 +47,13 @@ async function select(user: AccessUser) {
   feedback.value = ''
   error.value = ''
   await nextTick()
-  if (active) panel.value?.focus()
+  if (active.value) panel.value?.focus()
 }
 
 function create() {
   return run(async () => {
     const user = await createAccessUser(name.value, props.csrf)
-    if (!active) return
+    if (!active.value) return
     name.value = ''
     updateUser(user)
     await select(user)
@@ -78,7 +64,7 @@ function create() {
 async function loadMembership(user: AccessUser) {
   membership.value = undefined
   const found = await readMembership(user)
-  if (!active || selected.value?.id !== user.id) return
+  if (!active.value || selected.value?.id !== user.id) return
   membership.value = found
   chosen.value = found.role_ids.slice()
 }
@@ -87,7 +73,7 @@ async function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invi
   switch (action) {
     case 'invite': {
       const result = await issueInvitation(user, props.csrf)
-      if (!active) return
+      if (!active.value) return
       updateUser(result.user)
       issue.value = { token: result.token, expires_at: result.expires_at }
       return
@@ -96,14 +82,14 @@ async function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invi
       const current = membership.value
       if (!current) return
       const newUser = await replaceMembership(current, chosen.value, props.csrf)
-      if (!active) return
+      if (!active.value) return
       updateUser(newUser)
       await loadMembership(newUser)
       return
     }
     default: {
       const updated = await changeUserState(user, action, props.csrf)
-      if (!active) return
+      if (!active.value) return
       updateUser(updated)
       membership.value = undefined
       sessionsOpen.value = false
@@ -122,7 +108,7 @@ function confirm() {
   if (!user || !action) return
   return run(async () => {
     await saveUser(user, action)
-    if (!active) return
+    if (!active.value) return
     confirmation.value = undefined
     feedback.value = 'admin.access_saved'
   })
@@ -142,7 +128,7 @@ function date(value: string) {
 }
 
 onMounted(() => { void load() })
-onBeforeUnmount(() => { active = false; issue.value = undefined })
+onBeforeUnmount(() => { issue.value = undefined })
 </script>
 
 <template>

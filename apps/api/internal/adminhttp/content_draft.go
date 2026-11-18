@@ -88,17 +88,17 @@ func (h *handler) serveDraft(w http.ResponseWriter, r *http.Request, rt route, t
 	h.serveDraftSave(w, r, rt, target, ip)
 }
 
-func (h *handler) serveDraftRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
+func draftReadRequest(w http.ResponseWriter, r *http.Request, ip string) (identity.AuthRequest, bool) {
 	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 		writeError(w, identity.ErrValidation)
-		return
+		return identity.AuthRequest{}, false
 	}
-	req, _, err := requestSession(r, fullKind, ip)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if !attachRequestID(w, &req) {
+	return requestWithID(w, r, fullKind, ip)
+}
+
+func (h *handler) serveDraftRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string) {
+	req, ok := draftReadRequest(w, r, ip)
+	if !ok {
 		return
 	}
 	state, err := h.draftEditor.ReadDraftForType(r.Context(), req, target.typeKey, target.id)

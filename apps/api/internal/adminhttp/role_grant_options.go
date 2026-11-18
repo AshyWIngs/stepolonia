@@ -41,13 +41,8 @@ type roleGrantOptionsResponse struct {
 }
 
 func (h *handler) serveRoleGrantOptions(w http.ResponseWriter, r *http.Request, rt route, ip string) {
-	req, _, err := requestSession(r, rt.kind, ip)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
-		writeError(w, identity.ErrValidation)
+	req, ok := unpagedReadRequest(w, r, rt.kind, ip)
+	if !ok {
 		return
 	}
 	service, ok := h.service.(roleGrantOptionsReader)

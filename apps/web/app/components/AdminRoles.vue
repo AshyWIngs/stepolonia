@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { copyAccessRole, listAccessRoles, roleGrantOptions, saveAccessRole, updateRoleState } from '~/utils/admin-access'
 import type { AccessRole, RoleAction, RoleGrant, RoleGrantOption } from '~/utils/admin-access'
-import { accessNotice } from '~/utils/admin-access-feedback'
+import { useAccessActions } from '~/utils/admin-access-feedback'
 
 const props = defineProps<{ csrf: string, translate: (key: string) => string }>()
 const emit = defineEmits<{ 'step-up': [], 'session-changed': [] }>()
@@ -10,9 +10,7 @@ const roles = ref<AccessRole[]>([])
 const selected = ref<AccessRole>()
 const next = ref<number | null>(null)
 const offset = ref(0)
-const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
+const { active, busy, error, feedback, run } = useAccessActions(() => emit('step-up'), () => emit('session-changed'))
 const heading = ref<HTMLElement>()
 const mode = ref<'edit' | 'create' | 'copy'>()
 const name = ref('')
@@ -34,7 +32,6 @@ const actions = computed<RoleAction[]>(() => {
     default: return []
   }
 })
-let active = true
 
 watch(currentOption, () => {
   selectedFields.value = []
@@ -44,20 +41,9 @@ watch(currentOption, () => {
   delegationCeiling.value = 'assigned'
 })
 
-async function run(action: () => Promise<void>) {
-  if (busy.value) return
-  busy.value = true
-  error.value = ''
-  feedback.value = ''
-  try { await action() }
-  catch (problem: unknown) {
-    if (active) error.value = accessNotice(problem, () => emit('step-up'), () => emit('session-changed'))
-  } finally { busy.value = false }
-}
-
 async function load(page = 0) {
   const result = await listAccessRoles(page)
-  if (!active) return
+  if (!active.value) return
   offset.value = page
   roles.value = result.items
   next.value = result.next_offset
@@ -70,13 +56,13 @@ async function select(role: AccessRole) {
   error.value = ''
   feedback.value = ''
   await nextTick()
-  if (active) heading.value?.focus()
+  if (active.value) heading.value?.focus()
 }
 
 function startEdit(value: 'edit' | 'create' | 'copy') {
   return run(async () => {
     const available = value === 'copy' ? undefined : await roleGrantOptions()
-    if (!active) return
+    if (!active.value) return
     options.value = available?.options ?? []
     currentOption.value = undefined
     staged.value = value === 'edit' ? selected.value?.grants.slice() ?? [] : []
@@ -130,11 +116,11 @@ function save() {
     const saved = action === 'copy' && role
       ? await copyAccessRole(role, name.value, props.csrf)
       : await saveAccessRole(action === 'edit' ? role : undefined, name.value, staged.value, props.csrf)
-    if (!active) return
+    if (!active.value) return
     selected.value = saved
     mode.value = undefined
     await load()
-    if (active) feedback.value = 'admin.access_saved'
+    if (active.value) feedback.value = 'admin.access_saved'
   })
 }
 
@@ -144,11 +130,11 @@ function transition() {
   if (!role || !action) return
   return run(async () => {
     const updated = await updateRoleState(role, action, props.csrf)
-    if (!active) return
+    if (!active.value) return
     selected.value = updated || undefined
     confirmCommand.value = undefined
     await load(offset.value)
-    if (active) feedback.value = 'admin.access_saved'
+    if (active.value) feedback.value = 'admin.access_saved'
   })
 }
 
@@ -160,7 +146,6 @@ function reload() {
 }
 
 onMounted(() => { void run(() => load()) })
-onBeforeUnmount(() => { active = false })
 </script>
 
 <template>
