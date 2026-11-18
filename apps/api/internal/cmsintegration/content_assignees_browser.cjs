@@ -9,7 +9,7 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
   const recipient = process.env.ASSIGN_RECIPIENT;
   const missing = process.env.ASSIGN_UNKNOWN;
   const replacement = { assignee_ids: [recipient], expected_version: '1' };
-  const route = (key, id) => '/api/v1/admin/content/' + key + '/' + id + '/assignees';
+  const route = (key, id) => `/api/v1/admin/content/${key}/${id}/assignees`;
   const path = route(type, item);
 
   const { open, send, login } = browserAdminClient(browser, origin, 'ASSIGN');

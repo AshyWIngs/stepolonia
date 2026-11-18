@@ -30,7 +30,7 @@ func TestAuthUserRolesBrowserIntegration(t *testing.T) {
 	_, err = f.state.db.Exec(`UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id IN ($1,$2)`, f.state.user, user.ID)
 	requireNoError(t, err)
 
-	command := exec.CommandContext(ctx, nodeExecutable, "user_roles_browser.cjs")
+	command := exec.CommandContext(ctx, "node", "user_roles_browser.cjs")
 	command.Env = append(os.Environ(),
 		"MEMBERSHIP_ORIGIN="+f.server.URL, "MEMBERSHIP_PASSWORD="+bootstrapTestPassphrase,
 		"MEMBERSHIP_ADMIN_LOGIN="+bootstrapTestLogin, "MEMBERSHIP_ADMIN_CODE="+bootstrapCode(t, f.state.db, f.state.secret),

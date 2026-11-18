@@ -8,7 +8,7 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
     const users = '/api/v1/admin/users';
     const roles = '/api/v1/admin/roles';
     const user = process.env.MEMBERSHIP_RECIPIENT_ID;
-    const path = users + '/' + user + '/roles';
+    const path = `${users}/${user}/roles`;
     const version = Number(process.env.MEMBERSHIP_VERSION);
     const oldRole = process.env.MEMBERSHIP_OLD_ROLE;
     const newRoles = [process.env.MEMBERSHIP_ACTIVE_ROLE, process.env.MEMBERSHIP_INACTIVE_ROLE];
@@ -24,7 +24,7 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
       assert.equal(response.body.code, 'authentication_required');
     });
     const recipientCSRF = await login(recipient, 'RECIPIENT');
-    await send(recipient, roles + '/' + oldRole, 200);
+    await send(recipient, `${roles}/${oldRole}`, 200);
     await send(recipient, users, 403);
     assert.equal((await send(recipient, path, 403, { method: 'PUT', body: replacement, csrf: recipientCSRF })).body.code, 'permission_denied');
 
@@ -37,7 +37,7 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
     assert.deepEqual(replaced.body, {
       id: user, login: process.env.MEMBERSHIP_RECIPIENT_LOGIN, state: 'active', version: version + 1,
     });
-    await send(recipient, roles + '/' + oldRole, 403);
+    await send(recipient, `${roles}/${oldRole}`, 403);
     await send(recipient, users, 200);
     assert.equal((await put(409, replacement, csrf)).body.code, 'version_conflict');
     const cleared = await put(200, { role_ids: [], expected_version: version + 1 }, csrf);

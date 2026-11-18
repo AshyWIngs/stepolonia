@@ -41,7 +41,7 @@ func runContentAssigneesBrowser(t *testing.T, mode string) {
 	_, err := f.db.Exec(`UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id IN ($1,$2)`,
 		x.manager.user.ID, x.recipient.user.ID)
 	requireNoError(t, err)
-	command := exec.CommandContext(ctx, nodeExecutable, "content_assignees_browser.cjs")
+	command := exec.CommandContext(ctx, "node", "content_assignees_browser.cjs")
 	command.Env = append(os.Environ(),
 		"ASSIGN_ORIGIN="+x.http.server.URL, "ASSIGN_MODE="+mode,
 		"ASSIGN_PASSWORD="+bootstrapTestPassphrase,
