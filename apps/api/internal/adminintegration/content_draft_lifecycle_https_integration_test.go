@@ -2,6 +2,7 @@ package adminintegration
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -61,6 +62,22 @@ func TestAdminDraftAdoptSchemaHTTPSIntegration(t *testing.T) {
  WHERE target_id=$1 AND operation='content.draft_schema_adopted' AND result='success'`, draftEditItem).Scan(&adopted))
 	if adopted != 1 {
 		t.Fatalf("schema adoption success audit count: %d", adopted)
+	}
+	assertWriteOnlyAdoption(t, f, server, adopt)
+}
+
+func assertWriteOnlyAdoption(t *testing.T, f draftEditorFixture, server *httptest.Server, body string) {
+	t.Helper()
+	_, err := f.owner.Exec(`DELETE FROM public.grant_fields WHERE grant_id IN (
+ SELECT id FROM public.role_grants WHERE role_id=$1 AND operation='content.items.read')`, f.roleID)
+	requireNoError(t, err)
+	_, err = f.owner.Exec(`DELETE FROM public.role_grants WHERE role_id=$1 AND operation='content.items.read'`, f.roleID)
+	requireNoError(t, err)
+	path := draftEditorialPath + draftOtherItem + "/adopt-schema"
+	response := sendDraftRequest(t, server, http.MethodPost, f.actor.Token, draftHTTPRequest{path, body, f.actor.CSRF, http.StatusOK})
+	if !strings.Contains(response, `"schema_no":"2"`) || !strings.Contains(response, `"version":"2"`) ||
+		strings.Contains(response, `"shared"`) || strings.Contains(response, `"locales"`) {
+		t.Fatalf("unexpected write-only schema receipt: %s", response)
 	}
 }
 

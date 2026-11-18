@@ -130,6 +130,8 @@ func (e *DraftEditor) saveDraft(ctx context.Context, req identity.AuthRequest, t
 	if e == nil || e.auth == nil {
 		return DraftState{}, identity.ErrSecurityUnavailable
 	}
+	ctx, cancel := context.WithTimeout(ctx, draftCandidateTimeout)
+	defer cancel()
 	var out DraftState
 	err := e.auth.WithDraftUpdate(ctx, req, itemID, func(ctx context.Context, tx *sql.Tx, session identity.Session, itemID string) error {
 		update, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentUpdate, itemID)
@@ -160,6 +162,9 @@ func draftCommandResult(out DraftState, err error) (DraftState, error) {
 }
 
 func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Session, update identity.ContentItemAccess, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+	if err := checkDraftReadSize(ctx, tx, itemID); err != nil {
+		return DraftState{}, err
+	}
 	state, err := loadDraft(ctx, tx, itemID)
 	if err != nil {
 		return DraftState{}, databaseError(err)

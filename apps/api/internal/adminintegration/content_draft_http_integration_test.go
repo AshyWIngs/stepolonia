@@ -138,5 +138,8 @@ func TestAdminDraftReadLocaleLimitHTTPSIntegration(t *testing.T) {
 	requireNoError(t, err)
 	req.status = http.StatusServiceUnavailable
 	sendDraftRequest(t, server, http.MethodGet, f.actor.Token, req)
+	req.body = `{"expected_version":"1","schema_no":"1","shared":{"headline":{"kind":"string","value":"Rejected"}}}`
+	req.csrf = f.actor.CSRF
+	sendDraftPatch(t, server, f.actor.Token, req)
 	assertDraftEditState(t, f.owner, draftEditItem, 1, initialDraftHeadline, initialDraftNote)
 }

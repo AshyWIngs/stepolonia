@@ -310,5 +310,6 @@ func adoptDraftSchema(ctx context.Context, tx *sql.Tx, state *DraftState, curren
 	if err := advanceVersion(ctx, tx, state); err != nil {
 		return err
 	}
+	state.SchemaNo = current
 	return nil
 }
