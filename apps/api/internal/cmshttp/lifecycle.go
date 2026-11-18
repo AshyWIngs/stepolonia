@@ -62,32 +62,37 @@ func isLifecycleRoute(path string) bool {
 }
 
 func userPage(query string) (cms.UserPage, error) {
-	page := cms.UserPage{Limit: cms.DefaultUserPageLimit}
+	limit, offset, err := boundedPage(query, cms.DefaultUserPageLimit, cms.MaxUserPageLimit, cms.MaxUserPageOffset)
+	return cms.UserPage{Limit: limit, Offset: offset}, err
+}
+
+func boundedPage(query string, defaultLimit, maxLimit, maxOffset int) (int, int, error) {
+	limit, offset := defaultLimit, 0
 	values, err := url.ParseQuery(query)
 	if err != nil {
-		return page, cms.ErrValidation
+		return 0, 0, cms.ErrValidation
 	}
 	for key, values := range values {
 		if len(values) != 1 {
-			return page, cms.ErrValidation
+			return 0, 0, cms.ErrValidation
 		}
 		value, err := unsignedDecimal(values[0])
 		if err != nil {
-			return page, err
+			return 0, 0, err
 		}
 		switch key {
 		case "limit":
-			page.Limit = value
+			limit = value
 		case "offset":
-			page.Offset = value
+			offset = value
 		default:
-			return page, cms.ErrValidation
+			return 0, 0, cms.ErrValidation
 		}
 	}
-	if page.Limit < 1 || page.Limit > cms.MaxUserPageLimit || page.Offset > cms.MaxUserPageOffset {
-		return page, cms.ErrValidation
+	if limit < 1 || limit > maxLimit || offset > maxOffset {
+		return 0, 0, cms.ErrValidation
 	}
-	return page, nil
+	return limit, offset, nil
 }
 
 func unsignedDecimal(raw string) (int, error) {

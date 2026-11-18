@@ -87,8 +87,7 @@ func TestAuthOnboardingIndependentCurrentAuthorityIntegration(t *testing.T) {
 	qaOnboardingStaleStep(t, f.db, full.Token)
 	_, err = f.service.CreateUser(ctx, authReq(full), "qa-stale-step")
 	qaOnboardingError(t, err, cms.ErrStepUpRequired)
-	_, err = f.db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE token_digest=$1`, authDigest(full.Token))
-	requireNoError(t, err)
+	authRefreshStep(t, f.db, full.Token)
 	lock := qaBootstrapLock(t, f.db)
 	_, err = lock.Exec(`DELETE FROM public.role_grants WHERE operation='users.create' AND role_id IN (SELECT role_id FROM public.user_roles WHERE user_id=$1)`, f.user)
 	requireNoError(t, err)
@@ -271,7 +270,7 @@ func qaOnboardingHTTP(t *testing.T, f authHTTPFixture, path, body string, sessio
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, f.server.URL+path, strings.NewReader(body))
 	requireNoError(t, err)
 	setAuthHTTPHeaders(req, f.server.URL, session.CSRF)
-	req.Header.Set("X-Request-ID", qaUntrustedRequestID)
+	req.Header.Set(authRequestIDHeader, qaUntrustedRequestID)
 	req.AddCookie(&http.Cookie{Name: authFullSessionCookie, Value: session.Token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	client := f.server.Client()
 	client.Jar = nil

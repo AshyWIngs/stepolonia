@@ -10,17 +10,25 @@ import (
 
 const (
 	contentTypeHeader = "Content-Type"
+	requestIDHeader   = "X-Request-ID"
 	jsonMediaType     = "application/json"
 )
 
 const (
-	authenticationCode   = "authentication_required"
-	originCode           = "origin_denied"
-	validationCode       = "validation_failed"
-	csrfCode             = "csrf_failed"
-	notFoundCode         = "not_found"
-	permissionCode       = "permission_denied"
-	methodNotAllowedCode = "method_not_allowed"
+	authenticationCode      = "authentication_required"
+	originCode              = "origin_denied"
+	validationCode          = "validation_failed"
+	csrfCode                = "csrf_failed"
+	notFoundCode            = "not_found"
+	permissionCode          = "permission_denied"
+	methodNotAllowedCode    = "method_not_allowed"
+	bodyTooLargeCode        = "body_too_large"
+	securityUnavailableCode = "security_unavailable"
+	stepUpRequiredCode      = "step_up_required"
+	lastAdminRequiredCode   = "last_admin_required"
+	versionConflictCode     = "version_conflict"
+	invalidTransitionCode   = "invalid_transition"
+	rateLimitedCode         = "rate_limited"
 )
 
 type csrfResponse struct {
@@ -49,7 +57,7 @@ func problem(w http.ResponseWriter, status int, code string) {
 	_ = json.NewEncoder(w).Encode(authProblem{Status: status, Code: code, Title: http.StatusText(status)})
 }
 func writeError(w http.ResponseWriter, err error) {
-	status, code := http.StatusServiceUnavailable, "security_unavailable"
+	status, code := http.StatusServiceUnavailable, securityUnavailableCode
 	switch {
 	case errors.Is(err, cms.ErrInvalidCredentials):
 		status, code = http.StatusUnauthorized, "invalid_credentials"
@@ -60,19 +68,19 @@ func writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, cms.ErrPermissionDenied):
 		status, code = http.StatusForbidden, permissionCode
 	case errors.Is(err, cms.ErrStepUpRequired):
-		status, code = http.StatusForbidden, "step_up_required"
+		status, code = http.StatusForbidden, stepUpRequiredCode
 	case errors.Is(err, cms.ErrLastAdminRequired):
-		status, code = http.StatusConflict, "last_admin_required"
+		status, code = http.StatusConflict, lastAdminRequiredCode
 	case errors.Is(err, cms.ErrVersionConflict):
-		status, code = http.StatusConflict, "version_conflict"
+		status, code = http.StatusConflict, versionConflictCode
 	case errors.Is(err, cms.ErrInvalidTransition):
-		status, code = http.StatusConflict, "invalid_transition"
+		status, code = http.StatusConflict, invalidTransitionCode
 	case errors.Is(err, cms.ErrNotFound):
 		status, code = http.StatusNotFound, notFoundCode
 	case errors.Is(err, cms.ErrValidation):
 		status, code = http.StatusBadRequest, validationCode
 	case errors.Is(err, cms.ErrRateLimited):
-		status, code = http.StatusTooManyRequests, "rate_limited"
+		status, code = http.StatusTooManyRequests, rateLimitedCode
 		w.Header().Set("Retry-After", "900")
 	}
 	problem(w, status, code)

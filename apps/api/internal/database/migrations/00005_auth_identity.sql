@@ -281,6 +281,7 @@ CREATE TABLE public.security_audit (
             'auth.sessions_revoked',
             'auth.step_up',
             'users.created', 'users.onboarding_issued',
+            'roles.created', 'roles.edited',
             'users.activated', 'users.disabled',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
