@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import shutil
+import signal
 import subprocess
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
@@ -19,6 +20,38 @@ from site_config import ROOT, compose_command, load_config, postgres_sql_args, s
 
 run_prebuilt_tool = partial(run_tool, build_image=False)
 OWNERSHIP_LABEL = "io.stepolonia.stage12-test"
+IMAGE_SUFFIXES = {"postgres-init": "init", "postgres": "postgres", "db-tools": "tools",
+                  "api": "api", "web": "web", "caddy": "caddy"}
+
+
+def test_image(project, service):
+    return f"{project}-{IMAGE_SUFFIXES[service]}:check"
+
+
+def existing_test_images(project, log):
+    expected = {test_image(project, service) for service in IMAGE_SUFFIXES}
+    references = command(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}"],
+                         log, capture=True)
+    return sorted(expected.intersection(references.splitlines()))
+
+
+def verify_unused_test_images(project, log):
+    existing = existing_test_images(project, log)
+    if existing:
+        raise RuntimeError(f"Disposable image tags already exist: {', '.join(existing)}")
+
+
+def cleanup_installation(compose, project, token, volume, log):
+    verify_owned(project, token, log, volume=volume)
+    command([*compose, "down", "--volumes", "--remove-orphans"], log)
+    images = existing_test_images(project, log)
+    if images:
+        command(["docker", "image", "rm", "--no-prune", *images], log)
+
+
+def interrupt(_signal, _frame):
+    """Use the normal fixture teardown on SIGTERM."""
+    raise KeyboardInterrupt
 
 
 def command(arguments, log, *, env=None, capture=False, cwd=ROOT):
@@ -96,14 +129,14 @@ def installation_override(project, token, volume, *, runtime=False, images_proje
     images = images_project or project
     labels = {OWNERSHIP_LABEL: token}
     services = {
-        "postgres-init": {"image": f"{images}-init:check", "labels": labels},
-        "postgres": {"image": f"{images}-postgres:check", "labels": labels,
+        "postgres-init": {"image": test_image(images, "postgres-init"), "labels": labels},
+        "postgres": {"image": test_image(images, "postgres"), "labels": labels,
                      "ports": [{"target": 5432, "published": "0", "host_ip": "127.0.0.1"}]},
-        "db-tools": {"image": f"{images}-tools:check", "labels": labels},
+        "db-tools": {"image": test_image(images, "db-tools"), "labels": labels},
     }
     if runtime:
         for service in ("api", "web", "caddy"):
-            services[service] = {"image": f"{images}-{service}:check", "labels": labels}
+            services[service] = {"image": test_image(images, service), "labels": labels}
     if fast_start:
         for name in ("postgres", "api", "web"):
             if name in services:
@@ -166,8 +199,7 @@ def prepare_test_images(compose, project, log, *, runtime, reuse_images):
     if reuse_images:
         for service in services:
             source = f"sp-{service}:stage0"
-            suffix = "init" if service == "postgres-init" else service
-            target = f"{project}-{suffix}:check"
+            target = test_image(project, service)
             image_id = command(["docker", "image", "inspect", "--format", "{{.Id}}", source], log, capture=True)
             command(["docker", "image", "tag", image_id, target], log)
             print(f"Using built image {source} {image_id} as {target}", file=log)
@@ -349,6 +381,7 @@ def main(runtime=False, *, reuse_images=False):
             # Compose может принять существующий именованный том без наших labels.
             # Проверяем точное имя до первого запуска, а затем и перед удалением.
             verify_owned(project, token, log, volume=volume)
+            verify_unused_test_images(project, log)
             resources_owned = True
             prepare_test_images(compose, project, log, runtime=runtime, reuse_images=reuse_images)
             command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
@@ -378,8 +411,7 @@ def main(runtime=False, *, reuse_images=False):
     finally:
         if resources_owned:
             with log_path.open("a") as log:
-                verify_owned(project, token, log, volume=volume)
-                command([*compose, "down", "--volumes", "--remove-orphans"], log)
+                cleanup_installation(compose, project, token, volume, log)
         shutil.rmtree(directory)
         override.unlink()
     if success:
@@ -387,6 +419,7 @@ def main(runtime=False, *, reuse_images=False):
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, interrupt)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime", action="store_true", help="Приёмка Publishing через Compose/Caddy")
     main(parser.parse_args().runtime, reuse_images=os.environ.get("VERIFY_REUSE_IMAGES") == "1")

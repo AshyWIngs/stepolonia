@@ -246,6 +246,26 @@ class DisposableDownTests(unittest.TestCase):
                                         io.StringIO(), volume=volume)
         self.assertEqual(command.call_count, 2)
 
+    def test_existing_image_tag_prevents_allocation(self):
+        image = publishing.test_image(self.marker["project"], "db-tools")
+        with patch.object(publishing, "command", return_value=image) as command:
+            with self.assertRaisesRegex(RuntimeError, "Disposable image tags already exist"):
+                publishing.verify_unused_test_images(self.marker["project"], io.StringIO())
+        self.assertEqual(command.call_count, 1)
+
+    def test_cleanup_removes_only_the_exact_run_tag_after_compose_down(self):
+        project, token, volume = (self.marker[key] for key in ("project", "token", "volume"))
+        owned = publishing.test_image(project, "postgres")
+        listing = f"{owned}\n{owned}-foreign\nsp-postgres:stage0"
+        log = io.StringIO()
+        with patch.object(publishing, "verify_owned") as verify, \
+                patch.object(publishing, "command", side_effect=[None, listing, None]) as command:
+            publishing.cleanup_installation(["docker", "compose"], project, token, volume, log)
+        verify.assert_called_once_with(project, token, log, volume=volume)
+        self.assertEqual(command.call_args_list[0].args[0],
+                         ["docker", "compose", "down", "--volumes", "--remove-orphans"])
+        self.assertEqual(command.call_args_list[-1].args[0], ["docker", "image", "rm", "--no-prune", owned])
+
 
 if __name__ == "__main__":
     unittest.main()
