@@ -82,12 +82,9 @@ func (e *DraftEditor) ReadDraftMetadata(ctx context.Context, req identity.AuthRe
 		if err != nil {
 			return err
 		}
-		schema, err := loadSchema(ctx, tx, access.TypeID, schemaNo)
-		if err != nil {
-			return err
-		}
-		out = readableDraftMetadata(itemID, schema, access)
-		return nil
+		fields, err := readGrantedDraftFields(ctx, tx, access, schemaNo)
+		out = DraftMetadata{ItemID: itemID, SchemaNo: schemaNo, Fields: fields}
+		return err
 	})
 	if err != nil {
 		return DraftMetadata{}, err
@@ -95,16 +92,27 @@ func (e *DraftEditor) ReadDraftMetadata(ctx context.Context, req identity.AuthRe
 	return out, nil
 }
 
-func readableDraftMetadata(itemID string, schema TypeSchema, access identity.ContentItemAccess) DraftMetadata {
-	out := DraftMetadata{ItemID: itemID, SchemaNo: schema.SchemaNo, Fields: []DraftFieldMetadata{}}
-	for _, field := range schema.Fields {
-		if access.AllowsField(field.ID) {
-			out.Fields = append(out.Fields, DraftFieldMetadata{
-				FieldID: field.ID, Key: field.Key, Kind: field.Kind, Scope: field.Scope,
-				Visibility: field.Visibility, Required: field.Required,
-				Config: field.Config, DisplayLabels: field.DisplayLabels,
-			})
-		}
+func readGrantedDraftFields(ctx context.Context, tx *sql.Tx, access identity.ContentItemAccess, schemaNo int64) ([]DraftFieldMetadata, error) {
+	fields := []DraftFieldMetadata{}
+	ids := access.FieldIDs()
+	if len(ids) == 0 {
+		return fields, nil
 	}
-	return out
+	rows, err := tx.QueryContext(ctx, `SELECT f.field_id::text,f.key,d.kind,d.scope,d.visibility,d.required,d.config,f.display_labels
+ FROM public.content_field_definitions d JOIN public.content_fields f USING(type_id,field_id)
+ WHERE d.type_id=$1 AND d.schema_no=$2 AND d.field_id=ANY($3::uuid[])
+ ORDER BY f.key`, access.TypeID, schemaNo, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var field DraftFieldMetadata
+		if err := rows.Scan(&field.FieldID, &field.Key, &field.Kind, &field.Scope, &field.Visibility,
+			&field.Required, &field.Config, &field.DisplayLabels); err != nil {
+			return nil, err
+		}
+		fields = append(fields, field)
+	}
+	return fields, rows.Err()
 }

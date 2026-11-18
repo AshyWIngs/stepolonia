@@ -68,8 +68,9 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 		mux.Handle("/api/v1/admin/users/", auth)
 		mux.Handle("/api/v1/admin/roles", auth)
 		mux.Handle("/api/v1/admin/roles/", auth)
+		mux.Handle("/api/v1/admin/content-types", auth)
 		const draftPath = "/api/v1/admin/content/{type_key}/{item_id}"
-		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish"} {
+		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish", "/schema"} {
 			mux.Handle(draftPath+suffix, auth)
 		}
 		mux.Handle("/api/v1/admin/content/{type_key}", auth)

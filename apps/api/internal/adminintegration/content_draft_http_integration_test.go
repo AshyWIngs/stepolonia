@@ -41,7 +41,12 @@ func sendDraftRequest(t *testing.T, server *httptest.Server, method, token strin
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, server.URL+input.path, strings.NewReader(input.body))
 	requireNoError(t, err)
-	setAuthHTTPHeaders(req, server.URL, input.csrf)
+	if method == http.MethodGet {
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.Header.Set("Referer", server.URL+"/admin")
+	} else {
+		setAuthHTTPHeaders(req, server.URL, input.csrf)
+	}
 	req.AddCookie(&http.Cookie{Name: "__Host-sp_session", Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	res, err := server.Client().Do(req)
 	requireNoError(t, err)

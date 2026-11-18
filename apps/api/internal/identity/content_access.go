@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"maps"
+	"slices"
 )
 
 const (
@@ -110,6 +112,11 @@ type ContentItemAccess struct {
 func (a ContentItemAccess) AllowsField(fieldID string) bool {
 	_, ok := a.fields[fieldID]
 	return ok
+}
+
+// FieldIDs returns the IDs for SQL projections within the authorizing transaction.
+func (a ContentItemAccess) FieldIDs() []string {
+	return slices.Collect(maps.Keys(a.fields))
 }
 
 // LoadContentItemAccess resolves permissions against the persisted item type and

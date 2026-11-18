@@ -150,6 +150,12 @@ func safeReadPath(raw string) bool {
 	if _, ok := contentDraftTarget(raw); ok {
 		return true
 	}
+	if _, ok := createDraftTarget(raw); ok {
+		return true
+	}
+	if _, _, ok := contentMetadataTarget(raw); ok {
+		return true
+	}
 	role, _ := roleRoutePath(raw)
 	return role == rolesPath || role == rolePath
 }
