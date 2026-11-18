@@ -235,6 +235,8 @@ func draftReadSchema() *huma.Schema {
 
 func draftSuccessDescription(operationID string) string {
 	switch operationID {
+	case listDraftsOperation:
+		return "Returns a bounded page of draft identities and versions authorized by collection and item scope."
 	case createDraftOperation:
 		return "Item, empty draft, creator assignment and audit committed. Returns the new item and collection IDs and the draft version."
 	case readySharedOperation, readyLocaleOperation:

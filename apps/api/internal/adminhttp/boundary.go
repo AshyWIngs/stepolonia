@@ -92,10 +92,21 @@ func (b boundary) check(r *http.Request) (string, string) {
 	if !b.validRequestOrigin(r, origins) {
 		return "", originCode
 	}
-	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && (r.Method != http.MethodGet || (r.URL.Path != usersPath && r.URL.Path != rolesPath)) {
+	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && !allowsPageQuery(r) {
 		return "", validationCode
 	}
 	return ip, ""
+}
+
+func allowsPageQuery(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if r.URL.Path == usersPath || r.URL.Path == rolesPath {
+		return true
+	}
+	_, collection := createDraftTarget(r.URL.Path)
+	return collection
 }
 
 func validPort(u *url.URL) bool {

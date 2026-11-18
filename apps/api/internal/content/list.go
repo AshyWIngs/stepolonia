@@ -15,7 +15,7 @@ type scopeFunc func(context.Context, *sql.Tx, Actor, string) (itemScope, error)
 // ListDrafts requires a server-derived SQL scope before pagination. No production
 // scope adapter is enabled until authenticated administration access control exists.
 func (s *Service) ListDrafts(ctx context.Context, actor Actor, typeID string, limit, offset int) ([]DraftState, error) {
-	if limit < 1 || limit > 100 || offset < 0 || offset > 10000 {
+	if limit < 1 || limit > identity.MaxDraftPageLimit || offset < 0 || offset > identity.MaxDraftPageOffset {
 		return nil, problem(Validation, "invalid_page")
 	}
 	if s.scope == nil {

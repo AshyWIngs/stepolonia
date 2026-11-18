@@ -55,6 +55,9 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 		return replaceContentAssigneesRoute, target, true
 	}
 	if target, ok := createDraftTarget(path); ok && draftEditorEnabled {
+		if method == http.MethodGet {
+			return listDraftsRoute, target, true
+		}
 		return createDraftRoute, target, true
 	}
 	if target, ok := contentDraftTarget(path); ok && draftEditorEnabled {
@@ -213,7 +216,7 @@ func routeMethods(path string) string {
 		return rt.method
 	}
 	if path == createDraftPath {
-		return createDraftRoute.method
+		return listDraftsRoute.method + ", " + createDraftRoute.method
 	}
 	if path == contentDraftPath {
 		return readDraftRoute.method + ", " + saveDraftRoute.method

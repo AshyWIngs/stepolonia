@@ -49,6 +49,16 @@ const (
 	draftReadTimeout = 8 * time.Second
 )
 
+// ListDraftsForType returns one page of draft identities visible to the actor.
+func (e *DraftEditor) ListDraftsForType(ctx context.Context, req identity.AuthRequest, typeKey string, limit, offset int) (identity.DraftPage, error) {
+	if e == nil || e.auth == nil {
+		return identity.DraftPage{}, identity.ErrSecurityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
+	defer cancel()
+	return e.auth.ReadDraftPage(ctx, req, typeKey, limit, offset)
+}
+
 // ReadDraftForType returns the actor-readable draft for the persisted collection.
 func (e *DraftEditor) ReadDraftForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string) (DraftState, error) {
 	if e == nil || e.auth == nil {
