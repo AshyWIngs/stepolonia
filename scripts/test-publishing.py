@@ -91,7 +91,7 @@ def prepare_installation(site, project, database, token, *, runtime=False):
     return directory, override, log_path, values["DB_VOLUME_NAME"]
 
 
-def installation_override(project, token, volume, *, runtime=False, images_project=None):
+def installation_override(project, token, volume, *, runtime=False, images_project=None, fast_start=True):
     """Один источник конфигурации ресурсов для основной и второй одноразовых установок."""
     images = images_project or project
     labels = {OWNERSHIP_LABEL: token}
@@ -104,6 +104,10 @@ def installation_override(project, token, volume, *, runtime=False, images_proje
     if runtime:
         for service in ("api", "web", "caddy"):
             services[service] = {"image": f"{images}-{service}:check", "labels": labels}
+    if fast_start:
+        for name in ("postgres", "api", "web"):
+            if name in services:
+                services[name]["healthcheck"] = {"start_interval": "1s"}
     return {"services": services,
             "networks": {"data": {"internal": False, "labels": labels}, "app": {"labels": labels}},
             "volumes": {"postgres_data": {"name": volume, "external": False, "labels": labels}}}

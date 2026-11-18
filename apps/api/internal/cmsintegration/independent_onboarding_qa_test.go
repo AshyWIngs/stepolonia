@@ -10,9 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"stepolonia/apps/api/internal/cms"
-	"stepolonia/apps/api/internal/cmshttp"
 	"stepolonia/apps/api/internal/platform"
 	"strings"
 	"testing"
@@ -211,14 +209,9 @@ type qaOnboardingReply struct {
 
 func qaOnboardingTrace(t *testing.T, f authHTTPFixture, output io.Writer) authHTTPFixture {
 	t.Helper()
-	var handler http.Handler
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.ServeHTTP(w, r)
-	}))
-	t.Cleanup(server.Close)
-	auth, err := cmshttp.NewHandler(cmshttp.Config{CanonicalOrigin: server.URL}, f.state.service)
-	requireNoError(t, err)
-	handler = platform.HandlerWithAuth(nil, nil, slog.New(slog.NewJSONHandler(output, nil)), auth)
+	server := newAuthTLSServer(t, f.state.service, func(auth http.Handler) http.Handler {
+		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewJSONHandler(output, nil)), auth)
+	})
 	f.server = server
 	return f
 }
