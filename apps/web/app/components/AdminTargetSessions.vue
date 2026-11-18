@@ -20,7 +20,7 @@ async function run(work: () => Promise<void>) {
   try { await work() }
   catch (problem: unknown) {
     if (!active) return
-    error.value = accessNotice(problem, () => emit('step-up'), () => emit('session-changed'))
+    error.value = accessNotice(problem, () => { emit('step-up') }, () => { emit('session-changed') })
   } finally { busy.value = false }
 }
 

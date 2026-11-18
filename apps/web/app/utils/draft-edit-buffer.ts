@@ -10,8 +10,12 @@ export function savedFieldValue(draft: EditableDraft, field: EditorField, locale
   if (field.kind === 'relation') {
     return draft.relations.find(item => item.field_id === field.field_id && item.locale === locale)?.target_item_id
   }
-  const values = locale === '' ? draft.shared : draft.locales[locale]?.values
-  return values && Object.hasOwn(values, field.key) ? values[field.key] : undefined
+  const values = locale === '' ? draft.shared : ownValue(draft.locales, locale)?.values
+  return ownValue(values, field.key)
+}
+
+export function ownValue<T>(values: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+  return Object.entries(values ?? {}).find(([entry]) => entry === key)?.[1]
 }
 
 export function draftPatch(edits: Iterable<FieldEdit>): ContentPatch {

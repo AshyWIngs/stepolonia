@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AdminContentError } from '~/utils/admin-request'
+import { ownValue } from '~/utils/draft-edit-buffer'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createCollection, listCollections, listRegistryRenderers, readManagedCollection, reviseCollection } from '~/utils/admin-content'
 import type { CollectionChoice, FieldKind, ManagedCollection, RegistryField, RegistryRenderer } from '~/utils/admin-content'
@@ -110,14 +111,18 @@ function removeField(index: number) {
 }
 
 function labelFor(field: RegistryField, part: 'label' | 'help') {
-  return field.display_labels?.[props.uiLanguage]?.[part] ?? ''
+  const text = ownValue(field.display_labels, props.uiLanguage)
+  return (part === 'label' ? text?.label : text?.help) ?? ''
 }
 
 function updateLabel(field: RegistryField, part: 'label' | 'help', event: Event) {
   const control = event.currentTarget
   if (!(control instanceof HTMLInputElement)) return
   const locale = props.uiLanguage
-  field.display_labels = { ...field.display_labels, [locale]: { ...field.display_labels?.[locale], [part]: control.value } }
+  const entries = new Map(Object.entries(field.display_labels ?? {}))
+  const current = entries.get(locale) ?? {}
+  entries.set(locale, part === 'label' ? { ...current, label: control.value } : { ...current, help: control.value })
+  field.display_labels = Object.fromEntries(entries)
   dirty.value = true
 }
 

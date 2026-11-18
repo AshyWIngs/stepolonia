@@ -232,8 +232,9 @@ func createBoundRole(ctx context.Context, tx *sql.Tx, actor, typeID string) (str
 	if err != nil {
 		return "", err
 	}
+	roleName := "Collection access " + id
 	if _, err := tx.ExecContext(ctx, `INSERT INTO public.roles(id,name,self_access_user_id,self_access_type_id)
- VALUES($1,$2,$3,$4)`, id, "Collection access "+id, actor, typeID); err != nil {
+ VALUES($1,$2,$3,$4)`, id, roleName, actor, typeID); err != nil {
 		return "", roleWriteError(err)
 	}
 	_, err = tx.ExecContext(ctx, `WITH assigned AS (

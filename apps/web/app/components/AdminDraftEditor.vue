@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { commandDraft, readDraft, saveDraft } from '~/utils/admin-content'
 import type { DraftCommand, EditableDraft, EditorField, EditorMetadata, Scalar } from '~/utils/admin-content'
-import { draftPatch, savedFieldValue } from '~/utils/draft-edit-buffer'
+import { draftPatch, ownValue, savedFieldValue } from '~/utils/draft-edit-buffer'
 import type { FieldEdit } from '~/utils/draft-edit-buffer'
 
 const props = defineProps<{
@@ -47,7 +47,7 @@ function activeLanguage(code: string) {
 }
 
 function localeReady(code: string) {
-  return metadata.value?.ready_locales.includes(code) === true && draft.value?.locales[code]?.ready != null
+  return metadata.value?.ready_locales.includes(code) === true && ownValue(draft.value?.locales, code)?.ready != null
 }
 
 function showError(error: unknown) {
@@ -106,8 +106,7 @@ async function assignmentsSaved() {
 }
 
 function description(field: EditorField) {
-  const key = props.uiLanguage
-  const labels = Object.hasOwn(field.display_labels, key) ? field.display_labels[key] : undefined
+  const labels = ownValue(field.display_labels, props.uiLanguage)
   return {
     label: labels?.label || field.key,
     help: labels?.help || (field.kind === 'relation' ? props.translate('admin.content_relation_help') : undefined),
@@ -153,7 +152,7 @@ async function save() {
 
 async function markReady(shared: boolean) {
   const locale = selectedLanguage.value
-  if (!shared && (!activeLanguage(locale) || !draft.value?.locales[locale])) return
+  if (!shared && (!activeLanguage(locale) || !ownValue(draft.value?.locales, locale))) return
   invalid.value = new Set([
     ...sharedFields.value.filter(field => field.required && valueFor(field, '') === undefined),
     ...(shared ? [] : localeFields.value.filter(field => field.required && valueFor(field, locale) === undefined)),
@@ -170,26 +169,22 @@ async function markReady(shared: boolean) {
 async function transition(action: DraftCommand) {
   const source = draft.value
   if (!source || locked.value) return
-  const details = {
-    'ready-shared': {},
-    'ready': { locale: selectedLanguage.value },
-    'publish': { intended_locales: selectedPublications.value },
-    'unpublish': {},
-    'adopt-schema': { schema_no: metadata.value?.current_schema_no },
-  }
-  const messages = {
-    'ready-shared': 'admin.content_ready_saved',
-    'ready': 'admin.content_ready_saved',
-    'publish': 'admin.content_published',
-    'unpublish': 'admin.content_unpublished',
-    'adopt-schema': 'admin.content_schema_adopted',
-  }
+  const details = new Map<DraftCommand, object>([
+    ['ready', { locale: selectedLanguage.value }],
+    ['publish', { intended_locales: selectedPublications.value }],
+    ['adopt-schema', { schema_no: metadata.value?.current_schema_no }],
+  ])
+  const messages = new Map<DraftCommand, string>([
+    ['publish', 'admin.content_published'],
+    ['unpublish', 'admin.content_unpublished'],
+    ['adopt-schema', 'admin.content_schema_adopted'],
+  ])
   await run(async () => {
-    await commandDraft(props.typeKey, source, action, props.csrf, details[action])
+    await commandDraft(props.typeKey, source, action, props.csrf, details.get(action) ?? {})
     if (!active) return
     confirmation.value = null
     await refresh()
-    feedback.value = messages[action]
+    feedback.value = messages.get(action) ?? 'admin.content_ready_saved'
   })
 }
 
@@ -200,23 +195,22 @@ async function ask(question: NonNullable<typeof confirmation.value>) {
   confirmationHeading.value?.focus()
 }
 
-async function confirm() {
+function confirm() {
   switch (confirmation.value) {
     case 'close': emit('close'); return
     case 'reload':
-      await run(async () => {
+      return run(async () => {
         await refresh()
         if (!active) return
         edits.value.clear()
         invalid.value.clear()
         confirmation.value = null
       })
-      return
     case 'publish':
-      if (selectedPublications.value.length) await transition('publish')
+      if (selectedPublications.value.length) return transition('publish')
       return
     case 'unpublish':
-      await transition('unpublish')
+      return transition('unpublish')
   }
 }
 
@@ -298,7 +292,7 @@ onBeforeUnmount(() => { active = false })
             @click="markReady(true)"
           >{{ translate('admin.content_mark_shared') }}</button>
           <button
-            v-if="metadata.actions.ready && !outdated && draft.locales[selectedLanguage] && activeLanguage(selectedLanguage)"
+            v-if="metadata.actions.ready && !outdated && ownValue(draft.locales, selectedLanguage) && activeLanguage(selectedLanguage)"
             type="button" class="admin-secondary" :disabled="locked || confirmation !== null" @click="markReady(false)"
           >{{ translate('admin.content_mark_locale') }}</button>
           <button

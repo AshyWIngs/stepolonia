@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 )
 
 const (
@@ -138,15 +139,13 @@ func (s *AuthService) confirmReplacementFactor(ctx context.Context, tx *sql.Tx, 
 	if err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,confirmed_at=$4,last_counter=$5
- WHERE user_id=$1 AND confirmed_at IS NOT NULL`, session.user, ciphertext, s.config.KeyVersion, session.now, counter)
-	if err != nil {
-		return err
-	}
-	if count, err := res.RowsAffected(); err != nil || count != 1 {
+	var userID string
+	err = tx.QueryRowContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,confirmed_at=$4,last_counter=$5
+ WHERE user_id=$1 AND confirmed_at IS NOT NULL RETURNING user_id::text`, session.user, ciphertext, s.config.KeyVersion, session.now, counter).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrSecurityUnavailable
 	}
-	return nil
+	return err
 }
 
 func (s *AuthService) RegenerateRecoveryCodes(ctx context.Context, req AuthRequest) ([]string, error) {

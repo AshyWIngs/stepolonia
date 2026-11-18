@@ -17,7 +17,7 @@ const name = ref('')
 const issue = ref<{ token: string, expires_at: string }>()
 const panel = ref<HTMLElement>()
 const confirmation = ref<'disable' | 'activate' | 'invite' | 'memberships'>()
-const { active, busy, error, feedback, run } = useAccessActions(() => emit('step-up'), () => emit('session-changed'))
+const { active, busy, error, feedback, run } = useAccessActions(() => { emit('step-up') }, () => { emit('session-changed') })
 const additions = computed(() => chosen.value.filter(id => !membership.value?.role_ids.includes(id)).length)
 const removals = computed(() => membership.value?.role_ids.filter(id => !chosen.value.includes(id)).length ?? 0)
 
@@ -69,31 +69,37 @@ async function loadMembership(user: AccessUser) {
   chosen.value = found.role_ids.slice()
 }
 
-async function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 'memberships') {
+function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 'memberships') {
+  return run(async () => {
+    await applyUserCommand(user, action)
+    if (!active.value) return
+    confirmation.value = undefined
+    feedback.value = 'admin.access_saved'
+  })
+}
+
+function applyUserCommand(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 'memberships') {
   switch (action) {
-    case 'invite': {
-      const result = await issueInvitation(user, props.csrf)
+    case 'invite': return issueInvitation(user, props.csrf).then(result => {
       if (!active.value) return
       updateUser(result.user)
       issue.value = { token: result.token, expires_at: result.expires_at }
-      return
-    }
+    })
     case 'memberships': {
       const current = membership.value
       if (!current) return
-      const newUser = await replaceMembership(current, chosen.value, props.csrf)
-      if (!active.value) return
-      updateUser(newUser)
-      await loadMembership(newUser)
-      return
+      return replaceMembership(current, chosen.value, props.csrf).then(newUser => {
+        if (!active.value) return
+        updateUser(newUser)
+        return loadMembership(newUser)
+      })
     }
-    default: {
-      const updated = await changeUserState(user, action, props.csrf)
+    default: return changeUserState(user, action, props.csrf).then(updated => {
       if (!active.value) return
       updateUser(updated)
       membership.value = undefined
       sessionsOpen.value = false
-    }
+    })
   }
 }
 
@@ -106,12 +112,7 @@ function confirm() {
   const user = selected.value
   const action = confirmation.value
   if (!user || !action) return
-  return run(async () => {
-    await saveUser(user, action)
-    if (!active.value) return
-    confirmation.value = undefined
-    feedback.value = 'admin.access_saved'
-  })
+  return saveUser(user, action)
 }
 
 function reset() {

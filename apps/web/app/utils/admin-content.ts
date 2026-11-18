@@ -29,7 +29,7 @@ export interface DraftRelation {
 export interface EditableDraft extends DraftSummary {
   shared: Record<string, Scalar>
   shared_ready_seq: string | null
-  locales: Record<string, { values: Record<string, Scalar>, ready: object | null }>
+  locales: Record<string, { values: Record<string, Scalar>, ready: object | null } | undefined>
   relations: DraftRelation[]
   publication_id?: string
 }

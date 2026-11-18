@@ -26,7 +26,7 @@ const heading = ref<HTMLElement | null>(null)
 const busy = ref(false)
 const loaded = ref(false)
 const failure = ref('')
-let active = true
+const active = ref(true)
 
 const selectedCollection = computed(() => collections.value.find(item => item.type_key === selectedType.value))
 
@@ -35,7 +35,7 @@ async function run(work: () => Promise<void>) {
   busy.value = true
   failure.value = ''
   try { await work() }
-  catch (error: unknown) { if (active) showError(error) }
+  catch (error: unknown) { if (active.value) showError(error) }
   finally { busy.value = false }
 }
 
@@ -62,13 +62,13 @@ async function loadWorkspace() {
   await run(async () => {
     const [page, activeLanguages] = await Promise.all([listCollections(), request(() => client.listLanguages())])
     if (!activeLanguages.data) throw new AdminContentError(activeLanguages.response.status)
-    if (!active) return
+    if (!active.value) return
     collections.value = page.items
     collectionOffset.value = page.next_offset
     languages.value = activeLanguages.data
     selectedType.value = page.items[0]?.type_key ?? ''
     if (selectedType.value) await loadDraftPage()
-    if (active) loaded.value = true
+    if (active.value) loaded.value = true
   })
 }
 
@@ -77,7 +77,7 @@ async function moreCollections() {
   if (offset === null) return
   await run(async () => {
     const page = await listCollections(offset)
-    if (!active) return
+    if (!active.value) return
     collections.value = [...collections.value, ...page.items]
     collectionOffset.value = page.next_offset
   })
@@ -86,7 +86,7 @@ async function moreCollections() {
 async function loadDraftPage(offset = 0) {
   const type = selectedType.value
   const page = await listDrafts(type, offset)
-  if (!active || selectedType.value !== type) return
+  if (!active.value || selectedType.value !== type) return
   drafts.value = offset === 0 ? page.items : [...drafts.value, ...page.items]
   draftOffset.value = page.next_offset
 }
@@ -118,14 +118,14 @@ async function create(event: Event) {
   if (!collection?.can_create || selectedItem.value) return
   await run(async () => {
     const receipt = await createDraft(collection.type_key, collection.schema_no, props.csrf)
-    if (!active) return
+    if (!active.value) return
     openDraft(receipt.item_id, target)
     await loadDraftPage()
   })
 }
 
 onMounted(() => { void loadWorkspace() })
-onBeforeUnmount(() => { active = false })
+onBeforeUnmount(() => { active.value = false })
 </script>
 
 <template>

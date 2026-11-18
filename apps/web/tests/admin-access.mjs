@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
-import { createHmac } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 
-const secretAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-const password = 'Browser fixture passphrase 2026'
+const base32Symbols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+const passphrase = randomBytes(24).toString('base64url')
 const button = (page, name) => page.getByRole('button', { name, exact: true })
 const heading = (page, name) => page.getByRole('heading', { name, exact: true })
 
 function totp(secret, offset = 0) {
-  const bits = [...secret].map(char => secretAlphabet.indexOf(char).toString(2).padStart(5, '0')).join('')
+  const bits = [...secret].map(char => base32Symbols.indexOf(char).toString(2).padStart(5, '0')).join('')
   const bytes = Buffer.from(bits.match(/.{8}/gu).map(byte => Number.parseInt(byte, 2)))
   const counter = Buffer.alloc(8)
   counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offset))
@@ -90,7 +90,7 @@ async function provision(page, userPage, login, role) {
   await heading(userPage, 'Sign in').waitFor()
   await button(userPage, 'I have an invitation').click()
   await userPage.getByLabel('Invitation token', { exact: true }).fill(token)
-  await userPage.getByLabel('New password', { exact: true }).fill(password)
+  await userPage.getByLabel('New password', { exact: true }).fill(passphrase)
   const prepared = await pageResponse(userPage, '/api/v1/admin/auth/enrollment', 200, () => button(userPage, 'Continue').click())
   const { secret } = await prepared.json()
   await userPage.getByLabel('Verification code', { exact: true }).fill(totp(secret, -1))
@@ -115,7 +115,7 @@ async function provision(page, userPage, login, role) {
   await page.getByRole('status').getByText('Changes saved.', { exact: true }).waitFor()
 
   await userPage.getByLabel('Login', { exact: true }).fill(login)
-  await userPage.getByLabel('Password', { exact: true }).fill(password)
+  await userPage.getByLabel('Password', { exact: true }).fill(passphrase)
   await button(userPage, 'Continue').click()
   await heading(userPage, 'Two-step verification').waitFor()
   await userPage.getByLabel('Verification code', { exact: true }).fill(totp(secret))

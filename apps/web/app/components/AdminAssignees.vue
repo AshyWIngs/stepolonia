@@ -22,7 +22,7 @@ async function run(action: () => Promise<void>) {
   failure.value = ''
   try { await action() }
   catch (error: unknown) {
-    if (active) failure.value = accessNotice(error, () => emit('step-up'), () => emit('session-changed'))
+    if (active) failure.value = accessNotice(error, () => { emit('step-up') }, () => { emit('session-changed') })
   } finally { busy.value = false }
 }
 
