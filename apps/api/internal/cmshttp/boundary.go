@@ -136,6 +136,9 @@ func safeReadPath(raw string) bool {
 	if user == usersPath || user == userPath {
 		return true
 	}
+	if _, ok := contentDraftTarget(raw); ok {
+		return true
+	}
 	role, _ := roleRoutePath(raw)
 	return role == rolesPath || role == rolePath
 }

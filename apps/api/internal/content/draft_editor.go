@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"stepolonia/apps/api/internal/cms"
 )
 
-// DraftEditor is the CMS service for editing existing drafts.
+// DraftEditor reads and edits existing CMS drafts.
 type DraftEditor struct {
 	auth *cms.AuthService
 }
@@ -16,6 +17,65 @@ type DraftEditor struct {
 // NewDraftEditor binds the editor to an AuthService on the verified CMS Engine pool.
 func NewDraftEditor(auth *cms.AuthService) *DraftEditor {
 	return &DraftEditor{auth: auth}
+}
+
+const (
+	maxDraftReadLocales = 16
+	draftReadTimeout    = 8 * time.Second
+)
+
+// ReadDraftForType returns the actor-readable draft for the persisted collection.
+func (e *DraftEditor) ReadDraftForType(ctx context.Context, req cms.AuthRequest, typeKey, itemID string) (DraftState, error) {
+	if e == nil || e.auth == nil {
+		return DraftState{}, cms.ErrSecurityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
+	defer cancel()
+	var out DraftState
+	err := e.auth.WithSession(ctx, req, false, func(ctx context.Context, tx *sql.Tx, session cms.Session) error {
+		read, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentRead, itemID)
+		if err != nil {
+			return err
+		}
+		if read.TypeKey != typeKey {
+			return cms.ErrNotFound
+		}
+		if err := checkDraftReadSize(ctx, tx, itemID); err != nil {
+			return err
+		}
+		state, err := loadDraft(ctx, tx, itemID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return cms.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		schema, err := loadSchema(ctx, tx, state.TypeID, state.SchemaNo)
+		if err != nil {
+			return err
+		}
+		out, err = projectCMSDraft(ctx, tx, session, state, schema, read)
+		return err
+	})
+	if err != nil {
+		return DraftState{}, err
+	}
+	return out, nil
+}
+
+// Bound locale rows before loading their values. The schema caps each locale's
+// JSON size, and each relation belongs to a schema field and at most one locale.
+func checkDraftReadSize(ctx context.Context, tx *sql.Tx, itemID string) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (
+ SELECT 1 FROM public.content_draft_locales WHERE item_id=$1 LIMIT $2
+ ) AS draft_locales`, itemID, maxDraftReadLocales+1).Scan(&count); err != nil {
+		return err
+	}
+	if count > maxDraftReadLocales {
+		return cms.ErrSecurityUnavailable
+	}
+	return nil
 }
 
 // SaveDraft sets or unsets scalar fields using current CMS item and field permissions.
@@ -100,6 +160,10 @@ func draftUpdateResponse(ctx context.Context, tx *sql.Tx, session cms.Session, s
 	if err != nil {
 		return DraftState{}, databaseError(err)
 	}
+	return projectCMSDraft(ctx, tx, session, state, schema, read)
+}
+
+func projectCMSDraft(ctx context.Context, tx *sql.Tx, session cms.Session, state DraftState, schema TypeSchema, read cms.ContentItemAccess) (DraftState, error) {
 	return projectDraftState(state, schema, read.AllowsField, func(relation Relation) (bool, error) {
 		return cmsRelationVisible(ctx, tx, session, relation)
 	})

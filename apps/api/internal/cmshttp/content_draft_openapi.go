@@ -2,6 +2,7 @@ package cmshttp
 
 import (
 	"encoding/json"
+	"net/http"
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -11,6 +12,9 @@ import (
 const (
 	contentDraftTag     = "content-drafts"
 	contentDraftSchema  = "SavedContentDraft"
+	readableDraftSchema = "ReadableContentDraft"
+	draftSharedField    = "shared"
+	draftLocalesField   = "locales"
 	typeIDField         = "type_id"
 	draftVersionField   = "version"
 	draftValuesField    = "values"
@@ -111,8 +115,8 @@ func draftRequestSchema() *huma.Schema {
 	schema := closedObjectSchema("Versioned scalar patch. Kind, field scope and value codec are checked against the pinned schema.", map[string]*huma.Schema{
 		expectedVersionField: contentVersionSchema("Current item version.", "2"),
 		schemaNoField:        contentVersionSchema("Semantic schema pinned to the draft.", "1"),
-		"shared":             shared, "unset_shared": unset,
-		"locales": draftValueMap("Localized changes indexed by normalized language code.", locale),
+		draftSharedField:     shared, "unset_shared": unset,
+		draftLocalesField: draftValueMap("Localized changes indexed by normalized language code.", locale),
 	}, []string{expectedVersionField, schemaNoField}, draftRequestExample())
 	// Huma precomputes regular properties but does not traverse map values.
 	field.PrecomputeMessages()
@@ -156,20 +160,34 @@ func draftResultSchema() *huma.Schema {
 		itemIDField: uuidSchema(exampleUUID), typeIDField: uuidSchema(exampleUUID),
 		schemaNoField:       contentVersionSchema("Semantic schema pinned to the draft.", "1"),
 		draftVersionField:   contentVersionSchema("Committed item version; use it for the next edit.", "3"),
-		"shared":            draftValueMap("Actor-readable shared field values.", draftScalarSchema()),
+		draftSharedField:    draftValueMap("Actor-readable shared field values.", draftScalarSchema()),
 		sharedSequenceField: contentVersionSchema("Current shared sequence.", "1"), "shared_ready_seq": readySeq,
-		"locales":        draftValueMap("Actor-readable localized drafts indexed by language code.", locale),
-		"relations":      {Type: huma.TypeArray, Items: relation},
-		"publication_id": uuidSchema(exampleUUID),
+		draftLocalesField: draftValueMap("Actor-readable localized drafts indexed by language code.", locale),
+		"relations":       {Type: huma.TypeArray, Items: relation},
+		"publication_id":  uuidSchema(exampleUUID),
 	}, []string{itemIDField, typeIDField, schemaNoField, draftVersionField}, example)
 	schema.Examples = append(schema.Examples, savedDraftResponse{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 3})
 	return schema
 }
 
-func draftErrorCodes() map[int][]string {
+func draftErrorCodes(rt route) map[int][]string {
+	if rt.method == http.MethodGet {
+		return map[int][]string{
+			400: {validationCode}, 401: {authenticationCode}, 403: {originCode}, 404: {notFoundCode},
+			405: {methodNotAllowedCode}, 503: {securityUnavailableCode},
+		}
+	}
 	return map[int][]string{
 		400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, permissionCode, stepUpRequiredCode},
 		404: {notFoundCode}, 405: {methodNotAllowedCode}, 409: {versionConflictCode, schemaConflictCode},
 		413: {bodyTooLargeCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode},
 	}
+}
+
+func draftReadSchema() *huma.Schema {
+	schema := draftResultSchema()
+	schema.Description = "The current draft identity, version and actor-readable projection."
+	schema.Required = append(schema.Required, draftSharedField, sharedSequenceField, "shared_ready_seq", draftLocalesField, "relations")
+	schema.Examples = schema.Examples[:1]
+	return schema
 }

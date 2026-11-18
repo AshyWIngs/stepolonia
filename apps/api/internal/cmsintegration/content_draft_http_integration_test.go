@@ -14,6 +14,7 @@ import (
 )
 
 const draftHTTPPrefix = "/api/v1/admin/content/"
+const draftEditorialPath = draftHTTPPrefix + "editorial/"
 
 func newDraftTLSServer(t *testing.T, f draftEditorFixture) *httptest.Server {
 	t.Helper()
@@ -33,7 +34,12 @@ type draftHTTPRequest struct {
 
 func sendDraftPatch(t *testing.T, server *httptest.Server, token string, input draftHTTPRequest) string {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPatch, server.URL+input.path, strings.NewReader(input.body))
+	return sendDraftRequest(t, server, http.MethodPatch, token, input)
+}
+
+func sendDraftRequest(t *testing.T, server *httptest.Server, method, token string, input draftHTTPRequest) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), method, server.URL+input.path, strings.NewReader(input.body))
 	requireNoError(t, err)
 	setAuthHTTPHeaders(req, server.URL, input.csrf)
 	req.AddCookie(&http.Cookie{Name: "__Host-sp_session", Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -43,7 +49,7 @@ func sendDraftPatch(t *testing.T, server *httptest.Server, token string, input d
 	data, err := io.ReadAll(res.Body)
 	requireNoError(t, err)
 	if res.StatusCode != input.status {
-		t.Fatalf("PATCH %s: status %d want %d, response %s", input.path, res.StatusCode, input.status, data)
+		t.Fatalf("%s %s: status %d want %d, response %s", method, input.path, res.StatusCode, input.status, data)
 	}
 	assertAuthNoStore(t, res)
 	return string(data)
@@ -52,7 +58,7 @@ func sendDraftPatch(t *testing.T, server *httptest.Server, token string, input d
 func TestCMSDraftPatchHTTPSIntegration(t *testing.T) {
 	f := newDraftEditorFixture(t)
 	server := newDraftTLSServer(t, f)
-	path := draftHTTPPrefix + "editorial/" + draftEditItem
+	path := draftEditorialPath + draftEditItem
 	const editedHeadline, editedNote = "Edited via HTTPS", "Editor-only update"
 	const patch = `{"expected_version":"1","schema_no":"1","shared":{"headline":{"kind":"string","value":"Edited via HTTPS"}}}`
 	const writeOnlyPatch = `{"expected_version":"1","schema_no":"1","shared":{"note":{"kind":"string","value":"Editor-only update"}}}`
@@ -63,7 +69,7 @@ func TestCMSDraftPatchHTTPSIntegration(t *testing.T) {
 
 	cases := []draftHTTPRequest{
 		{draftHTTPPrefix + "different/" + draftEditItem, patch, f.actor.CSRF, http.StatusNotFound},
-		{draftHTTPPrefix + "editorial/" + draftOtherItem, writeOnlyPatch, f.actor.CSRF, http.StatusForbidden},
+		{draftEditorialPath + draftOtherItem, writeOnlyPatch, f.actor.CSRF, http.StatusForbidden},
 		{path, `{"expected_version":"1","schema_no":"1","publication_id":"injected"}`, f.actor.CSRF, http.StatusBadRequest},
 	}
 	for _, input := range cases {
@@ -80,4 +86,52 @@ func TestCMSDraftPatchHTTPSIntegration(t *testing.T) {
 	requireNoError(t, f.auth.Logout(context.Background(), f.actor, fullSessionFixtureKind))
 	sendDraftPatch(t, server, f.actor.Token, draftHTTPRequest{path, patch, f.actor.CSRF, http.StatusUnauthorized})
 	assertDraftEditState(t, f.owner, draftEditItem, 2, editedHeadline, editedNote)
+}
+
+func TestCMSDraftReadHTTPSIntegration(t *testing.T) {
+	f := newDraftEditorFixture(t)
+	server := newDraftTLSServer(t, f)
+	path := draftEditorialPath + draftEditItem
+	read := func(path string, status int) string {
+		return sendDraftRequest(t, server, http.MethodGet, f.actor.Token, draftHTTPRequest{path: path, status: status})
+	}
+	expireSessionStepUp(t, f.owner, f.actor.Token)
+	body := read(path, http.StatusOK)
+	if !strings.Contains(body, initialDraftHeadline) || strings.Contains(body, initialDraftNote) {
+		t.Fatalf("unexpected draft read projection: %s", body)
+	}
+	read(draftHTTPPrefix+"different/"+draftEditItem, http.StatusNotFound)
+	read(path+"?limit=1", http.StatusBadRequest)
+
+	_, err := f.owner.Exec(`DELETE FROM public.grant_fields WHERE grant_id IN (
+SELECT id FROM public.role_grants WHERE role_id=$1 AND operation='content.items.read')`, f.roleID)
+	requireNoError(t, err)
+	_, err = f.owner.Exec(`DELETE FROM public.role_grants WHERE role_id=$1 AND operation='content.items.read'`, f.roleID)
+	requireNoError(t, err)
+	read(path, http.StatusNotFound)
+	requireNoError(t, f.auth.Logout(context.Background(), f.actor, fullSessionFixtureKind))
+	read(path, http.StatusUnauthorized)
+	assertDraftEditState(t, f.owner, draftEditItem, 1, initialDraftHeadline, initialDraftNote)
+}
+
+func TestCMSDraftReadLocaleLimitHTTPSIntegration(t *testing.T) {
+	f := newDraftEditorFixture(t)
+	server := newDraftTLSServer(t, f)
+	_, err := f.owner.Exec(`WITH languages AS (
+ INSERT INTO public.languages(code,name,native_name,direction)
+ SELECT 'qaa-aaa'||n,'Preview','Preview','ltr' FROM generate_series(1,16) AS n
+ RETURNING code)
+ INSERT INTO public.content_draft_locales(item_id,locale_code) SELECT $1,code FROM languages`, draftEditItem)
+	requireNoError(t, err)
+	req := draftHTTPRequest{path: draftEditorialPath + draftEditItem, status: http.StatusOK}
+	sendDraftRequest(t, server, http.MethodGet, f.actor.Token, req)
+
+	_, err = f.owner.Exec(`WITH language AS (
+ INSERT INTO public.languages(code,name,native_name,direction)
+ VALUES('qaa-limit','Preview','Preview','ltr') RETURNING code)
+ INSERT INTO public.content_draft_locales(item_id,locale_code) SELECT $1,code FROM language`, draftEditItem)
+	requireNoError(t, err)
+	req.status = http.StatusServiceUnavailable
+	sendDraftRequest(t, server, http.MethodGet, f.actor.Token, req)
+	assertDraftEditState(t, f.owner, draftEditItem, 1, initialDraftHeadline, initialDraftNote)
 }

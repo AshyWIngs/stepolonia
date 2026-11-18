@@ -89,7 +89,7 @@ const assert = require('node:assert/strict');
   const userRoles='/api/v1/admin/users/{id}/roles';
   const contentDraft='/api/v1/admin/content/{type_key}/{item_id}';
   const contentAssignees=contentDraft+'/assignees';
-  assert.deepEqual(Object.keys(privateSpec.paths[contentDraft]||{}),['patch']);
+  assert.deepEqual(Object.keys(privateSpec.paths[contentDraft]||{}).sort(),['get','patch']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentAssignees]||{}),['put']);
   const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable',userRoles];
   assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
