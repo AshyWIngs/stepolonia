@@ -217,7 +217,7 @@
     "admin.roles_choose_operation": "Wybierz uprawnienie",
     "admin.roles_fields": "Pola",
     "admin.roles_delegated_operations": "Operacje do delegowania",
-    "admin.roles_allow_delegation": "Zezwól na dalsze delegowanie",
+    "admin.roles_allow_delegation": "Zezwól na przekazywanie tego uprawnienia",
     "admin.roles_add_grant": "Dodaj uprawnienie",
     "admin.roles_save": "Zapisz rolę",
     "admin.roles_duplicate": "Istnieje już uprawnienie dla tej operacji i zakresu.",
@@ -230,7 +230,11 @@
     "admin.assignees_choose": "Konta przypisane do tego materiału",
     "admin.assignees_confirm": "Zapisać cały zestaw przypisań?",
     "admin.assignees_save": "Sprawdź przypisania",
-    "admin.account_no_sessions": "Brak aktywnych sesji."
+    "admin.account_no_sessions": "Brak aktywnych sesji.",
+    "admin.roles_allow_delegable_content": "Zezwól na nadawanie uprawnień do treści z prawem dalszego delegowania",
+    "admin.roles_delegation_scope": "Zakres delegowania",
+    "admin.roles_scope_assigned": "Tylko przypisane materiały",
+    "admin.roles_scope_any": "Wszystkie materiały"
   },
   "en": {
     "articles": "Articles",
@@ -450,7 +454,7 @@
     "admin.roles_choose_operation": "Choose a grant",
     "admin.roles_fields": "Fields",
     "admin.roles_delegated_operations": "Delegated operations",
-    "admin.roles_allow_delegation": "Allow further delegation",
+    "admin.roles_allow_delegation": "Allow this grant to be delegated",
     "admin.roles_add_grant": "Add grant",
     "admin.roles_save": "Save role",
     "admin.roles_duplicate": "A grant for this operation and scope already exists.",
@@ -463,7 +467,11 @@
     "admin.assignees_choose": "Accounts assigned to this item",
     "admin.assignees_confirm": "Save the complete assignment set?",
     "admin.assignees_save": "Review assignments",
-    "admin.account_no_sessions": "No active sessions."
+    "admin.account_no_sessions": "No active sessions.",
+    "admin.roles_allow_delegable_content": "Allow issuing delegable content grants",
+    "admin.roles_delegation_scope": "Delegation scope",
+    "admin.roles_scope_assigned": "Assigned items only",
+    "admin.roles_scope_any": "Any item"
   },
   "ru": {
     "articles": "Статьи",
@@ -683,7 +691,7 @@
     "admin.roles_choose_operation": "Выберите разрешение",
     "admin.roles_fields": "Поля",
     "admin.roles_delegated_operations": "Делегируемые операции",
-    "admin.roles_allow_delegation": "Разрешить дальнейшее делегирование",
+    "admin.roles_allow_delegation": "Разрешить делегирование этого разрешения",
     "admin.roles_add_grant": "Добавить разрешение",
     "admin.roles_save": "Сохранить роль",
     "admin.roles_duplicate": "Разрешение для этой операции и области уже существует.",
@@ -696,7 +704,11 @@
     "admin.assignees_choose": "Учётные записи, назначенные на этот материал",
     "admin.assignees_confirm": "Сохранить полный список назначений?",
     "admin.assignees_save": "Проверить назначения",
-    "admin.account_no_sessions": "Активных сессий нет."
+    "admin.account_no_sessions": "Активных сессий нет.",
+    "admin.roles_allow_delegable_content": "Разрешить выдачу делегируемых разрешений на контент",
+    "admin.roles_delegation_scope": "Область делегирования",
+    "admin.roles_scope_assigned": "Только назначенные материалы",
+    "admin.roles_scope_any": "Любые материалы"
   },
   "kk": {
     "articles": "Мақалалар",
@@ -916,7 +928,7 @@
     "admin.roles_choose_operation": "Рұқсатты таңдаңыз",
     "admin.roles_fields": "Өрістер",
     "admin.roles_delegated_operations": "Тапсырылатын операциялар",
-    "admin.roles_allow_delegation": "Әрі қарай тапсыруға рұқсат беру",
+    "admin.roles_allow_delegation": "Осы рұқсатты тапсыруға рұқсат беру",
     "admin.roles_add_grant": "Рұқсат қосу",
     "admin.roles_save": "Рөлді сақтау",
     "admin.roles_duplicate": "Осы операция мен ауқымға арналған рұқсат бар.",
@@ -929,6 +941,10 @@
     "admin.assignees_choose": "Осы материалға тағайындалған тіркелгілер",
     "admin.assignees_confirm": "Тағайындаулардың толық тізімін сақтау керек пе?",
     "admin.assignees_save": "Тағайындауларды тексеру",
-    "admin.account_no_sessions": "Белсенді сеанстар жоқ."
+    "admin.account_no_sessions": "Белсенді сеанстар жоқ.",
+    "admin.roles_allow_delegable_content": "Тапсыруға болатын контент рұқсаттарын беруге рұқсат беру",
+    "admin.roles_delegation_scope": "Тапсыру ауқымы",
+    "admin.roles_scope_assigned": "Тек тағайындалған материалдар",
+    "admin.roles_scope_any": "Кез келген материал"
   }
 }

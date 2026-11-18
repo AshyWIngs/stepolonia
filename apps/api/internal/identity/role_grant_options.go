@@ -139,7 +139,8 @@ func grantOptionTypes(ctx context.Context, tx *sql.Tx, typeIDs []string, anyType
 
 func addTypeGrantOptions(ctx context.Context, tx *sql.Tx, resource eligibleGrantType, sources []accessGrant, index map[string]RoleGrantOption) error {
 	broad, narrow, allowedIDs := grantSourcesForType(resource.ID, sources)
-	fields, err := grantOptionFields(ctx, tx, resource.ID, len(broad) != 0, allowedIDs)
+	allFields := slices.ContainsFunc(broad, grantSourceUsesFields)
+	fields, err := grantOptionFields(ctx, tx, resource.ID, allFields, allowedIDs)
 	if err != nil {
 		return err
 	}
@@ -166,12 +167,33 @@ func grantSourcesForType(typeID string, sources []accessGrant) (broad, narrow []
 			continue
 		}
 		narrow = append(narrow, source)
-		fields = append(fields, source.fields...)
+		if grantSourceUsesFields(source) {
+			fields = append(fields, source.fields...)
+		}
 	}
 	return broad, narrow, fields
 }
 
+func grantSourceUsesFields(source accessGrant) bool {
+	if source.operation == opContentDelegate {
+		return slices.ContainsFunc(source.operations, grantOptionUsesFields)
+	}
+	return grantOptionUsesFields(source.operation)
+}
+
+func grantOptionUsesFields(operation string) bool {
+	switch Operation(operation) {
+	case OpContentRead, OpContentUpdate, OpContentReady, OpContentPublish:
+		return true
+	default:
+		return false
+	}
+}
+
 func grantOptionFields(ctx context.Context, tx *sql.Tx, typeID string, all bool, fieldIDs []string) ([]RoleGrantField, error) {
+	if !all && len(fieldIDs) == 0 {
+		return nil, nil
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT field_id::text,key FROM public.content_fields
  WHERE type_id=$1 AND ($2 OR field_id=ANY($3::uuid[]))
  ORDER BY key,field_id LIMIT $4`, typeID, all, fieldIDs, maxGrantOptionFieldsPerType+1)
@@ -207,6 +229,9 @@ func addGrantSource(index map[string]RoleGrantOption, source accessGrant, resour
 }
 
 func newAuthorityOption(source accessGrant, resource eligibleGrantType, fields []RoleGrantField) RoleGrantOption {
+	if !grantSourceUsesFields(source) {
+		fields = nil
+	}
 	target := authorityTargetInstallation
 	if resource.ID != "" {
 		target = authorityTargetType
@@ -223,6 +248,9 @@ func newAuthorityOption(source accessGrant, resource eligibleGrantType, fields [
 }
 
 func addContentGrantOptions(index map[string]RoleGrantOption, resource eligibleGrantType, operation, ceiling string, delegable bool, fields []RoleGrantField) {
+	if !grantOptionUsesFields(operation) {
+		fields = nil
+	}
 	scopes := []string{objectScopeAssigned}
 	if operation == opContentCreate {
 		scopes = []string{objectScopeType}

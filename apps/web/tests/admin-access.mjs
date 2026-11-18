@@ -41,6 +41,24 @@ async function stageRole(page, name, grants) {
   await page.getByRole('status').getByText('Changes saved.', { exact: true }).waitFor()
 }
 
+async function proveIndependentDelegationControls(page) {
+  await button(page, 'Create role').click()
+  await page.getByLabel('Role name', { exact: true }).fill('Delegation review')
+  await page.getByLabel('Operation and scope', { exact: true }).selectOption({ label: 'content.permissions.delegate · installation · any' })
+  await page.getByRole('checkbox', { name: 'content.items.read', exact: true }).check()
+  const onward = page.getByRole('checkbox', { name: 'Allow this grant to be delegated', exact: true })
+  assert.equal(await onward.isChecked(), false)
+  await page.getByRole('checkbox', { name: 'Allow issuing delegable content grants', exact: true }).check()
+  assert.equal(await onward.isChecked(), false)
+  await button(page, 'Add grant').click()
+  const response = await pageResponse(page, '/api/v1/admin/roles', 200, () => button(page, 'Save role').click())
+  const { grants, state } = await response.json()
+  assert.equal(state, 'disabled')
+  assert.equal(grants[0].can_delegate, false)
+  assert.equal(grants[0].may_delegate_content, true)
+  assert.equal(grants[0].object_ceiling, 'assigned')
+}
+
 function grantsForRole(type, stage) {
   const common = type === 'article' ? ['title', 'slug', 'body'] : ['title', 'slug']
   const write = type === 'article' ? common : [...common, 'subtitle']
@@ -126,12 +144,14 @@ async function writeAsAuthor(page, type, slug, title) {
   const metadata = await page.evaluate(async path => {
     const response = await fetch(path, { referrerPolicy: 'same-origin' })
     const data = await response.json()
-    return { status: response.status, schema_no: data.schema_no, fields: data.fields?.map(field => ({ key: field.key, editable: field.editable, scope: field.scope })) }
+    return { status: response.status, schema_no: data.schema_no, fields: data.fields?.map(field => ({ id: field.field_id, key: field.key, editable: field.editable, scope: field.scope })) }
   }, `/api/v1/admin/content/${type}/${id}/schema`)
   const expectedField = type === 'article' ? 'body' : 'subtitle'
-  assert.ok(metadata.fields?.some(field => field.key === expectedField && field.editable), JSON.stringify(metadata))
-  const extra = type === 'article' ? /^body(?: \(|$)/ : /^subtitle(?: \(|$)/
-  await workspace.getByLabel(extra).fill('The author saved this text.')
+  const extra = metadata.fields?.find(field => field.key === expectedField && field.editable)
+  assert.ok(extra, JSON.stringify(metadata))
+  const control = workspace.locator(`[id="material-field-${extra.id}"]`)
+  assert.ok(await control.isVisible(), JSON.stringify({ field: extra, labels: await workspace.locator('label').allTextContents() }))
+  await control.fill('The author saved this text.')
   await button(page, 'Save draft').click()
   await page.getByText('Draft saved.', { exact: true }).waitFor()
   assert.equal(await button(page, 'Publish translations').count(), 0)
@@ -234,6 +254,7 @@ export async function verifyAccessAdministration(browser, page, origin, assertTh
     await button(page, 'Close').click()
     await button(page, 'Access').click()
     await button(page, 'Roles').click()
+    await proveIndependentDelegationControls(page)
     await stageRole(page, 'Workflow author', ['article', 'event'].flatMap(type => grantsForRole(type, 'author')))
     await stageRole(page, 'Workflow editor', ['article', 'event'].flatMap(type => grantsForRole(type, 'editor')))
     await button(page, 'Accounts').click()

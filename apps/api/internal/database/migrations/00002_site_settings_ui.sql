@@ -195,7 +195,11 @@ INSERT INTO public.ui_message_keys (message_key) VALUES
 ('admin.assignees_choose'),
 ('admin.assignees_confirm'),
 ('admin.assignees_save'),
-('admin.account_no_sessions');
+('admin.account_no_sessions'),
+('admin.roles_allow_delegable_content'),
+('admin.roles_delegation_scope'),
+('admin.roles_scope_assigned'),
+('admin.roles_scope_any');
 
 CREATE TABLE public.site_revisions (
     tagline text NOT NULL,

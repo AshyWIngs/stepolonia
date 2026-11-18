@@ -46,6 +46,34 @@ func TestAdminRoleGrantOptionsHTTPSIntegration(t *testing.T) {
 	assertGrantOptionWrites(t, x)
 }
 
+func TestAdminCreateOnlyGrantOptionsHTTPSIntegration(t *testing.T) {
+	x := newAssigneeFixture(t)
+	db := x.http.state.db
+	_, err := db.Exec(`DELETE FROM public.role_grants WHERE role_id=$1`, x.managerRole)
+	requireNoError(t, err)
+	_, err = db.Exec(`INSERT INTO public.content_fields(type_id,field_id,key)
+ VALUES($1,$2,'operator_notes')`, assigneeTypeID, lifecycleField)
+	requireNoError(t, err)
+	_, err = db.Exec(`INSERT INTO public.role_grants(id,role_id,operation,delegate_operations,target_scope,object_ceiling)
+ VALUES(gen_random_uuid(),$1,'content.permissions.delegate',ARRAY['content.items.create'],'installation','assigned')`, x.managerRole)
+	requireNoError(t, err)
+	_, err = db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,'roles.create')`, x.managerRole)
+	requireNoError(t, err)
+	raw := sendDraftRequest(t, x.http.server, http.MethodGet, x.actor.Token, draftHTTPRequest{path: rolesHTTPPath + "/grant-options", status: http.StatusOK})
+	var result struct {
+		Options []grantOptionView
+	}
+	requireNoError(t, json.Unmarshal([]byte(raw), &result))
+	if len(result.Options) != 2 {
+		t.Fatalf("create-only authority returned %d options", len(result.Options))
+	}
+	for _, option := range result.Options {
+		if option.Operation != "content.items.create" || option.ObjectScope != "type" || option.TypeKey == "" || len(option.Fields) != 0 {
+			t.Fatalf("create-only grant exposed field information: %+v", option)
+		}
+	}
+}
+
 func assertProjectedGrantOptions(t *testing.T, found, expected []grantOptionView) {
 	t.Helper()
 	if len(found) != len(expected) {

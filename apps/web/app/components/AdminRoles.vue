@@ -21,7 +21,9 @@ const options = ref<RoleGrantOption[]>([])
 const currentOption = ref<number>()
 const selectedFields = ref<string[]>([])
 const delegateOperations = ref<string[]>([])
-const allowDelegation = ref(false)
+const allowGrantDelegation = ref(false)
+const allowDelegableContent = ref(false)
+const delegationCeiling = ref<'assigned' | 'any'>('assigned')
 const confirmCommand = ref<RoleAction>()
 const option = computed(() => currentOption.value === undefined ? undefined : options.value[currentOption.value])
 const actions = computed<RoleAction[]>(() => {
@@ -37,7 +39,9 @@ let active = true
 watch(currentOption, () => {
   selectedFields.value = []
   delegateOperations.value = []
-  allowDelegation.value = false
+  allowGrantDelegation.value = false
+  allowDelegableContent.value = false
+  delegationCeiling.value = 'assigned'
 })
 
 async function run(action: () => Promise<void>) {
@@ -97,13 +101,13 @@ function fieldName(id: string) {
 function addGrant() {
   const choice = option.value
   if (!choice || staged.value.length >= 64 || (choice.delegate_operations?.length && !delegateOperations.value.length)) return
-  const grant: RoleGrant = { operation: choice.operation, scope: choice.scope, can_delegate: choice.can_delegate && allowDelegation.value }
+  const grant: RoleGrant = { operation: choice.operation, scope: choice.scope, can_delegate: choice.can_delegate && allowGrantDelegation.value }
   if (choice.type_id) grant.type_id = choice.type_id
   if (choice.object_scope) grant.object_scope = choice.object_scope
   if (choice.target_scope) {
     grant.target_scope = choice.target_scope
-    grant.object_ceiling = choice.object_ceiling
-    grant.may_delegate_content = Boolean(choice.may_delegate_content && allowDelegation.value)
+    grant.object_ceiling = choice.object_ceiling === 'any' ? delegationCeiling.value : choice.object_ceiling
+    grant.may_delegate_content = Boolean(choice.may_delegate_content && allowDelegableContent.value)
     grant.delegate_operations = delegateOperations.value.slice()
   }
   if (choice.fields && selectedFields.value.length > 0) grant.field_ids = selectedFields.value.slice()
@@ -210,6 +214,8 @@ onBeforeUnmount(() => { active = false })
             {{ label(grant) }}
             <span v-if="grant.field_ids?.length"> · {{ grant.field_ids.map(fieldName).join(', ') }}</span>
             <span v-if="grant.delegate_operations?.length"> · {{ grant.delegate_operations.join(', ') }}</span>
+            <span v-if="grant.can_delegate"> · {{ translate('admin.roles_allow_delegation') }}</span>
+            <span v-if="grant.may_delegate_content"> · {{ translate('admin.roles_allow_delegable_content') }}</span>
             <button type="button" :disabled="busy" @click="staged.splice(index, 1)">{{ translate('admin.roles_remove_grant') }}</button>
           </li>
         </ul>
@@ -230,8 +236,18 @@ onBeforeUnmount(() => { active = false })
             <input v-model="delegateOperations" type="checkbox" :value="operation"> {{ operation }}
           </label>
         </fieldset>
-        <label v-if="option?.can_delegate || option?.may_delegate_content" class="access-check">
-          <input v-model="allowDelegation" type="checkbox" :disabled="busy"> {{ translate('admin.roles_allow_delegation') }}
+        <template v-if="option?.object_ceiling === 'any'">
+          <label for="access-delegation-ceiling">{{ translate('admin.roles_delegation_scope') }}</label>
+          <select id="access-delegation-ceiling" v-model="delegationCeiling" :disabled="busy">
+            <option value="assigned">{{ translate('admin.roles_scope_assigned') }}</option>
+            <option value="any">{{ translate('admin.roles_scope_any') }}</option>
+          </select>
+        </template>
+        <label v-if="option?.can_delegate" class="access-check">
+          <input v-model="allowGrantDelegation" type="checkbox" :disabled="busy"> {{ translate('admin.roles_allow_delegation') }}
+        </label>
+        <label v-if="option?.may_delegate_content" class="access-check">
+          <input v-model="allowDelegableContent" type="checkbox" :disabled="busy"> {{ translate('admin.roles_allow_delegable_content') }}
         </label>
         <button v-if="option" type="button" :disabled="busy || staged.length >= 64" @click="addGrant">{{ translate('admin.roles_add_grant') }}</button>
       </template>
