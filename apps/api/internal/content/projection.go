@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func (s *Service) projectDraft(ctx context.Context, tx *sql.Tx, actor Actor, state DraftState, schema TypeSchema) (DraftState, error) {
 	ids := map[string]bool{}
 	for _, field := range schema.Fields {
-		err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), state.TypeID, state.ItemID, []string{field.Key})
+		err := s.authorize(ctx, tx, actor, string(identity.OpContentRead), state.TypeID, state.ItemID, []string{field.Key})
 		var denied *Error
 		if errors.As(err, &denied) && denied.Kind == Forbidden {
 			continue
@@ -64,7 +64,7 @@ func projectValues(values ScalarValues, allowed map[string]bool) ScalarValues {
 }
 
 func (s *Service) visibleRelation(ctx context.Context, tx *sql.Tx, actor Actor, relation Relation) (bool, error) {
-	err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil)
+	err := s.authorize(ctx, tx, actor, string(identity.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil)
 	var denied *Error
 	if errors.As(err, &denied) && (denied.Kind == Forbidden || denied.Kind == NotFound) {
 		return false, nil

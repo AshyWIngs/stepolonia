@@ -1,0 +1,178 @@
+:global(html[data-admin-theme]) {
+  color-scheme: light;
+  background: #f1f4f0;
+}
+
+:global(html[data-admin-theme="dark"]) {
+  color-scheme: dark;
+  background: #141c1a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(html[data-admin-theme="system"]) {
+    color-scheme: dark;
+    background: #141c1a;
+  }
+}
+
+.admin-shell {
+  --admin-bg: #f1f4f0;
+  --admin-card: #fff;
+  --admin-text: #172923;
+  --admin-muted: #4c625a;
+  --admin-border: #718078;
+  --admin-action: #205746;
+  --admin-action-text: #fff;
+  --admin-focus: #235fba;
+  --admin-error: #922a25;
+  --admin-error-bg: #fff1ef;
+
+  box-sizing: border-box;
+  min-height: 100vh;
+  margin: 0;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+:global(html[data-admin-theme="dark"] .admin-shell) {
+  --admin-bg: #141c1a;
+  --admin-card: #1c2a25;
+  --admin-text: #e7f1eb;
+  --admin-muted: #b2c5bb;
+  --admin-border: #8ba398;
+  --admin-action: #b9e3ca;
+  --admin-action-text: #152820;
+  --admin-focus: #a5c7ff;
+  --admin-error: #ffc4bd;
+  --admin-error-bg: #472522;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(html[data-admin-theme="system"] .admin-shell) {
+    --admin-bg: #141c1a;
+    --admin-card: #1c2a25;
+    --admin-text: #e7f1eb;
+    --admin-muted: #b2c5bb;
+    --admin-border: #8ba398;
+    --admin-action: #b9e3ca;
+    --admin-action-text: #152820;
+    --admin-focus: #a5c7ff;
+    --admin-error: #ffc4bd;
+    --admin-error-bg: #472522;
+  }
+}
+
+.admin-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+.admin-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.admin-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.admin-preferences > div {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--admin-muted);
+}
+
+.admin-card {
+  box-sizing: border-box;
+  max-width: 27rem;
+  margin: clamp(1.75rem, 8vh, 5rem) auto 1rem;
+  padding: clamp(1rem, 4vw, 2rem);
+  border: 1px solid var(--admin-border);
+  border-radius: 0.875rem;
+  background: var(--admin-card);
+}
+
+.admin-card--wide {
+  max-width: 52rem;
+}
+
+.admin-card h1 {
+  margin: 0 0 1.25rem;
+  color: var(--admin-text);
+  font: 700 clamp(1.55rem, 4vw, 2rem)/1.15 system-ui, sans-serif;
+}
+
+.admin-card form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-card p {
+  line-height: 1.5;
+}
+
+.admin-card input,
+.admin-card button,
+.admin-preferences select {
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 0.4rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+  font: inherit;
+}
+
+.admin-card input {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.admin-card button {
+  margin-top: 0.25rem;
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-card button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.admin-card .admin-secondary {
+  background: var(--admin-card);
+  color: var(--admin-text);
+}
+
+.admin-shell :focus-visible {
+  outline: 3px solid var(--admin-focus);
+  outline-offset: 3px;
+}
+
+.admin-status {
+  display: block;
+  margin-block: 1rem;
+  color: var(--admin-muted);
+}
+
+.admin-error {
+  padding: 0.65rem;
+  border-inline-start: 3px solid var(--admin-error);
+  background: var(--admin-error-bg);
+  color: var(--admin-error);
+}

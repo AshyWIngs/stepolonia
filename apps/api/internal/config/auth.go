@@ -9,34 +9,34 @@ import (
 	"syscall"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 // AuthenticationConfig keeps the private pool separate from public reads.
 type AuthenticationConfig struct {
 	Database          *pgxpool.Config
 	DraftDatabase     *pgxpool.Config
-	Service           cms.AuthConfig
+	Service           identity.AuthConfig
 	Origin            string
 	TrustedProxyCIDRs []string
 }
 
 // Authentication is opt-in; partial or invalid enabled configuration fails startup.
 func Authentication(runtime *pgxpool.Config) (*AuthenticationConfig, error) {
-	enabled := os.Getenv("CMS_AUTH_ENABLED")
+	enabled := os.Getenv("ADMIN_AUTH_ENABLED")
 	if enabled == "" || enabled == "false" {
 		_, err := draftDatabase(runtime, "", false)
 		return nil, err
 	}
 	if enabled != "true" || runtime == nil {
-		return nil, fmt.Errorf("CMS_AUTH_ENABLED must be true or false")
+		return nil, fmt.Errorf("ADMIN_AUTH_ENABLED must be true or false")
 	}
-	user, path := os.Getenv("CMS_DB_USER"), os.Getenv("CMS_DB_PASSWORD_FILE")
-	origin, site := os.Getenv("CMS_AUTH_ORIGIN"), os.Getenv("SITE")
+	user, path := os.Getenv("ADMIN_DB_USER"), os.Getenv("ADMIN_DB_PASSWORD_FILE")
+	origin, site := os.Getenv("ADMIN_AUTH_ORIGIN"), os.Getenv("SITE")
 	if user == "" || user == runtime.ConnConfig.User || path == "" || origin == "" || site == "" {
-		return nil, fmt.Errorf("CMS requires separate CMS_DB_USER, CMS_DB_PASSWORD_FILE, CMS_AUTH_ORIGIN and SITE")
+		return nil, fmt.Errorf("administration requires separate ADMIN_DB_USER, ADMIN_DB_PASSWORD_FILE, ADMIN_AUTH_ORIGIN and SITE")
 	}
-	db, err := privatePool(runtime, user, path, "sp-cms-auth")
+	db, err := privatePool(runtime, user, path, "sp-admin-auth")
 	if err != nil {
 		return nil, err
 	}
@@ -49,24 +49,24 @@ func Authentication(runtime *pgxpool.Config) (*AuthenticationConfig, error) {
 		return nil, err
 	}
 	var peers []string
-	if raw := os.Getenv("CMS_AUTH_PROXY_CIDRS"); raw != "" {
+	if raw := os.Getenv("ADMIN_AUTH_PROXY_CIDRS"); raw != "" {
 		peers = strings.Split(raw, ",")
 	}
-	return &AuthenticationConfig{Database: db, DraftDatabase: draft, Service: cms.AuthConfig{Site: site, KeyVersion: version, EncryptionKey: key}, Origin: origin, TrustedProxyCIDRs: peers}, nil
+	return &AuthenticationConfig{Database: db, DraftDatabase: draft, Service: identity.AuthConfig{Site: site, KeyVersion: version, EncryptionKey: key}, Origin: origin, TrustedProxyCIDRs: peers}, nil
 }
 
 func draftDatabase(runtime *pgxpool.Config, authUser string, authEnabled bool) (*pgxpool.Config, error) {
-	user, path := os.Getenv("CMS_DRAFT_DB_USER"), os.Getenv("CMS_DRAFT_DB_PASSWORD_FILE")
+	user, path := os.Getenv("CONTENT_EDITOR_DB_USER"), os.Getenv("CONTENT_EDITOR_DB_PASSWORD_FILE")
 	if user == "" && path == "" {
 		return nil, nil
 	}
 	if !authEnabled {
-		return nil, fmt.Errorf("CMS draft editing requires CMS_AUTH_ENABLED=true")
+		return nil, fmt.Errorf("content draft editing requires ADMIN_AUTH_ENABLED=true")
 	}
 	if user == "" || path == "" || user == authUser || user == runtime.ConnConfig.User {
-		return nil, fmt.Errorf("CMS draft editing requires a distinct CMS_DRAFT_DB_USER and CMS_DRAFT_DB_PASSWORD_FILE")
+		return nil, fmt.Errorf("content draft editing requires a distinct CONTENT_EDITOR_DB_USER and CONTENT_EDITOR_DB_PASSWORD_FILE")
 	}
-	return privatePool(runtime, user, path, "sp-cms-draft")
+	return privatePool(runtime, user, path, "sp-content-editor")
 }
 
 func privatePool(runtime *pgxpool.Config, user, path, application string) (*pgxpool.Config, error) {
@@ -90,11 +90,11 @@ func privatePool(runtime *pgxpool.Config, user, path, application string) (*pgxp
 
 // InstallationKey reads the operator-owned raw AEAD key without following symlinks.
 func InstallationKey() ([]byte, int, error) {
-	version, err := strconv.Atoi(os.Getenv("CMS_TOTP_KEY_VERSION"))
-	if err != nil || version < 1 || os.Getenv("CMS_TOTP_KEY_FILE") == "" {
-		return nil, 0, fmt.Errorf("CMS_TOTP_KEY_FILE and positive CMS_TOTP_KEY_VERSION are required")
+	version, err := strconv.Atoi(os.Getenv("ADMIN_TOTP_KEY_VERSION"))
+	if err != nil || version < 1 || os.Getenv("ADMIN_TOTP_KEY_FILE") == "" {
+		return nil, 0, fmt.Errorf("ADMIN_TOTP_KEY_FILE and positive ADMIN_TOTP_KEY_VERSION are required")
 	}
-	key, err := privateFile(os.Getenv("CMS_TOTP_KEY_FILE"), 32)
+	key, err := privateFile(os.Getenv("ADMIN_TOTP_KEY_FILE"), 32)
 	if err != nil || len(key) != 32 {
 		clear(key)
 		return nil, 0, fmt.Errorf("TOTP key must be a private operator-owned regular file containing exactly 32 raw bytes")

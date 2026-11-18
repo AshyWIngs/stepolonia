@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func (s *Service) withCandidate(ctx context.Context, actor Actor, operation, item string, expected, schemaNo int64, command func(context.Context, *sql.Tx, *DraftState, TypeSchema) error) (DraftState, error) {
@@ -33,7 +33,7 @@ func (s *Service) withCandidate(ctx context.Context, actor Actor, operation, ite
 	return out, err
 }
 func (s *Service) MarkSharedReady(ctx context.Context, actor Actor, item string, expected, schemaNo int64) (DraftState, error) {
-	return s.withCandidate(ctx, actor, string(cms.OpContentReady), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
+	return s.withCandidate(ctx, actor, string(identity.OpContentReady), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
 		return markSharedReady(ctx, tx, state, schema, s.relationAccess(ctx, tx, actor))
 	})
 }
@@ -57,7 +57,7 @@ func markSharedReady(ctx context.Context, tx *sql.Tx, state *DraftState, schema 
 	return advanceVersion(ctx, tx, state)
 }
 func (s *Service) MarkReady(ctx context.Context, actor Actor, item, locale string, expected, schemaNo int64) (DraftState, error) {
-	return s.withCandidate(ctx, actor, string(cms.OpContentReady), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
+	return s.withCandidate(ctx, actor, string(identity.OpContentReady), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
 		return markLocaleReady(ctx, tx, state, schema, locale, s.relationAccess(ctx, tx, actor))
 	})
 }

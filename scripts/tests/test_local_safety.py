@@ -51,7 +51,7 @@ class AuthHarnessTests(unittest.TestCase):
                 go_calls = [arguments for arguments in calls if arguments[0] == "go"]
                 self.assertEqual(go_calls[0], [
                     "go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
-                    "^Test(Auth|CMS|Bootstrap|Domain)", "./internal/database", "./internal/cmsintegration",
+                    "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration",
                 ])
                 self.assertEqual(calls[-2][0:3], ["docker", "container", "stop"])
                 self.assertEqual(calls[-1][0:4], ["docker", "container", "rm", "--volumes"])

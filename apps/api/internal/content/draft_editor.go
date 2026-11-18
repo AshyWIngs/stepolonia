@@ -6,24 +6,24 @@ import (
 	"errors"
 	"time"
 
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
-// DraftEditor creates, reads and edits CMS drafts.
+// DraftEditor creates, reads and edits content drafts.
 type DraftEditor struct {
-	auth *cms.AuthService
+	auth *identity.AuthService
 }
 
-// NewDraftEditor binds the editor to an AuthService on the verified CMS Engine pool.
-func NewDraftEditor(auth *cms.AuthService) *DraftEditor {
+// NewDraftEditor binds the editor to an AuthService on the verified content editor pool.
+func NewDraftEditor(auth *identity.AuthService) *DraftEditor {
 	return &DraftEditor{auth: auth}
 }
 
 // CreateDraftForType creates an empty draft at the expected current schema.
 // The response is a receipt. Reading the draft requires a separate read grant.
-func (e *DraftEditor) CreateDraftForType(ctx context.Context, req cms.AuthRequest, typeKey string, schemaNo int64) (DraftState, error) {
+func (e *DraftEditor) CreateDraftForType(ctx context.Context, req identity.AuthRequest, typeKey string, schemaNo int64) (DraftState, error) {
 	if e == nil || e.auth == nil {
-		return DraftState{}, cms.ErrSecurityUnavailable
+		return DraftState{}, identity.ErrSecurityUnavailable
 	}
 	var receipt DraftState
 	err := e.auth.WithDraftCreate(ctx, req, typeKey, schemaNo, func(ctx context.Context, tx *sql.Tx, typeID, itemID string) error {
@@ -34,7 +34,7 @@ func (e *DraftEditor) CreateDraftForType(ctx context.Context, req cms.AuthReques
 		receipt = DraftState{ItemID: itemID, TypeID: typeID, SchemaNo: schemaNo, Version: version}
 		return nil
 	})
-	if errors.Is(err, cms.ErrDraftSchemaConflict) {
+	if errors.Is(err, identity.ErrDraftSchemaConflict) {
 		return DraftState{}, problem(Conflict, schemaConflictCode)
 	}
 	if err != nil {
@@ -50,27 +50,27 @@ const (
 )
 
 // ReadDraftForType returns the actor-readable draft for the persisted collection.
-func (e *DraftEditor) ReadDraftForType(ctx context.Context, req cms.AuthRequest, typeKey, itemID string) (DraftState, error) {
+func (e *DraftEditor) ReadDraftForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string) (DraftState, error) {
 	if e == nil || e.auth == nil {
-		return DraftState{}, cms.ErrSecurityUnavailable
+		return DraftState{}, identity.ErrSecurityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
 	defer cancel()
 	var out DraftState
-	err := e.auth.WithSession(ctx, req, false, func(ctx context.Context, tx *sql.Tx, session cms.Session) error {
-		read, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentRead, itemID)
+	err := e.auth.WithSession(ctx, req, false, func(ctx context.Context, tx *sql.Tx, session identity.Session) error {
+		read, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentRead, itemID)
 		if err != nil {
 			return err
 		}
 		if read.TypeKey != typeKey {
-			return cms.ErrNotFound
+			return identity.ErrNotFound
 		}
 		if err := checkDraftReadSize(ctx, tx, itemID); err != nil {
 			return err
 		}
 		state, err := loadDraft(ctx, tx, itemID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return cms.ErrNotFound
+			return identity.ErrNotFound
 		}
 		if err != nil {
 			return err
@@ -79,7 +79,7 @@ func (e *DraftEditor) ReadDraftForType(ctx context.Context, req cms.AuthRequest,
 		if err != nil {
 			return err
 		}
-		out, err = projectCMSDraft(ctx, tx, session, state, schema, read)
+		out, err = projectAuthorizedDraft(ctx, tx, session, state, schema, read)
 		return err
 	})
 	if err != nil {
@@ -98,36 +98,36 @@ func checkDraftReadSize(ctx context.Context, tx *sql.Tx, itemID string) error {
 		return err
 	}
 	if count > MaxDraftLocales {
-		return cms.ErrSecurityUnavailable
+		return identity.ErrSecurityUnavailable
 	}
 	return nil
 }
 
-// SaveDraft sets or unsets scalar fields using current CMS item and field permissions.
-func (e *DraftEditor) SaveDraft(ctx context.Context, req cms.AuthRequest, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+// SaveDraft sets or unsets scalar fields using current content item and field permissions.
+func (e *DraftEditor) SaveDraft(ctx context.Context, req identity.AuthRequest, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
 	return e.saveDraft(ctx, req, "", itemID, expected, patch)
 }
 
 // SaveDraftForType binds the requested collection key to the authorized item.
-func (e *DraftEditor) SaveDraftForType(ctx context.Context, req cms.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+func (e *DraftEditor) SaveDraftForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
 	if typeKey == "" {
-		return DraftState{}, cms.ErrNotFound
+		return DraftState{}, identity.ErrNotFound
 	}
 	return e.saveDraft(ctx, req, typeKey, itemID, expected, patch)
 }
 
-func (e *DraftEditor) saveDraft(ctx context.Context, req cms.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+func (e *DraftEditor) saveDraft(ctx context.Context, req identity.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
 	if e == nil || e.auth == nil {
-		return DraftState{}, cms.ErrSecurityUnavailable
+		return DraftState{}, identity.ErrSecurityUnavailable
 	}
 	var out DraftState
-	err := e.auth.WithDraftUpdate(ctx, req, itemID, func(ctx context.Context, tx *sql.Tx, session cms.Session, itemID string) error {
-		update, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentUpdate, itemID)
+	err := e.auth.WithDraftUpdate(ctx, req, itemID, func(ctx context.Context, tx *sql.Tx, session identity.Session, itemID string) error {
+		update, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentUpdate, itemID)
 		if err != nil {
 			return err
 		}
 		if typeKey != "" && update.TypeKey != typeKey {
-			return cms.ErrNotFound
+			return identity.ErrNotFound
 		}
 		out, err = saveAuthorizedDraft(ctx, tx, session, update, itemID, expected, patch)
 		return err
@@ -149,7 +149,7 @@ func draftCommandResult(out DraftState, err error) (DraftState, error) {
 	return out, nil
 }
 
-func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session cms.Session, update cms.ContentItemAccess, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Session, update identity.ContentItemAccess, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
 	state, err := loadDraft(ctx, tx, itemID)
 	if err != nil {
 		return DraftState{}, databaseError(err)
@@ -164,8 +164,8 @@ func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session cms.Session, u
 	if err := validateDraftVersions(state, expected, patch.SchemaNo); err != nil {
 		return DraftState{}, err
 	}
-	read, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentRead, itemID)
-	if err != nil && !errors.Is(err, cms.ErrNotFound) {
+	read, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentRead, itemID)
+	if err != nil && !errors.Is(err, identity.ErrNotFound) {
 		return DraftState{}, err
 	}
 	writeOnly := make(map[string]bool)
@@ -180,7 +180,7 @@ func saveAuthorizedDraft(ctx context.Context, tx *sql.Tx, session cms.Session, u
 	return draftUpdateResponse(ctx, tx, session, state, schema, read)
 }
 
-func draftUpdateResponse(ctx context.Context, tx *sql.Tx, session cms.Session, state DraftState, schema TypeSchema, read cms.ContentItemAccess) (DraftState, error) {
+func draftUpdateResponse(ctx context.Context, tx *sql.Tx, session identity.Session, state DraftState, schema TypeSchema, read identity.ContentItemAccess) (DraftState, error) {
 	if read.TypeID == "" {
 		// A writer without read access gets only an optimistic version receipt.
 		return DraftState{ItemID: state.ItemID, TypeID: state.TypeID, SchemaNo: state.SchemaNo, Version: state.Version}, nil
@@ -189,16 +189,16 @@ func draftUpdateResponse(ctx context.Context, tx *sql.Tx, session cms.Session, s
 	if err != nil {
 		return DraftState{}, databaseError(err)
 	}
-	return projectCMSDraft(ctx, tx, session, state, schema, read)
+	return projectAuthorizedDraft(ctx, tx, session, state, schema, read)
 }
 
-func projectCMSDraft(ctx context.Context, tx *sql.Tx, session cms.Session, state DraftState, schema TypeSchema, read cms.ContentItemAccess) (DraftState, error) {
+func projectAuthorizedDraft(ctx context.Context, tx *sql.Tx, session identity.Session, state DraftState, schema TypeSchema, read identity.ContentItemAccess) (DraftState, error) {
 	return projectDraftState(state, schema, read.AllowsField, func(relation Relation) (bool, error) {
-		return cmsRelationVisible(ctx, tx, session, relation)
+		return canReadRelation(ctx, tx, session, relation)
 	})
 }
 
-func checkDraftPatchFields(update cms.ContentItemAccess, schema TypeSchema, patch DraftPatch) error {
+func checkDraftPatchFields(update identity.ContentItemAccess, schema TypeSchema, patch DraftPatch) error {
 	if patch.ReplaceRelations || len(patch.Relations) > 0 {
 		return problem(Validation, "relation_edits_unavailable")
 	}
@@ -208,15 +208,15 @@ func checkDraftPatchFields(update cms.ContentItemAccess, schema TypeSchema, patc
 	}
 	for _, key := range patchKeys(schema, patch) {
 		if !update.AllowsField(fieldsByKey[key]) {
-			return cms.ErrPermissionDenied
+			return identity.ErrPermissionDenied
 		}
 	}
 	return nil
 }
 
-func cmsRelationVisible(ctx context.Context, tx *sql.Tx, session cms.Session, relation Relation) (bool, error) {
-	access, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentRead, relation.TargetItemID)
-	if errors.Is(err, cms.ErrNotFound) {
+func canReadRelation(ctx context.Context, tx *sql.Tx, session identity.Session, relation Relation) (bool, error) {
+	access, err := session.LoadContentItemAccess(ctx, tx, identity.OpContentRead, relation.TargetItemID)
+	if errors.Is(err, identity.ErrNotFound) {
 		return false, nil
 	}
 	return access.TypeID == relation.TargetTypeID, err

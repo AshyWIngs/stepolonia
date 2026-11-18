@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"stepolonia/apps/api/internal/apiexamples"
-	"stepolonia/apps/api/internal/cmshttp"
+	"stepolonia/apps/api/internal/adminhttp"
 	"stepolonia/apps/api/internal/content"
 )
 
@@ -26,7 +26,7 @@ const javascriptMediaType = "application/javascript; charset=utf-8"
 
 const documentationPage = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stepolonia API</title><link rel="stylesheet" href="/docs/assets/swagger-ui.css"></head>
+<title>Portal API</title><link rel="stylesheet" href="/docs/assets/swagger-ui.css"></head>
 <body><div id="swagger-ui"></div><script src="/docs/assets/swagger-ui-bundle.js"></script>
 <script src="/docs/assets/swagger-ui-standalone-preset.js"></script><script src="/docs/init.js"></script></body></html>`
 
@@ -37,9 +37,9 @@ func registerDocumentation(mux *http.ServeMux, api huma.API, private bool) {
 	urls := `[{url:"/openapi.json",name:"Public API"}]`
 	if private {
 		mux.HandleFunc("GET /openapi-auth.json", func(w http.ResponseWriter, _ *http.Request) {
-			writeSpecification(w, cmshttp.OpenAPIJSON)
+			writeSpecification(w, adminhttp.OpenAPIJSON)
 		})
-		urls = `[{url:"/openapi.json",name:"Public API"},{url:"/openapi-auth.json",name:"Private CMS API"}]`
+		urls = `[{url:"/openapi.json",name:"Public API"},{url:"/openapi-auth.json",name:"Private Administration API"}]`
 	}
 	mux.HandleFunc("GET /docs/init.js", func(w http.ResponseWriter, _ *http.Request) {
 		documentationHeaders(w)

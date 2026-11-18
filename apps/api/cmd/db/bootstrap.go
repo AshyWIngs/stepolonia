@@ -13,12 +13,12 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/database"
 )
 
-const totpKeyFileEnv = "CMS_TOTP_KEY_FILE"
+const totpKeyFileEnv = "ADMIN_TOTP_KEY_FILE"
 
 // Enrollment secrets are written only to the controlling terminal, never to a
 // pipe or a log. Password input bypasses the line reader and disables echo.
@@ -41,7 +41,7 @@ func runBootstrap(ctx context.Context) error {
 	if err := database.CheckSchema(ctx, db); err != nil {
 		return err
 	}
-	service, err := cms.NewBootstrapService(db, cms.BootstrapConfig{Site: site, KeyVersion: version, EncryptionKey: key})
+	service, err := identity.NewBootstrapService(db, identity.BootstrapConfig{Site: site, KeyVersion: version, EncryptionKey: key})
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func runBootstrap(ctx context.Context) error {
 	return ui.enroll(ctx, service)
 }
 
-func (t *bootstrapTerminal) enroll(ctx context.Context, service *cms.BootstrapService) error {
+func (t *bootstrapTerminal) enroll(ctx context.Context, service *identity.BootstrapService) error {
 	login, err := t.line(ctx, "Login identifier: ")
 	if err != nil {
 		return err

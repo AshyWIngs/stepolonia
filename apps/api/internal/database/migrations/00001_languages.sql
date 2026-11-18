@@ -7,7 +7,7 @@ BEGIN
  OR EXISTS (SELECT 1 FROM pg_catalog.pg_type WHERE typnamespace='public'::regnamespace AND typname IN
  ('article_draft_translations','article_revision_translations','article_revisions','articles','auth_attempt_buckets','auth_attempts','content_draft_locales','content_draft_relations','content_drafts','content_field_definitions','content_fields','content_item_assignments','content_items','content_publication_locales','content_publication_relations','content_publications','content_routes','content_schemas','content_types','enrollment_attempts','grant_fields','languages','mfa_totp','onboarding_tokens','permission_operations','public_article_routes','public_article_translations','public_content_items','public_content_relations','public_content_routes','public_content_types','public_languages','public_routes','public_site','public_ui_languages','public_ui_messages','recovery_attempts','recovery_codes','role_grants','roles','security_audit','security_state','sessions','site_revision_keys','site_revision_languages','site_revision_messages','site_revisions','site_state','ui_message_keys','user_roles','users'))
  OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
- ('cms_write_mutex','delete_archived_role','guard_content_definition','guard_content_identity','guard_content_item_identity','guard_content_locale_relation','guard_content_publication','guard_content_publication_child','guard_content_relation','guard_content_route','guard_content_schema','guard_language_generation','guard_published_revision','guard_revision','guard_revision_translation','guard_security_audit','guard_security_state','guard_site_child','guard_site_revision','guard_site_state','guard_user_activation','keep_route_reservation','lock_languages','require_closed_revision','require_content_publication_sealed','require_content_schema_sealed','reset_draft_ready','ui_placeholders')) THEN
+ ('installation_write_mutex','delete_archived_role','guard_content_definition','guard_content_identity','guard_content_item_identity','guard_content_locale_relation','guard_content_publication','guard_content_publication_child','guard_content_relation','guard_content_route','guard_content_schema','guard_language_generation','guard_published_revision','guard_revision','guard_revision_translation','guard_security_audit','guard_security_state','guard_site_child','guard_site_revision','guard_site_state','guard_user_activation','keep_route_reservation','lock_languages','require_closed_revision','require_content_publication_sealed','require_content_schema_sealed','reset_draft_ready','ui_placeholders')) THEN
  RAISE EXCEPTION 'application objects already exist; installation stopped before DDL';
  END IF;
 END;
@@ -48,7 +48,7 @@ CREATE TABLE public.languages (
     CONSTRAINT languages_direction_check CHECK (direction IN ('ltr', 'rtl'))
 );
 -- +goose StatementBegin
-CREATE FUNCTION public.cms_write_mutex() RETURNS trigger
+CREATE FUNCTION public.installation_write_mutex() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $body$
 BEGIN
     PERFORM pg_catalog.pg_advisory_xact_lock(1398031696, 1);
@@ -56,9 +56,9 @@ BEGIN
 END;
 $body$;
 -- +goose StatementEnd
-COMMENT ON FUNCTION public.cms_write_mutex() IS
+COMMENT ON FUNCTION public.installation_write_mutex() IS
 'Acquire the installation write lock before statement row locks.';
-REVOKE ALL ON FUNCTION public.cms_write_mutex() FROM public;
+REVOKE ALL ON FUNCTION public.installation_write_mutex() FROM public;
 -- +goose StatementBegin
 CREATE FUNCTION public.guard_language_generation() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $body$
@@ -80,7 +80,7 @@ $body$;
 REVOKE ALL ON FUNCTION public.guard_language_generation() FROM public;
 CREATE TRIGGER languages_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.languages
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 CREATE TRIGGER languages_generation_guard
 BEFORE INSERT OR UPDATE ON public.languages
 FOR EACH ROW EXECUTE FUNCTION public.guard_language_generation();
@@ -137,4 +137,4 @@ DROP VIEW public.public_languages;
 DROP FUNCTION public.lock_languages(text[]);
 DROP TABLE public.languages;
 DROP FUNCTION public.guard_language_generation();
-DROP FUNCTION public.cms_write_mutex();
+DROP FUNCTION public.installation_write_mutex();

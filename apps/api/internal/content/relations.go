@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"reflect"
 	"sort"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func replaceRelations(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, relations []Relation) (bool, error) {
@@ -97,7 +97,7 @@ func (s *Service) authorizeRelations(ctx context.Context, tx *sql.Tx, actor Acto
 
 func (s *Service) relationAccess(ctx context.Context, tx *sql.Tx, actor Actor) relationAccess {
 	return func(relation Relation) (bool, error) {
-		err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil)
+		err := s.authorize(ctx, tx, actor, string(identity.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil)
 		return err == nil, nil
 	}
 }

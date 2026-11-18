@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 
-const endpoint = new URL(process.env.QA_CMS_ORIGIN)
+const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
 assert.equal(endpoint.protocol, 'https:')
 assert.equal(endpoint.hostname, '127.0.0.1')
 const { origin } = endpoint
@@ -30,11 +30,11 @@ async function assertFit(page) {
 
 async function assertTheme(page, preference, actual) {
   await page.waitForFunction(({ preference, actual }) => {
-    const shell = document.querySelector('.cms-shell')
-    const card = document.querySelector('.cms-card')
+    const shell = document.querySelector('.admin-shell')
+    const card = document.querySelector('.admin-card')
     const shellColor = actual === 'dark' ? 'rgb(20, 28, 26)' : 'rgb(241, 244, 240)'
     const cardColor = actual === 'dark' ? 'rgb(28, 42, 37)' : 'rgb(255, 255, 255)'
-    return document.documentElement.dataset.cmsTheme === preference &&
+    return document.documentElement.dataset.adminTheme === preference &&
       getComputedStyle(document.documentElement).colorScheme === actual &&
       shell && getComputedStyle(shell).backgroundColor === shellColor &&
       card && getComputedStyle(card).backgroundColor === cardColor
@@ -50,7 +50,7 @@ async function assertLayouts(page) {
       await assertTheme(page, value, value)
       await assertFit(page)
       assert.ok(await page.getByRole('button', { name: 'Continue', exact: true }).isVisible())
-      console.log(`CMS sign-in visible at ${width}×${height} in ${value} mode`)
+      console.log(`Administration sign-in visible at ${width}×${height} in ${value} mode`)
     }
     await verifyTheme('light')
     await verifyTheme('dark')
@@ -77,7 +77,7 @@ async function signIn(page, context) {
   assert.ok(await loginField.evaluate(element => element.validity.valid))
   await loginField.clear()
   await loginField.focus()
-  await page.keyboard.type(process.env.QA_CMS_LOGIN)
+  await page.keyboard.type(process.env.QA_ADMIN_LOGIN)
   await page.keyboard.press('Tab')
   assert.ok(await password.evaluate(element => element === document.activeElement))
   await password.fill('Incorrect test password')
@@ -87,7 +87,7 @@ async function signIn(page, context) {
   await page.getByRole('alert').waitFor()
   await heading(page, 'Sign in').waitFor()
   assert.equal(await password.inputValue(), '')
-  await password.fill(process.env.QA_CMS_PASSWORD)
+  await password.fill(process.env.QA_ADMIN_PASSWORD)
   const login = waitForAuth(page, 'login', 200)
   await password.press('Enter')
   await login
@@ -104,7 +104,7 @@ async function signIn(page, context) {
   await assertFit(page)
   const code = page.getByLabel('Verification code', { exact: true })
   assert.equal(await code.getAttribute('autocomplete'), 'one-time-code')
-  await code.fill(process.env.QA_CMS_CODE)
+  await code.fill(process.env.QA_ADMIN_CODE)
   const verify = waitForAuth(page, 'mfa/verify', 200)
   await code.press('Enter')
   await verify
@@ -118,6 +118,45 @@ async function signIn(page, context) {
   await page.setViewportSize({ width: 768, height: 1024 })
   await assertFit(page)
   return cookie
+}
+
+async function readPublicSite(context) {
+  const result = await context.request.get(new URL('/api/v1/site?lang=en', origin).href)
+  assert.equal(result.status(), 200)
+  return result.json()
+}
+
+async function verifySettingsPublication(page, context) {
+  const oldSite = await readPublicSite(context)
+  const newTitle = 'Polacy w Kazachstanie'
+  const newMessage = 'Enter your code to open the community portal.'
+  await page.getByRole('button', { name: 'Portal settings', exact: true }).click()
+  const portalName = page.getByLabel('Portal name', { exact: true })
+  assert.equal(await portalName.inputValue(), oldSite.settings.title)
+  const message = page.getByLabel('admin.code_help', { exact: true })
+  assert.equal(await message.inputValue(), oldSite.messages['admin.code_help'])
+  await page.setViewportSize({ width: 320, height: 844 })
+  await assertFit(page)
+  await portalName.fill(newTitle)
+  await message.fill(newMessage)
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await page.getByText('Draft saved.', { exact: true }).waitFor()
+  assert.deepEqual(await readPublicSite(context), oldSite)
+
+  await page.getByRole('button', { name: 'Publish draft', exact: true }).click()
+  const confirmation = page.getByRole('region', { name: 'Publish the saved settings and interface texts?', exact: true })
+  await confirmation.getByText(newTitle, { exact: true }).waitFor()
+  await confirmation.getByRole('button', { name: 'Publish draft', exact: true }).click()
+  await page.getByText('Settings published.', { exact: true }).waitFor()
+  await page.locator('.admin-name').getByText(newTitle, { exact: false }).waitFor()
+  const published = await readPublicSite(context)
+  assert.notEqual(published.version, oldSite.version)
+  assert.equal(published.settings.title, newTitle)
+  assert.equal(published.messages['admin.code_help'], newMessage)
+  const document = await page.reload()
+  assert.equal(document.status(), 200)
+  assert.match(await document.text(), /Polacy w Kazachstanie/u)
+  await heading(page, 'Signed in').waitFor()
 }
 
 async function signOut(page, context, revokedCookie) {
@@ -168,10 +207,11 @@ try {
   assert.match(document.headers()['cache-control'], /no-store/u)
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
+  await verifySettingsPublication(page, context)
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')
-  console.log('Published CMS catalogs, password, TOTP, session reload, logout, revoked-cookie recovery and responsive themes passed')
+  console.log('Settings draft and publication, published catalogs, password, TOTP, session reload, logout, revoked-cookie recovery and responsive themes passed')
 }
 finally {
   await browser.close()

@@ -63,12 +63,12 @@ def main():
                  f'REVOKE CREATE,TEMP ON DATABASE "{database}" FROM PUBLIC'])
         environment = {**os.environ,
                        "STAGE31_TEST_DATABASE_URL": f"postgres://postgres@127.0.0.1:{port}/{database}?sslmode=disable",
-                       "CMS_HTTP_BROWSER_TEST": "1"}
+                       "ADMIN_HTTP_BROWSER_TEST": "1"}
         # Both packages share this PostgreSQL cluster and its installation roles.
         command(["go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
-                 "^Test(Auth|CMS|Bootstrap|Domain)", "./internal/database", "./internal/cmsintegration"],
+                 "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration", "./cmd/db"],
                 environment=environment)
-        command(["go", "-C", "apps/api", "test", "-race", "-count=1", "./internal/cmshttp"],
+        command(["go", "-C", "apps/api", "test", "-race", "-count=1", "./internal/adminhttp"],
                 environment=environment)
     finally:
         owned_container(name, token)
