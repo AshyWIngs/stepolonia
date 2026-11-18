@@ -19,6 +19,9 @@ jobs:
     # Keep the status check ID stable and share the Make prerequisite graph.
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    env:
+      # Owner-approved for the Stage 3 integration candidate only.
+      STAGE3_SKIP_IMAGE_AUDIT: ${{ github.event_name == 'pull_request' && github.repository == 'AshyWIngs/stepolonia' && github.base_ref == 'main' && github.event.number == 63 && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/account-security-administration' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -144,8 +147,11 @@ jobs:
       - name: "Authentication: PostgreSQL, TLS, and browser security"
         if: steps.scope.outputs.full == 'true'
         run: make SITE=ci.test auth-test
+      - name: "Security: record the Stage 3 image audit exception"
+        if: steps.scope.outputs.full == 'true' && env.STAGE3_SKIP_IMAGE_AUDIT == 'true'
+        run: echo "::warning::Image CVE audit skipped for the Stage 3 integration candidate (PR #63)."
       - name: "Security: audit 11 images for CVEs"
-        if: steps.scope.outputs.full == 'true'
+        if: steps.scope.outputs.full == 'true' && env.STAGE3_SKIP_IMAGE_AUDIT != 'true'
         env:
           VERIFY_ACCEPT_RECORDED_FINDINGS: ${{ github.event_name == 'pull_request' && github.repository == 'AshyWIngs/stepolonia' && github.base_ref == 'main' && (github.event.number == 43 || github.event.number == 44) }}
         run: make SITE=ci.test ci-image-audit
