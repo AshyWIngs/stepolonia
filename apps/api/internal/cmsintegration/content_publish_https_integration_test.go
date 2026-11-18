@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-
 	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/cmshttp"
 	"stepolonia/apps/api/internal/content"
@@ -57,15 +55,15 @@ func newPublicationFixture(t *testing.T, typeKey, namespace string) publicationF
 VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
 	requireNoError(t, err)
 	authorRole := fixturePublicationRole(t, db, "Pracownia tekstu")
-	for _, operation := range []string{"create", "read", "update", "ready"} {
+	for _, operation := range []string{"content.items.create", "content.items.read", "content.items.update", "content.items.ready"} {
 		scope := bootstrapAssigned
-		if operation == "create" {
+		if operation == "content.items.create" {
 			scope = publicationCreateScope
 		}
 		grantPublicationFields(t, db, authorRole, typeID, operation, scope)
 	}
 	editorRole := fixturePublicationRole(t, db, "Dyżur wydawniczy")
-	publishGrant := grantPublicationFields(t, db, editorRole, typeID, "publish", bootstrapAny)
+	publishGrant := grantPublicationFields(t, db, editorRole, typeID, "content.items.publish", bootstrapAny)
 	author := fixturePublicationAccount(t, state, admin, "writer@example.test", authorRole)
 	editor := fixturePublicationAccount(t, state, admin, "publisher@example.test", editorRole)
 	writerDB := openDraftEditorLogin(t, db)
@@ -94,7 +92,7 @@ func grantPublicationFields(t *testing.T, db *sql.DB, role, typeID, operation, s
 	t.Helper()
 	var grantID string
 	requireNoError(t, db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope)
-VALUES(gen_random_uuid(),$1,$2,'content',$3,$4) RETURNING id::text`, role, "content.items."+operation, typeID, scope).Scan(&grantID))
+VALUES(gen_random_uuid(),$1,$2,'content',$3,$4) RETURNING id::text`, role, operation, typeID, scope).Scan(&grantID))
 	_, err := db.Exec(`INSERT INTO public.grant_fields(grant_id,type_id,field_id)
 SELECT $1,type_id,field_id FROM public.content_fields WHERE type_id=$2`, grantID, typeID)
 	requireNoError(t, err)
@@ -151,13 +149,17 @@ func openPublicationRuntimeLogin(t *testing.T, owner *sql.DB) *sql.DB {
 	t.Helper()
 	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, owner.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
-	cfg.User = cfg.Database + "_reader"
-	role := pgx.Identifier{cfg.User}.Sanitize()
-	_, err := owner.Exec("CREATE ROLE " + role + " LOGIN")
+	// The cases use this login sequentially in the disposable test cluster.
+	cfg.User = "sp_publication_test_reader"
+	_, err := owner.Exec("CREATE ROLE sp_publication_test_reader LOGIN")
 	requireNoError(t, err)
 	t.Cleanup(func() {
-		_, _ = owner.Exec("DROP OWNED BY " + role)
-		_, _ = owner.Exec("DROP ROLE " + role)
+		if _, err := owner.Exec("DROP OWNED BY sp_publication_test_reader"); err != nil {
+			t.Errorf("revoke publication test reader privileges: %v", err)
+		}
+		if _, err := owner.Exec("DROP ROLE sp_publication_test_reader"); err != nil {
+			t.Errorf("remove publication test reader: %v", err)
+		}
 	})
 	requireNoError(t, database.GrantRuntime(context.Background(), owner, cfg.User))
 	db := database.Open(cfg)
