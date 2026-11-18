@@ -53,6 +53,10 @@ func resolveRoute(path, method string) (route, string, string, bool) {
 	key, id := userRoutePath(path)
 	candidates, ok := userRoutes[key]
 	if !ok {
+		key, id = roleRoutePath(path)
+		candidates, ok = roleRoutes[key]
+	}
+	if !ok {
 		return route{}, "", "", false
 	}
 	for _, rt := range candidates {
@@ -163,7 +167,7 @@ func requestFields(input any) string {
 	typ := reflect.TypeOf(input)
 	fields := make([]string, typ.NumField())
 	for i := range fields {
-		fields[i] = typ.Field(i).Tag.Get("json")
+		fields[i] = strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
 	}
 	return strings.Join(fields, ",")
 }
@@ -182,7 +186,11 @@ func routeMethods(path string) string {
 		return rt.method
 	}
 	methods := make([]string, 0, len(userRoutes[path]))
-	for _, rt := range userRoutes[path] {
+	candidates := userRoutes[path]
+	if isRoleRoute(path) {
+		candidates = roleRoutes[path]
+	}
+	for _, rt := range candidates {
 		methods = append(methods, rt.method)
 	}
 	return strings.Join(methods, ", ")

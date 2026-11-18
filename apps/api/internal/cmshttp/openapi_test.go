@@ -93,8 +93,25 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	if op.RequestBody == nil {
 		t.Fatalf("missing request body %s", path)
 	}
+	if authTag(rt) == rolesTag {
+		checkRoleRequestExample(t, rt, op.RequestBody.Content[jsonMediaType])
+		return op
+	}
 	checkCredentialProperties(t, doc, rt, op.RequestBody.Content[jsonMediaType])
 	return op
+}
+
+func checkRoleRequestExample(t *testing.T, rt route, body privateMedia) {
+	t.Helper()
+	raw, err := json.Marshal(body.Example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(rt.method, rolesPath, bytes.NewReader(raw))
+	req.Header.Set(contentTypeHeader, jsonMediaType)
+	if _, code, _ := readRoleInput(httptest.NewRecorder(), req, rt.method == http.MethodPatch); code != "" {
+		t.Fatalf("documented role example rejected by transport: %s", rt.operationID)
+	}
 }
 
 func checkCredentialProperties(t *testing.T, doc privateDocument, rt route, body privateMedia) {
@@ -244,6 +261,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable"},
+		"roles":                   {"rolesList", "rolesGet", "rolesCreate", "rolesEdit"},
 	}
 	declared := map[string]bool{}
 	for _, tag := range doc.Tags {

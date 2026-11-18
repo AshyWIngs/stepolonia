@@ -116,7 +116,7 @@ var routes = map[string]route{
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	rt, path, userID, ok := resolveRoute(r.URL.Path, r.Method)
+	rt, path, targetID, ok := resolveRoute(r.URL.Path, r.Method)
 	if !ok {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
@@ -143,12 +143,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusMethodNotAllowed, methodNotAllowedCode)
 		return
 	}
+	if isRoleRoute(path) {
+		h.serveRole(w, r, rt, targetID, ip)
+		return
+	}
 	input, code, status := readRouteInput(w, r, rt)
 	if code != "" {
 		problem(w, status, code)
 		return
 	}
-	h.dispatch(w, r, rt, userTarget{path, userID}, ip, input)
+	h.dispatch(w, r, rt, userTarget{path, targetID}, ip, input)
 }
 
 type userTarget struct{ path, id string }
@@ -166,7 +170,7 @@ func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, tar
 			writeError(w, cms.ErrSecurityUnavailable)
 			return
 		}
-		w.Header().Set("X-Request-ID", req.RequestID)
+		w.Header().Set(requestIDHeader, req.RequestID)
 	}
 	if isLifecycleRoute(path) && (path != usersPath || r.Method == http.MethodGet) {
 		h.executeLifecycle(w, r, rt.operationID, userID, req, input)
@@ -217,19 +221,9 @@ func readRouteInput(w http.ResponseWriter, r *http.Request, rt route) (credentia
 
 func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (credentials, string, int) {
 	var input credentials
-	media, params, err := mime.ParseMediaType(r.Header.Get(contentTypeHeader))
-	if err != nil || media != jsonMediaType || len(r.Header.Values(contentTypeHeader)) != 1 || (len(params) > 0 && (len(params) != 1 || !strings.EqualFold(params["charset"], "utf-8"))) {
-		return input, validationCode, http.StatusBadRequest
-	}
-	reader := http.MaxBytesReader(w, r.Body, maxCredentialBodyBytes)
-	defer func() { _ = reader.Close() }()
-	raw, err := io.ReadAll(reader)
-	if err != nil {
-		var limit *http.MaxBytesError
-		if errors.As(err, &limit) {
-			return input, "body_too_large", http.StatusRequestEntityTooLarge
-		}
-		return input, validationCode, http.StatusBadRequest
+	raw, code, status := readJSONBody(w, r, maxCredentialBodyBytes)
+	if code != "" {
+		return input, code, status
 	}
 	if !allowedObject(raw, allowed) {
 		return input, validationCode, http.StatusBadRequest
@@ -238,6 +232,28 @@ func readCredentials(w http.ResponseWriter, r *http.Request, allowed string) (cr
 		return input, validationCode, http.StatusBadRequest
 	}
 	return input, "", 0
+}
+
+func readJSONBody(w http.ResponseWriter, r *http.Request, maxBytes int64) ([]byte, string, int) {
+	media, params, err := mime.ParseMediaType(r.Header.Get(contentTypeHeader))
+	if err != nil || media != jsonMediaType || len(r.Header.Values(contentTypeHeader)) != 1 || !validJSONCharset(params) {
+		return nil, validationCode, http.StatusBadRequest
+	}
+	reader := http.MaxBytesReader(w, r.Body, maxBytes)
+	defer func() { _ = reader.Close() }()
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		var limit *http.MaxBytesError
+		if errors.As(err, &limit) {
+			return nil, bodyTooLargeCode, http.StatusRequestEntityTooLarge
+		}
+		return nil, validationCode, http.StatusBadRequest
+	}
+	return raw, "", 0
+}
+
+func validJSONCharset(params map[string]string) bool {
+	return len(params) == 0 || len(params) == 1 && strings.EqualFold(params["charset"], "utf-8")
 }
 
 // Reject duplicate keys and mismatched scalar types before decoding the DTO.

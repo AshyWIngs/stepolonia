@@ -116,7 +116,7 @@ func seedContentGrants(ctx context.Context, tx *sql.Tx, role, name, article stri
 	delegable := name == seedAdminName
 	if name == "Author" {
 		operations = bootstrapContentOperations[:4]
-		scope = "assigned"
+		scope = objectScopeAssigned
 	}
 	if name == "Editor" {
 		operations = bootstrapContentOperations[1:6]

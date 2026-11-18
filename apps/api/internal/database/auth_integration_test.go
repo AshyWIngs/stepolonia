@@ -45,6 +45,13 @@ func authFixture(t *testing.T) authFixtureState {
 func authReq(tokens cms.SessionTokens) cms.AuthRequest {
 	return cms.AuthRequest{Token: tokens.Token, CSRF: tokens.CSRF, ClientIP: netip.MustParseAddr("192.0.2.1")}
 }
+
+func authRefreshStep(t *testing.T, db *sql.DB, token string) {
+	t.Helper()
+	_, err := db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE token_digest=$1`, authDigest(token))
+	requireNoError(t, err)
+}
+
 func authLogin(t *testing.T, f authFixtureState) cms.SessionTokens {
 	t.Helper()
 	ctx := context.Background()

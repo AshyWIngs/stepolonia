@@ -21,6 +21,8 @@ import (
 
 const authFullSessionCookie = "__Host-sp_session"
 
+const authRequestIDHeader = "X-Request-ID"
+
 type authHTTPFixture struct {
 	state  authFixtureState
 	server *httptest.Server

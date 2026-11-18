@@ -22,43 +22,56 @@ func OpenAPIJSON() ([]byte, error) {
 	paths := map[string]*huma.PathItem{}
 	for path, methods := range privateRoutes() {
 		for _, rt := range methods {
-			op := &huma.Operation{
-				OperationID: rt.operationID, Summary: rt.summary,
-				Description: rt.description + " " + boundaryDescription,
-				Tags:        []string{authTag(rt)},
-				Parameters:  authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt),
-			}
 			item := paths[path]
 			if item == nil {
 				item = &huma.PathItem{}
 			}
-			if rt.method == http.MethodGet {
+			op := privateOperationSchema(registry, path, rt)
+			switch rt.method {
+			case http.MethodGet:
 				item.Get = op
-			} else {
-				name := rt.operationID + "Request"
-				schema, example := credentialSchema(rt)
-				registry.Map()[name] = schema
-				op.RequestBody = &huma.RequestBody{
-					Required:    true,
-					Description: "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic.",
-					Content:     map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
-				}
-
+			case http.MethodPatch:
+				item.Patch = op
+			default:
 				item.Post = op
-			}
-			if strings.Contains(path, "{id}") {
-				op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target account UUID; never selects the actor or grants permissions.", Schema: uuidSchema(syntheticUserID)})
 			}
 			paths[path] = item
 		}
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads and versioned activation and disable operations. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation and disable operations, and role policy reads, disabled creation and atomic editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
 	})
+}
+
+func privateOperationSchema(registry huma.Registry, path string, rt route) *huma.Operation {
+	op := &huma.Operation{OperationID: rt.operationID, Summary: rt.summary, Description: rt.description + " " + boundaryDescription, Tags: []string{authTag(rt)}, Parameters: authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt)}
+	if rt.method != http.MethodGet {
+		op.RequestBody = privateRequestBody(registry, rt)
+	}
+	if strings.Contains(path, "{id}") {
+		target := "account"
+		if authTag(rt) == rolesTag {
+			target = "role"
+		}
+		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(syntheticUserID)})
+	}
+	return op
+}
+
+func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
+	name := rt.operationID + "Request"
+	schema, example := credentialSchema(rt)
+	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
+	if authTag(rt) == rolesTag {
+		schema, example = roleRequestSchema(rt)
+		description = "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
+	}
+	registry.Map()[name] = schema
+	return &huma.RequestBody{Required: true, Description: description, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
 }
 
 func authSecurity(rt route) []map[string][]string {
@@ -83,7 +96,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST requires exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users accepts query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST and PATCH require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users and GET /api/v1/admin/roles accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -92,7 +105,7 @@ func schemaRef(name string) *huma.Schema {
 }
 
 func stringSchema(description string, examples ...any) *huma.Schema {
-	return &huma.Schema{Type: "string", Description: description, Examples: examples}
+	return &huma.Schema{Type: huma.TypeString, Description: description, Examples: examples}
 }
 
 func credentialSchema(rt route) (*huma.Schema, map[string]any) {
@@ -198,7 +211,7 @@ func privateSchemas() map[string]*huma.Schema {
 		"RecoveryEnrollment": &recoverySchema,
 		recoveryCodesSchema: closedObjectSchema(
 			"One-time disclosure of ten recovery codes after successful factor confirmation. All browser session cookies are cleared.",
-			map[string]*huma.Schema{"recovery_codes": {Type: "array", Description: "Ten new single-use secrets from the completed enrollment or factor replacement.", Items: code, MinItems: intPointer(10), MaxItems: intPointer(10), Examples: []any{codes}}},
+			map[string]*huma.Schema{"recovery_codes": {Type: huma.TypeArray, Description: "Ten new single-use secrets from the completed enrollment or factor replacement.", Items: code, MinItems: intPointer(10), MaxItems: intPointer(10), Examples: []any{codes}}},
 			[]string{"recovery_codes"}, recoveryCodesResponse{RecoveryCodes: codes}),
 		"AuthProblem": responseDTOSchema(
 			"Private transport problem; uses status, code and title only, without account existence or secret details. It is not the public Huma error model.",
@@ -206,11 +219,12 @@ func privateSchemas() map[string]*huma.Schema {
 	}
 
 	addLifecycleSchemas(schemas)
+	addRoleSchemas(schemas)
 	return schemas
 }
 
 func closedObjectSchema(description string, properties map[string]*huma.Schema, required []string, example any) *huma.Schema {
-	return &huma.Schema{Type: "object", Description: description, Properties: properties, Required: required, AdditionalProperties: false, Examples: []any{example}}
+	return &huma.Schema{Type: huma.TypeObject, Description: description, Properties: properties, Required: required, AdditionalProperties: false, Examples: []any{example}}
 }
 
 func intPointer(value int) *int { return &value }
@@ -218,10 +232,10 @@ func intPointer(value int) *int { return &value }
 func floatPointer(value float64) *float64 { return &value }
 
 func authParameters(rt route) []*huma.Param {
-	params := []*huma.Param{{Name: originHeader, In: "header", Required: rt.method == http.MethodPost,
+	params := []*huma.Param{{Name: originHeader, In: "header", Required: rt.method != http.MethodGet,
 		Description: "Exactly the configured canonical HTTPS origin. Browser-controlled; GET may instead use same-origin Fetch Metadata and Referer.",
 		Schema:      stringSchema("Canonical installation origin without path.", "https://cms.example.test")}}
-	if rt.method == http.MethodPost {
+	if rt.method != http.MethodGet {
 		schema := stringSchema("Session-bound anti-CSRF token.", syntheticCSRF)
 		schema.MinLength, schema.MaxLength = intPointer(43), intPointer(43)
 		params = append(params, &huma.Param{Name: "X-CSRF-Token", In: "header", Required: true,
@@ -229,6 +243,9 @@ func authParameters(rt route) []*huma.Param {
 	}
 	if rt.operationID == listUsersOperation {
 		params = append(params, userPageParameters()...)
+	}
+	if rt.operationID == listRolesOperation {
+		params = append(params, rolePageParameters()...)
 	}
 	return params
 }
@@ -241,7 +258,7 @@ func constantStringSchema(value string, examples ...any) *huma.Schema {
 
 func authResponseHeaders() map[string]*huma.Param {
 	return map[string]*huma.Param{
-		"X-Request-ID":           {Description: "Server-generated correlation identifier; user and enrollment operations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
+		requestIDHeader:          {Description: "Server-generated correlation identifier; user and enrollment operations use a UUID shared with their audit events. Incoming header values are never trusted.", Schema: stringSchema("Opaque server request correlation identifier.")},
 		"Cache-Control":          {Description: "Authentication data must never be cached.", Schema: constantStringSchema("no-store")},
 		"X-Content-Type-Options": {Description: "Disables content sniffing.", Schema: constantStringSchema("nosniff")},
 	}
@@ -254,7 +271,7 @@ func sessionCookieHeader() *huma.Param {
 func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
-	if authTag(rt) != usersTag {
+	if authTag(rt) != usersTag && authTag(rt) != rolesTag {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -270,18 +287,21 @@ func authResponses(rt route) map[string]*huma.Response {
 }
 
 func authErrorCodes(rt route) map[int][]string {
-	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode, "invalid_credentials"}, 403: {originCode, csrfCode}, 429: {"rate_limited"}, 503: {"security_unavailable"}}
+	if authTag(rt) == rolesTag {
+		return roleErrorCodes(rt)
+	}
+	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode, "invalid_credentials"}, 403: {originCode, csrfCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode}}
 	if rt.method == http.MethodGet {
 		codes[401] = []string{authenticationCode}
 		codes[403] = []string{originCode}
 	} else {
 		codes[405] = []string{methodNotAllowedCode}
-		codes[413] = []string{"body_too_large"}
+		codes[413] = []string{bodyTooLargeCode}
 	}
-	if authTag(rt) == usersTag {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag {
 		codes[401] = []string{authenticationCode}
-		codes[403] = []string{originCode, csrfCode, permissionCode, "step_up_required"}
-		codes[409] = []string{"version_conflict", "invalid_transition"}
+		codes[403] = []string{originCode, csrfCode, permissionCode, stepUpRequiredCode}
+		codes[409] = []string{versionConflictCode, invalidTransitionCode}
 		if rt.operationID != createUserOperation && rt.operationID != listUsersOperation {
 			codes[404] = []string{notFoundCode}
 		}
@@ -292,7 +312,7 @@ func authErrorCodes(rt route) map[int][]string {
 		delete(codes, 409)
 		delete(codes, 429)
 	} else if rt.operationID == activateUserOperation || rt.operationID == disableUserOperation {
-		codes[409] = append(codes[409], "last_admin_required")
+		codes[409] = append(codes[409], lastAdminRequiredCode)
 	}
 
 	if rt.operationID == cancelRecoveryOperation || rt.operationID == logoutOperation {
@@ -322,7 +342,7 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 		}
 	}
 	schema := &huma.Schema{AllOf: []*huma.Schema{schemaRef("AuthProblem"), {
-		Type: "object",
+		Type: huma.TypeObject,
 		Properties: map[string]*huma.Schema{
 			"status": {Const: status},
 			"code":   {Enum: stringValues(codes)},
@@ -333,7 +353,7 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 }
 
 func authRateDescription(rt route) string {
-	if authTag(rt) == usersTag {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -362,6 +382,9 @@ func privateRoutes() map[string][]route {
 	for path, methods := range userRoutes {
 		all[path] = methods
 	}
+	for path, methods := range roleRoutes {
+		all[path] = methods
+	}
 	return all
 }
 
@@ -386,11 +409,14 @@ func authTags() []*huma.Tag {
 		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation and disable."},
+		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation and atomic explicit-grant replacement."},
 	}
 }
 
 func authTag(rt route) string {
 	switch rt.operationID {
+	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation:
+		return rolesTag
 	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation:
 		return usersTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
@@ -403,6 +429,9 @@ func authTag(rt route) string {
 }
 
 func authSuccessDescription(rt route) string {
+	if authTag(rt) == rolesTag {
+		return roleSuccessDescription(rt)
+	}
 	if isLifecycleOperation(rt.operationID) {
 		return lifecycleSuccessDescription(rt)
 	}

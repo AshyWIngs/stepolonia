@@ -97,8 +97,7 @@ func TestAuthLifecycleHTTPFreshnessAndLastAdminIntegration(t *testing.T) {
 	requireNoError(t, err)
 	f.lifecycleRead(t, onboardingUsersPath, full, 200)
 	f.onboardingHTTP(t, onboardingUsersPath+"/"+account.user.ID+"/activate", onboardingVersionJSON(t, account.user.Version), onboardingIssuerCookie, full, 403, nil)
-	_, err = f.state.db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE token_digest=$1`, authDigest(full.Token))
-	requireNoError(t, err)
+	authRefreshStep(t, f.state.db, full.Token)
 	var version int64
 	requireNoError(t, f.state.db.QueryRow(`SELECT version FROM public.users WHERE id=$1`, f.state.user).Scan(&version))
 	var problem struct {
@@ -134,11 +133,11 @@ const assert=require('node:assert/strict');
   const origin=process.env.LIFECYCLE_ORIGIN;
   const context=await browser.newContext({ignoreHTTPSErrors:true});
   const page=await context.newPage();await page.goto(origin+'/health/live');
-  async function send(path,body,csrf,status) {
-   const result=await page.evaluate(async({path,body,csrf})=>{
-    const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:JSON.stringify(body)});
+  async function send(path,body,csrf,status,method='POST') {
+   const result=await page.evaluate(async({path,body,csrf,method})=>{
+    const response=await fetch(path,body===undefined?{}:{method,headers:{'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:JSON.stringify(body)});
     return {status:response.status,body:await response.json(),cache:response.headers.get('Cache-Control')};
-   },{path,body,csrf});
+   },{path,body,csrf,method});
    assert.equal(result.status,status,'Unexpected status at '+path);assert.equal(result.cache,'no-store');return result.body;
   }
   const auth='/api/v1/admin/auth',users='/api/v1/admin/users';
@@ -155,6 +154,22 @@ const assert=require('node:assert/strict');
   await send(users+'/'+user.id+'/disable',{expected_version:user.version},undefined,403);
   const last=await send(users+'/'+user.id+'/disable',{expected_version:user.version},full.csrf_token,409);assert.equal(last.code,'last_admin_required');
   await send(users,undefined,undefined,200);
+  const roles='/api/v1/admin/roles';
+  const policies=await send(roles+'?limit=1',undefined,undefined,200);
+  assert.deepEqual(Object.keys(policies).sort(),['items','next_offset']);
+  const policy={name:'Browser policy',grants:[{operation:'users.read',scope:'installation',can_delegate:false}]};
+  await send(roles,policy,undefined,403);
+  const created=await send(roles,policy,full.csrf_token,200);
+  assert.deepEqual(Object.keys(created).sort(),['grants','id','name','state','version']);
+  assert.equal(created.state,'disabled');assert.equal(created.version,1);
+  const rolePath=roles+'/'+created.id;
+  const read=await send(rolePath,undefined,undefined,200);assert.equal(read.id,created.id);
+  const patch={name:'Browser policy edited',grants:[],expected_version:1};
+  await send(rolePath,patch,undefined,403,'PATCH');
+  const edited=await send(rolePath,patch,full.csrf_token,200,'PATCH');
+  assert.equal(edited.state,'disabled');assert.equal(edited.version,2);assert.deepEqual(edited.grants,[]);
+  const stale=await send(rolePath,patch,full.csrf_token,409,'PATCH');assert.equal(stale.code,'version_conflict');
+  await send(rolePath,{...patch,expected_version:2,actor_id:created.id},full.csrf_token,400,'PATCH');
  } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});
 `

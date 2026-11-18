@@ -3,16 +3,17 @@ package cms
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"slices"
 )
 
 const (
 	maxUsers           = 100
 	maxRoles           = 32
-	maxRoleGrants      = 64
 	maxUserMemberships = 16
 )
+
+// MaxRoleGrants bounds the complete explicit policy replacement for one role.
+const MaxRoleGrants = 64
 
 const (
 	grantScopeContent      = "content"
@@ -20,8 +21,9 @@ const (
 )
 
 const (
-	objectScopeAny  = "any"
-	objectScopeType = "type"
+	objectScopeAny      = "any"
+	objectScopeType     = "type"
+	objectScopeAssigned = "assigned"
 )
 
 const (
@@ -51,7 +53,7 @@ func checkAccessCaps(ctx context.Context, tx *sql.Tx) error {
  (SELECT count(*) FROM public.users)<=$1 AND
  (SELECT count(*) FROM public.roles)<=$2 AND
  NOT EXISTS(SELECT 1 FROM public.role_grants GROUP BY role_id HAVING count(*)>$3) AND
- NOT EXISTS(SELECT 1 FROM public.user_roles GROUP BY user_id HAVING count(*)>$4)`, maxUsers, maxRoles, maxRoleGrants, maxUserMemberships).Scan(&valid)
+ NOT EXISTS(SELECT 1 FROM public.user_roles GROUP BY user_id HAVING count(*)>$4)`, maxUsers, maxRoles, MaxRoleGrants, maxUserMemberships).Scan(&valid)
 	if err != nil {
 		return err
 	}
@@ -65,66 +67,82 @@ func loadAccess(ctx context.Context, tx *sql.Tx) (accessSnapshot, error) {
 	if err := checkAccessCaps(ctx, tx); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT ur.user_id::text,r.state='active',g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(g.object_scope,''),g.can_delegate,COALESCE(g.target_scope,''),COALESCE(g.object_ceiling,''),g.may_delegate_content,array_to_json(g.delegate_operations)::text,COALESCE((SELECT json_agg(f.field_id::text ORDER BY f.field_id)::text FROM public.grant_fields f WHERE f.grant_id=g.id),'[]') FROM public.user_roles ur JOIN public.roles r ON r.id=ur.role_id JOIN public.role_grants g ON g.role_id=r.id ORDER BY ur.user_id,r.id,g.id`)
+	// Decode each role once. Memberships share immutable field/operation slices,
+	// rather than multiplying potentially large policy sets by every recipient.
+	roles, err := loadRolePolicies(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT ur.user_id::text,ur.role_id::text,r.state='active' FROM public.user_roles ur JOIN public.roles r ON r.id=ur.role_id ORDER BY ur.user_id,r.id`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	out := make(accessSnapshot)
 	for rows.Next() {
-		var user, ops, fields string
+		var user, role string
 		var active bool
-		var g accessGrant
-		if err = rows.Scan(&user, &active, &g.operation, &g.scope, &g.typeID, &g.objectScope, &g.delegable, &g.targetScope, &g.ceiling, &g.mayDelegate, &ops, &fields); err != nil {
-			return nil, err
-		}
-		if err = json.Unmarshal([]byte(ops), &g.operations); err != nil {
-			return nil, err
-		}
-		if err = json.Unmarshal([]byte(fields), &g.fields); err != nil {
-			return nil, err
-		}
-		if err = g.validate(); err != nil {
+		if err = rows.Scan(&user, &role, &active); err != nil {
 			return nil, err
 		}
 		access := out[user]
-		access.latent = append(access.latent, g)
+		access.latent = append(access.latent, roles[role]...)
 		if active {
-			access.active = append(access.active, g)
+			access.active = append(access.active, roles[role]...)
 		}
 		out[user] = access
 	}
 	return out, rows.Err()
 }
 
-func (g accessGrant) validate() error {
-	scope, err := Operation(g.operation).Scope()
+func loadRolePolicies(ctx context.Context, tx *sql.Tx) (map[string][]accessGrant, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id::text FROM public.roles ORDER BY id`)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if scope == InstallationScope && g.scope != grantScopeInstallation || scope == ContentScope && g.scope != grantScopeContent {
-		return ErrSecurityUnavailable
-	}
-	if g.operation == opContentDelegate {
-		for _, operation := range g.operations {
-			kind, err := Operation(operation).Scope()
-			if err != nil || kind != ContentScope {
-				return ErrSecurityUnavailable
-			}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
 		}
-		if !g.validAuthorityTarget() {
-			return ErrSecurityUnavailable
-		}
+		ids = append(ids, id)
 	}
-	return nil
-}
-
-func (g accessGrant) validAuthorityTarget() bool {
-	return g.targetScope == authorityTargetInstallation && g.typeID == "" && len(g.fields) == 0 ||
-		g.targetScope == authorityTargetType && g.typeID != ""
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	out := make(map[string][]accessGrant, len(ids))
+	for _, id := range ids {
+		grants, err := queryRoleGrants(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = accessGrants(grants)
+	}
+	return out, nil
 }
 
 func coversFields(source, requested []string) bool {
+	// Small operation/field sets avoid an allocation. Large policy field sets
+	// use linear-time membership checks while the security mutex is held.
+	const linearFieldSetLimit = 32
+	if len(source) > linearFieldSetLimit && len(requested) > 1 {
+		available := make(map[string]struct{}, len(source))
+		for _, field := range source {
+			available[field] = struct{}{}
+		}
+		for _, field := range requested {
+			if _, ok := available[field]; !ok {
+				return false
+			}
+		}
+		return true
+	}
 	for _, field := range requested {
 		if !slices.Contains(source, field) {
 			return false
@@ -134,7 +152,7 @@ func coversFields(source, requested []string) bool {
 }
 
 func coversObject(source, requested string) bool {
-	return source == requested || source == objectScopeAny && requested == "assigned"
+	return source == requested || source == objectScopeAny && requested == objectScopeAssigned
 }
 
 func (source accessGrant) coversContent(target accessGrant) bool {

@@ -92,7 +92,7 @@ func (b boundary) check(r *http.Request) (string, string) {
 	if !b.validRequestOrigin(r, origins) {
 		return "", originCode
 	}
-	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && (r.Method != http.MethodGet || r.URL.Path != usersPath) {
+	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && (r.Method != http.MethodGet || (r.URL.Path != usersPath && r.URL.Path != rolesPath)) {
 		return "", validationCode
 	}
 	return ip, ""
@@ -117,8 +117,7 @@ func (b boundary) validRequestOrigin(r *http.Request, origins []string) bool {
 	if len(origins) != 0 {
 		return len(origins) == 1 && origins[0] == b.origin
 	}
-	path, _ := userRoutePath(r.URL.Path)
-	if r.Method != http.MethodGet || (r.URL.Path != authPrefix+"/csrf" && path != usersPath && path != userPath) {
+	if r.Method != http.MethodGet || !safeReadPath(r.URL.Path) {
 		return false
 	}
 	sites, referers := r.Header.Values(fetchSiteHeader), r.Header.Values(refererHeader)
@@ -127,4 +126,16 @@ func (b boundary) validRequestOrigin(r *http.Request, origins []string) bool {
 	}
 	ref, err := url.Parse(referers[0])
 	return err == nil && ref.Scheme == httpsScheme && ref.Host == b.authority && ref.User == nil && ref.Opaque == "" && ref.Fragment == ""
+}
+
+func safeReadPath(raw string) bool {
+	if raw == authPrefix+"/csrf" {
+		return true
+	}
+	user, _ := userRoutePath(raw)
+	if user == usersPath || user == userPath {
+		return true
+	}
+	role, _ := roleRoutePath(raw)
+	return isRoleRoute(role)
 }

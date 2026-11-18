@@ -235,7 +235,17 @@ public.permission_operations,
 public.role_grants,
 public.grant_fields TO sp_security;
 
+-- The role editor cannot alter lifecycle state or memberships.
+GRANT INSERT (id, name_key) ON public.roles TO sp_security;
+GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
+GRANT UPDATE (name_key, version) ON public.roles TO sp_security;
+GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
+GRANT SELECT (id) ON public.content_types TO sp_security;
+GRANT SELECT (type_id, field_id) ON public.content_fields TO sp_security;
+
 -- +goose Down
+REVOKE SELECT (id) ON public.content_types FROM sp_security;
+REVOKE SELECT (type_id, field_id) ON public.content_fields FROM sp_security;
 DROP TABLE public.grant_fields;
 DROP TABLE public.role_grants;
 DROP TABLE public.permission_operations;
