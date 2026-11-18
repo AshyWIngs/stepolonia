@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CMSConfig requires the harness-owned loopback-only disposable CMS database.
-func CMSConfig(t *testing.T) *pgx.ConnConfig {
+// AdminConfig requires the harness-owned loopback-only disposable administration database.
+func AdminConfig(t *testing.T) *pgx.ConnConfig {
 	t.Helper()
 	dsn := os.Getenv("STAGE31_TEST_DATABASE_URL")
 	if dsn == "" {

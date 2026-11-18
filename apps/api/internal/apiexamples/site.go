@@ -28,7 +28,7 @@ func DemoSite() siteconfig.Draft {
 		catalogs[code] = maps.Clone(messages)
 	}
 	return siteconfig.Draft{
-		Settings: siteconfig.Settings{Title: "Stepolonia", Description: "Poznaj historie i wydarzenia naszej społeczności.", DefaultLanguage: "pl", FallbackLanguage: "pl", Tagline: "Historie naszej społeczności", Accent: "#2563eb"},
+		Settings: siteconfig.Settings{Title: "Polacy w Kazachstanie", Description: "Poznaj historie i wydarzenia naszej społeczności.", DefaultLanguage: "pl", FallbackLanguage: "pl", Tagline: "Historie naszej społeczności", Accent: "#2563eb"},
 		Catalogs: catalogs,
 	}
 }

@@ -3,7 +3,7 @@ package content
 import (
 	"context"
 	"database/sql"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 	"testing"
 )
 
@@ -60,7 +60,7 @@ func testCommandProjection(t *testing.T, command string) {
 	}
 }
 func denyPrivateRead(_ context.Context, _ *sql.Tx, _ Actor, operation, _, _ string, fields []string) error {
-	if operation != string(cms.OpContentRead) {
+	if operation != string(identity.OpContentRead) {
 		return nil
 	}
 	for _, field := range fields {

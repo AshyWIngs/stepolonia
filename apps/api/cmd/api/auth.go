@@ -7,10 +7,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	"stepolonia/apps/api/internal/cms"
-	"stepolonia/apps/api/internal/cmshttp"
+	"stepolonia/apps/api/internal/adminhttp"
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler, func(), error) {
@@ -34,7 +34,7 @@ func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler,
 		closePool()
 		return nil, nil, err
 	}
-	service, err := cms.NewAuthService(db, cfg.Service)
+	service, err := identity.NewAuthService(db, cfg.Service)
 	if err != nil {
 		closePool()
 		return nil, nil, err
@@ -43,13 +43,13 @@ func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler,
 		closePool()
 		return nil, nil, err
 	}
-	editor, closeDraft, err := openDraftEditor(ctx, cfg)
+	editor, settings, closeDraft, err := openEditors(ctx, cfg)
 	if err != nil {
 		closePool()
 		return nil, nil, err
 	}
 	closeAuth := func() { closeDraft(); closePool() }
-	handler, err := cmshttp.NewHandlerWithDraftEditor(cmshttp.Config{CanonicalOrigin: cfg.Origin, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs}, service, editor)
+	handler, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: cfg.Origin, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs}, service, editor, settings)
 	if err != nil {
 		closeAuth()
 		return nil, nil, err
@@ -57,20 +57,27 @@ func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler,
 	return handler, closeAuth, nil
 }
 
-func openDraftEditor(ctx context.Context, cfg *config.AuthenticationConfig) (cmshttp.DraftEditor, func(), error) {
+func openEditors(ctx context.Context, cfg *config.AuthenticationConfig) (adminhttp.DraftEditor, *identity.AuthService, func(), error) {
 	if cfg.DraftDatabase == nil {
-		return nil, func() {}, nil
+		return nil, nil, func() {
+			// A disabled editor has no database pool to close.
+		}, nil
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg.DraftDatabase)
 	if err != nil {
-		return nil, nil, fmt.Errorf("initialize private draft editor pool")
+		return nil, nil, nil, fmt.Errorf("initialize private draft editor pool")
 	}
 	db := stdlib.OpenDBFromPool(pool)
 	closePool := func() { _ = db.Close(); pool.Close() }
 	editor, err := database.NewDraftEditor(ctx, db, cfg.Service)
 	if err != nil {
 		closePool()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return editor, closePool, nil
+	settings, err := identity.NewAuthService(db, cfg.Service)
+	if err != nil {
+		closePool()
+		return nil, nil, nil, err
+	}
+	return editor, settings, closePool, nil
 }

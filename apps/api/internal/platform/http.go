@@ -62,6 +62,8 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
+		mux.Handle("/api/v1/admin/settings", auth)
+		mux.Handle("/api/v1/admin/settings/publish", auth)
 		mux.Handle("/api/v1/admin/users", auth)
 		mux.Handle("/api/v1/admin/users/", auth)
 		mux.Handle("/api/v1/admin/roles", auth)
@@ -91,7 +93,7 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 
 func newAPI(db Pinger, reader *content.PublicReader, logger *slog.Logger, site ...*siteconfig.Reader) (*http.ServeMux, huma.API) {
 	mux := http.NewServeMux()
-	cfg := huma.DefaultConfig("Stepolonia API", "0.0.0")
+	cfg := huma.DefaultConfig("Portal API", "0.0.0")
 	// Generate the contract from registered operations outside HTTP serving.
 	cfg.OpenAPIPath, cfg.DocsPath, cfg.SchemasPath = "", "", ""
 	cfg.CreateHooks = nil

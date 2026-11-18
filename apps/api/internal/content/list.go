@@ -3,7 +3,7 @@ package content
 import (
 	"context"
 	"database/sql"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 type itemScope struct {
@@ -13,7 +13,7 @@ type itemScope struct {
 type scopeFunc func(context.Context, *sql.Tx, Actor, string) (itemScope, error)
 
 // ListDrafts requires a server-derived SQL scope before pagination. No production
-// scope adapter is enabled until authenticated CMS authorization exists.
+// scope adapter is enabled until authenticated administration access control exists.
 func (s *Service) ListDrafts(ctx context.Context, actor Actor, typeID string, limit, offset int) ([]DraftState, error) {
 	if limit < 1 || limit > 100 || offset < 0 || offset > 10000 {
 		return nil, problem(Validation, "invalid_page")
@@ -22,7 +22,7 @@ func (s *Service) ListDrafts(ctx context.Context, actor Actor, typeID string, li
 		return nil, problem(Forbidden, "security_unavailable")
 	}
 	out := []DraftState{}
-	err := s.withTx(ctx, actor, string(cms.OpContentRead), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(identity.OpContentRead), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		scope, err := s.scope(ctx, tx, actor, typeID)
 		if err != nil {
 			return err
@@ -66,7 +66,7 @@ func (s *Service) visibleDraft(ctx context.Context, tx *sql.Tx, actor Actor, sta
 func (s *Service) materializeDraftIDs(ctx context.Context, tx *sql.Tx, actor Actor, typeID string, ids []string) ([]DraftState, error) {
 	out := []DraftState{}
 	for _, id := range ids {
-		if err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), typeID, id, nil); err != nil {
+		if err := s.authorize(ctx, tx, actor, string(identity.OpContentRead), typeID, id, nil); err != nil {
 			return nil, err
 		}
 		state, err := loadDraft(ctx, tx, id)

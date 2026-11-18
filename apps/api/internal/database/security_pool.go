@@ -6,21 +6,21 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/stdlib"
-	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 )
 
 // CheckSecurity verifies the dedicated authentication login and effective privileges.
 func CheckSecurity(ctx context.Context, db *sql.DB) error {
-	return checkCMSLogin(ctx, db, false)
+	return checkAdministrationLogin(ctx, db, false)
 }
 
 // NewDraftEditor verifies the dedicated Engine login before constructing the editor.
-func NewDraftEditor(ctx context.Context, db *sql.DB, config cms.AuthConfig) (*content.DraftEditor, error) {
-	if err := checkCMSLogin(ctx, db, true); err != nil {
+func NewDraftEditor(ctx context.Context, db *sql.DB, config identity.AuthConfig) (*content.DraftEditor, error) {
+	if err := checkAdministrationLogin(ctx, db, true); err != nil {
 		return nil, err
 	}
-	auth, err := cms.NewAuthService(db, config)
+	auth, err := identity.NewAuthService(db, config)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func NewDraftEditor(ctx context.Context, db *sql.DB, config cms.AuthConfig) (*co
 	return content.NewDraftEditor(auth), nil
 }
 
-func checkCMSLogin(ctx context.Context, db *sql.DB, contentEditor bool) error {
+func checkAdministrationLogin(ctx context.Context, db *sql.DB, contentEditor bool) error {
 	connection, err := db.Conn(ctx)
 	if err != nil {
 		return err
@@ -155,7 +155,7 @@ func checkSecurityDefinitions(ctx context.Context, db *sql.DB, contentEditor boo
 		return fmt.Errorf("authentication schema ownership or guards drifted")
 	}
 	if contentEditor {
-		if err := checkCMSPrivileges(ctx, tx); err != nil {
+		if err := checkAdministrationPrivileges(ctx, tx); err != nil {
 			return err
 		}
 	}

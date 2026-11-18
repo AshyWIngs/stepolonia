@@ -229,22 +229,22 @@ COMMENT ON TABLE public.content_field_definitions IS
 CREATE TRIGGER content_types_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_types
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_schemas_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_schemas
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_fields_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_fields
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_field_definitions_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_field_definitions
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 REVOKE ALL ON public.content_types,
 public.content_schemas,

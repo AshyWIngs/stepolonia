@@ -171,7 +171,7 @@ COMMENT ON TABLE public.user_roles IS
 'retain memberships.';
 
 COMMENT ON TABLE public.content_item_assignments IS
-'Explicit item assignments for scoped CMS grants; independent of public '
+'Explicit item assignments for scoped access grants; independent of public '
 'byline.';
 
 COMMENT ON TABLE public.permission_operations IS
@@ -220,30 +220,30 @@ INSERT INTO public.permission_operations (key, scope) VALUES
 
 CREATE TRIGGER roles_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.roles
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER user_roles_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.user_roles
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_item_assignments_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_item_assignments
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER permission_operations_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.permission_operations
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER role_grants_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.role_grants
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER grant_fields_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.grant_fields
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 REVOKE ALL ON public.grant_fields,
 public.roles,
