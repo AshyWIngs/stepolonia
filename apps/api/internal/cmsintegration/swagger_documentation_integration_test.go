@@ -31,11 +31,16 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler {
 		return platform.HandlerWithDocumentation(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// The full browser flow reached role deletion at the old 60-second deadline
+	// on CI. Allow the remaining rolesGet and logout requests to finish.
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaSwaggerBrowserScript)
 	command.Env = append(os.Environ(), "QA_SWAGGER_ORIGIN="+server.URL, "QA_SWAGGER_LOGIN="+bootstrapTestLogin, "QA_SWAGGER_PASSWORD="+bootstrapTestPassphrase, "QA_SWAGGER_CODE="+bootstrapCode(t, f.state.db, f.state.secret), "QA_SWAGGER_ITEM_ID="+itemID)
 	output, err := command.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("Swagger Chromium real-auth scenario exceeded its deadline: %s", output)
+	}
 	if err != nil {
 		t.Fatalf("Swagger Chromium real-auth scenario: %v: %s", err, output)
 	}
@@ -90,6 +95,8 @@ const assert = require('node:assert/strict');
   const contentCollection='/api/v1/admin/content/{type_key}';
   const contentDraft=contentCollection+'/{item_id}';
   const contentAssignees=contentDraft+'/assignees';
+  const contentCommands=['ready-shared','ready','publish'].map(action=>contentDraft+'/'+action);
+  for(const path of contentCommands) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentCollection]||{}),['post']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentDraft]||{}).sort(),['get','patch']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentAssignees]||{}),['put']);
@@ -104,7 +111,7 @@ const assert = require('node:assert/strict');
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[0]]).sort(),['get','post']);
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['delete','get','patch']);
-  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)||[contentCollection,contentDraft,contentAssignees].includes(p)));
+  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)||[contentCollection,contentDraft,contentAssignees,...contentCommands].includes(p)));
   await page.locator('.topbar select').selectOption({label:'Private CMS API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();

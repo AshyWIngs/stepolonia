@@ -118,6 +118,13 @@ func checkRegistryRequestExample(t *testing.T, doc privateDocument, op privateOp
 		}
 		return
 	}
+	if _, ok := draftCandidateContracts[rt.operationID]; ok {
+		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+		if _, ok := parseDraftCandidateInput(raw, rt.operationID); err != nil || !ok {
+			t.Fatal("documented draft command example rejected by transport")
+		}
+		return
+	}
 	checkCredentialProperties(t, doc, rt, op.RequestBody.Content[jsonMediaType])
 }
 
@@ -283,7 +290,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 		"content-assignments":     {"contentReplaceAssignees"},
-		"content-drafts":          {"contentCreateDraft", "contentGetDraft", "contentSaveDraft"},
+		"content-drafts":          {"contentCreateDraft", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)

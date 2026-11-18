@@ -17,6 +17,7 @@ const (
 	draftLocalesField   = "locales"
 	typeIDField         = "type_id"
 	draftVersionField   = "version"
+	publicationIDField  = "publication_id"
 	draftValuesField    = "values"
 	localSequenceField  = "local_seq"
 	sharedSequenceField = "shared_seq"
@@ -32,6 +33,7 @@ type draftReceipt struct {
 
 type savedDraftResponse struct {
 	draftReceipt
+	PublicationID string `json:"publication_id,omitempty"`
 	*readableDraft
 }
 
@@ -41,7 +43,6 @@ type readableDraft struct {
 	SharedReadySeq *string                        `json:"shared_ready_seq"`
 	Locales        map[string]readableDraftLocale `json:"locales"`
 	Relations      []readableDraftRelation        `json:"relations"`
-	PublicationID  string                         `json:"publication_id,omitempty"`
 }
 
 type readableDraftLocale struct {
@@ -69,7 +70,7 @@ func newDraftReceipt(state content.DraftState) draftReceipt {
 }
 
 func draftResponse(state content.DraftState) savedDraftResponse {
-	out := savedDraftResponse{draftReceipt: newDraftReceipt(state)}
+	out := savedDraftResponse{draftReceipt: newDraftReceipt(state), PublicationID: state.PublicationID}
 	// A positive shared sequence identifies a readable projection. The service
 	// returns the identity and version only when the actor lacks item read access.
 	if state.SharedSeq == 0 {
@@ -78,7 +79,6 @@ func draftResponse(state content.DraftState) savedDraftResponse {
 	projection := &readableDraft{
 		Shared: nonnullScalarValues(state.Shared), SharedSeq: state.SharedSeq,
 		Locales: make(map[string]readableDraftLocale, len(state.Locales)), Relations: make([]readableDraftRelation, len(state.Relations)),
-		PublicationID: state.PublicationID,
 	}
 	if state.SharedReadySeq.Valid {
 		seq := strconv.FormatInt(state.SharedReadySeq.Int64, 10)
@@ -170,9 +170,9 @@ func draftResultSchema() *huma.Schema {
 		draftVersionField:   contentVersionSchema("Committed item version; use it for the next edit.", "3"),
 		draftSharedField:    draftValueMap("Actor-readable shared field values.", draftScalarSchema()),
 		sharedSequenceField: contentVersionSchema("Current shared sequence.", "1"), "shared_ready_seq": readySeq,
-		draftLocalesField: draftValueMap("Actor-readable localized drafts indexed by language code.", locale),
-		"relations":       {Type: huma.TypeArray, Items: relation},
-		"publication_id":  uuidSchema(exampleUUID),
+		draftLocalesField:  draftValueMap("Actor-readable localized drafts indexed by language code.", locale),
+		"relations":        {Type: huma.TypeArray, Items: relation},
+		publicationIDField: uuidSchema(exampleUUID),
 	}, []string{itemIDField, typeIDField, schemaNoField, draftVersionField}, example)
 	schema.Examples = append(schema.Examples, example.draftReceipt)
 	return schema
@@ -200,6 +200,11 @@ func createdDraftResultSchema() *huma.Schema {
 }
 
 func draftErrorCodes(rt route) map[int][]string {
+	if conflicts, ok := draftCandidateConflicts[rt.operationID]; ok {
+		codes := draftErrorCodes(saveDraftRoute)
+		codes[http.StatusConflict] = conflicts
+		return codes
+	}
 	if rt.operationID == createDraftOperation {
 		return map[int][]string{
 			400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, stepUpRequiredCode},
@@ -232,6 +237,10 @@ func draftSuccessDescription(operationID string) string {
 	switch operationID {
 	case createDraftOperation:
 		return "Item, empty draft, creator assignment and audit committed. Returns the new item and collection IDs and the draft version."
+	case readySharedOperation, readyLocaleOperation:
+		return "Readiness and audit committed. Returns the current item version and any actor-readable draft state."
+	case publishOperation:
+		return "Publication and audit committed. Returns the current item version, the new publication ID and any actor-readable draft state."
 	case readDraftOperation:
 		return "Returns the current draft version and actor-readable state."
 	default:

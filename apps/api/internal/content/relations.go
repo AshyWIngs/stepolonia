@@ -92,6 +92,19 @@ func invalidateRelationLocales(ctx context.Context, tx *sql.Tx, item string, bef
 	return nil
 }
 func (s *Service) authorizeRelations(ctx context.Context, tx *sql.Tx, actor Actor, schema TypeSchema, relations []Relation, locale string, public bool) error {
+	return checkCandidateRelations(ctx, tx, schema, relations, locale, public, s.relationAccess(ctx, tx, actor))
+}
+
+func (s *Service) relationAccess(ctx context.Context, tx *sql.Tx, actor Actor) relationAccess {
+	return func(relation Relation) (bool, error) {
+		err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil)
+		return err == nil, nil
+	}
+}
+
+type relationAccess func(Relation) (bool, error)
+
+func checkCandidateRelations(ctx context.Context, tx *sql.Tx, schema TypeSchema, relations []Relation, locale string, public bool, readable relationAccess) error {
 	fields := map[string]Definition{}
 	for _, field := range schema.Fields {
 		fields[field.ID] = field
@@ -100,20 +113,31 @@ func (s *Service) authorizeRelations(ctx context.Context, tx *sql.Tx, actor Acto
 		if relation.Locale != "" && relation.Locale != locale {
 			continue
 		}
-		if err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), relation.TargetTypeID, relation.TargetItemID, nil); err != nil {
+		allowed, err := readable(relation)
+		if err != nil {
+			return err
+		}
+		if !allowed {
 			return problem(Conflict, "relation_unavailable")
 		}
 		field := fields[relation.FieldID]
 		if !public || field.Visibility != visibilityPublic {
 			continue
 		}
-		var available bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.content_items i JOIN public.content_publications p ON p.id=i.published_id AND p.item_id=i.id JOIN public.content_publication_locales l ON l.publication_id=p.id JOIN public.languages g ON g.code=l.locale_code WHERE i.id=$1 AND i.type_id=$2 AND p.sealed AND l.locale_code=$3 AND g.is_enabled AND g.generation=l.locale_generation)`, relation.TargetItemID, relation.TargetTypeID, locale).Scan(&available); err != nil {
+		if err := checkPublishedRelation(ctx, tx, relation, locale); err != nil {
 			return err
 		}
-		if !available {
-			return problem(Conflict, "relation_unavailable")
-		}
+	}
+	return nil
+}
+
+func checkPublishedRelation(ctx context.Context, tx *sql.Tx, relation Relation, locale string) error {
+	var available bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.content_items i JOIN public.content_publications p ON p.id=i.published_id AND p.item_id=i.id JOIN public.content_publication_locales l ON l.publication_id=p.id JOIN public.languages g ON g.code=l.locale_code WHERE i.id=$1 AND i.type_id=$2 AND p.sealed AND l.locale_code=$3 AND g.is_enabled AND g.generation=l.locale_generation)`, relation.TargetItemID, relation.TargetTypeID, locale).Scan(&available); err != nil {
+		return err
+	}
+	if !available {
+		return problem(Conflict, "relation_unavailable")
 	}
 	return nil
 }

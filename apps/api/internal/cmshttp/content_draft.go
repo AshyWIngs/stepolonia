@@ -27,6 +27,9 @@ type DraftEditor interface {
 	CreateDraftForType(context.Context, cms.AuthRequest, string, int64) (content.DraftState, error)
 	ReadDraftForType(context.Context, cms.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, cms.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
+	MarkSharedReadyForType(context.Context, cms.AuthRequest, string, string, int64, int64) (content.DraftState, error)
+	MarkReadyForType(context.Context, cms.AuthRequest, string, string, string, int64, int64) (content.DraftState, error)
+	PublishForType(context.Context, cms.AuthRequest, string, string, int64, int64, []string) (content.DraftState, error)
 }
 
 type saveDraftInput struct {

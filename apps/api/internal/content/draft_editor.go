@@ -44,8 +44,9 @@ func (e *DraftEditor) CreateDraftForType(ctx context.Context, req cms.AuthReques
 }
 
 const (
-	maxDraftReadLocales = 16
-	draftReadTimeout    = 8 * time.Second
+	// MaxDraftLocales is the supported number of locales in a draft.
+	MaxDraftLocales  = 16
+	draftReadTimeout = 8 * time.Second
 )
 
 // ReadDraftForType returns the actor-readable draft for the persisted collection.
@@ -93,10 +94,10 @@ func checkDraftReadSize(ctx context.Context, tx *sql.Tx, itemID string) error {
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (
  SELECT 1 FROM public.content_draft_locales WHERE item_id=$1 LIMIT $2
- ) AS draft_locales`, itemID, maxDraftReadLocales+1).Scan(&count); err != nil {
+ ) AS draft_locales`, itemID, MaxDraftLocales+1).Scan(&count); err != nil {
 		return err
 	}
-	if count > maxDraftReadLocales {
+	if count > MaxDraftLocales {
 		return cms.ErrSecurityUnavailable
 	}
 	return nil
@@ -131,6 +132,10 @@ func (e *DraftEditor) saveDraft(ctx context.Context, req cms.AuthRequest, typeKe
 		out, err = saveAuthorizedDraft(ctx, tx, session, update, itemID, expected, patch)
 		return err
 	})
+	return draftCommandResult(out, err)
+}
+
+func draftCommandResult(out DraftState, err error) (DraftState, error) {
 	if err != nil {
 		var domain *Error
 		if errors.As(err, &domain) && domain.Kind != Unavailable {

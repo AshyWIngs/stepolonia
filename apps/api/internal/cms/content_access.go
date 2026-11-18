@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	draftCreatedEvent = "content.draft_created"
-	draftSavedEvent   = "content.draft_saved"
+	draftCreatedEvent   = "content.draft_created"
+	draftSavedEvent     = "content.draft_saved"
+	draftReadyEvent     = "content.draft_ready"
+	draftPublishedEvent = "content.draft_published"
 )
 
 // WithDraftCreate authorizes a new draft on the requested collection and commits
@@ -62,10 +64,27 @@ func draftCreateTarget(ctx context.Context, tx *sql.Tx, userID, typeKey string) 
 // WithDraftUpdate checks the full session, CSRF and step-up under the installation
 // mutex, and audits a successful Engine update in the same transaction.
 func (s *AuthService) WithDraftUpdate(ctx context.Context, req AuthRequest, itemID string, update func(context.Context, *sql.Tx, Session, string) error) error {
-	if update == nil {
+	return s.withDraftCommand(ctx, req, draftSavedEvent, itemID, update)
+}
+
+// WithDraftCandidate executes an authenticated ready or publish command and
+// commits its audit entry in the same transaction.
+func (s *AuthService) WithDraftCandidate(ctx context.Context, req AuthRequest, operation Operation, itemID string, command func(context.Context, *sql.Tx, Session, string) error) error {
+	switch operation {
+	case OpContentReady:
+		return s.withDraftCommand(ctx, req, draftReadyEvent, itemID, command)
+	case OpContentPublish:
+		return s.withDraftCommand(ctx, req, draftPublishedEvent, itemID, command)
+	default:
+		return ErrPermissionDenied
+	}
+}
+
+func (s *AuthService) withDraftCommand(ctx context.Context, req AuthRequest, event, itemID string, command func(context.Context, *sql.Tx, Session, string) error) error {
+	if command == nil {
 		return ErrSecurityUnavailable
 	}
-	return s.auditedCommand(ctx, req, draftSavedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
+	return s.auditedCommand(ctx, req, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
 		if !session.FreshStepUp() {
 			return ErrStepUpRequired
 		}
@@ -73,10 +92,10 @@ func (s *AuthService) WithDraftUpdate(ctx context.Context, req AuthRequest, item
 		if !valid {
 			return ErrNotFound
 		}
-		if err := update(ctx, tx, session, id); err != nil {
+		if err := command(ctx, tx, session, id); err != nil {
 			return err
 		}
-		return securityAudit(ctx, tx, draftSavedEvent, session.user, id, "")
+		return securityAudit(ctx, tx, event, session.user, id, "")
 	})
 }
 
@@ -96,7 +115,12 @@ func (a ContentItemAccess) AllowsField(fieldID string) bool {
 // LoadContentItemAccess resolves permissions against the persisted item type and
 // assignment before collecting field IDs from the qualifying grants.
 func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operation Operation, itemID string) (ContentItemAccess, error) {
-	if s.kind != sessionFull || (operation != OpContentRead && operation != OpContentUpdate) {
+	if s.kind != sessionFull {
+		return ContentItemAccess{}, ErrPermissionDenied
+	}
+	switch operation {
+	case OpContentRead, OpContentUpdate, OpContentReady, OpContentPublish:
+	default:
 		return ContentItemAccess{}, ErrPermissionDenied
 	}
 	id, valid := canonicalMembershipID(itemID)

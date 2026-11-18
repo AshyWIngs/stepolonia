@@ -10,13 +10,13 @@ type Operation string
 const (
 	OpContentRead        Operation = "content.items.read"
 	OpContentUpdate      Operation = "content.items.update"
+	OpContentReady       Operation = "content.items.ready"
+	OpContentPublish     Operation = "content.items.publish"
 	OpContentTypesManage Operation = "content_types.manage"
 )
 
 const (
 	opContentCreate           = "content.items.create"
-	opContentReady            = "content.items.ready"
-	opContentPublish          = "content.items.publish"
 	opContentAssign           = "content.items.assign"
 	opContentDelegate         = "content.permissions.delegate"
 	opContentInitializeAccess = "content_types.initialize_access"
@@ -37,7 +37,7 @@ const (
 func (o Operation) Scope() (OperationScope, error) {
 	switch o {
 	case opContentCreate, OpContentRead, OpContentUpdate,
-		opContentReady, opContentPublish, "content.items.unpublish", opContentAssign:
+		OpContentReady, OpContentPublish, "content.items.unpublish", opContentAssign:
 		return ContentScope, nil
 	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",

@@ -89,7 +89,7 @@ func assertDraftProjection(t *testing.T, out map[string]any) {
 	t.Helper()
 	var want map[string]any
 	const example = `{"item_id":%q,"type_id":%q,"schema_no":"1","version":"3","shared":{},"shared_seq":"5","shared_ready_seq":"5","locales":{"en":{"values":{"title":"Changed"},"local_seq":"7","ready":null}},"relations":[]}`
-	if err := json.Unmarshal([]byte(fmt.Sprintf(example, exampleUUID, exampleUUID)), &want); err != nil {
+	if err := json.Unmarshal(fmt.Appendf(nil, example, exampleUUID, exampleUUID), &want); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(out, want) {
@@ -110,7 +110,7 @@ func matchesDraftReceipt(t *testing.T, out map[string]any) bool {
 	t.Helper()
 	var want map[string]any
 	const receipt = `{"item_id":%q,"type_id":%q,"schema_no":"1","version":"3"}`
-	if err := json.Unmarshal([]byte(fmt.Sprintf(receipt, exampleUUID, exampleUUID)), &want); err != nil {
+	if err := json.Unmarshal(fmt.Appendf(nil, receipt, exampleUUID, exampleUUID), &want); err != nil {
 		t.Fatal(err)
 	}
 	return reflect.DeepEqual(out, want)
