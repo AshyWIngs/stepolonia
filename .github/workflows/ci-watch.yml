@@ -26,7 +26,7 @@ jobs:
           script: |
             // Read status checks for the current head SHA.
             const { owner, repo } = context.repo
-            const required = new Map([
+            const monitored = new Map([
               ['verify', 15368],
               ['SonarCloud Code Analysis', 12526],
               ['Codacy Static Code Analysis', 56611],
@@ -43,17 +43,17 @@ jobs:
               })
               const latest = new Map()
               for (const run of data.check_runs) {
-                if (required.get(run.name) !== run.app?.id) continue
+                if (monitored.get(run.name) !== run.app?.id) continue
                 const old = latest.get(run.name)
                 if (!old || Date.parse(run.started_at || run.created_at) >
                     Date.parse(old.started_at || old.created_at)) latest.set(run.name, run)
               }
-              const failed = [...required.keys()].filter(name => {
+              const failed = [...monitored.keys()].filter(name => {
                 const run = latest.get(name)
                 return run?.status === 'completed' &&
                   !['success', 'neutral', 'skipped'].includes(run.conclusion)
               })
-              const missing = [...required.keys()].filter(name =>
+              const missing = [...monitored.keys()].filter(name =>
                 latest.get(name)?.status !== 'completed')
               const old = Date.now() - Date.parse(pr.updated_at) >= 60 * 60 * 1000
               const stale = missing.length > 0 && old
@@ -74,7 +74,7 @@ jobs:
               if (comments.some(comment => comment.body?.includes(marker))) continue
 
               const explanation = failed.length
-                ? 'Required checks failed: ' + failed.map(name =>
+                ? 'Monitored checks failed: ' + failed.map(name =>
                     name + ' (' + latest.get(name).conclusion + ')').join(', ')
                 : stale ? 'Checks pending for over an hour: ' + missing.join(', ')
                   : 'All monitored checks passed, but the enabled auto-merge has been pending for over an hour.'
