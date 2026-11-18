@@ -35,7 +35,7 @@ func TestCMSAdminSignInBrowserIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, nodeExecutable, "../../../web/tests/admin-signin.mjs")
+	command := exec.CommandContext(ctx, "node", "../../../web/tests/admin-signin.mjs")
 	code := bootstrapCode(t, f.state.db, f.state.secret)
 	command.Env = append(os.Environ(),
 		"QA_CMS_ORIGIN="+f.server.URL,

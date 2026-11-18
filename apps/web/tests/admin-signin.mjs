@@ -37,21 +37,21 @@ async function assertTheme(page, preference, actual) {
 
 async function assertLayouts(page) {
   const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
-  const viewports = [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]
-  const verifyViewport = async (previous, viewport) => {
-    await previous
-    await page.setViewportSize(viewport)
-    const verifyTheme = async (checked, value) => {
-      await checked
+  const verifyViewport = async (width, height) => {
+    await page.setViewportSize({ width, height })
+    const verifyTheme = async value => {
       await theme.selectOption(value)
       await assertTheme(page, value, value)
       await assertFit(page)
       assert.ok(await page.getByRole('button', { name: 'Continue', exact: true }).isVisible())
-      console.log(`CMS sign-in visible at ${viewport.width}×${viewport.height} in ${value} mode`)
+      console.log(`CMS sign-in visible at ${width}×${height} in ${value} mode`)
     }
-    await ['light', 'dark'].reduce(verifyTheme, Promise.resolve())
+    await verifyTheme('light')
+    await verifyTheme('dark')
   }
-  await viewports.reduce(verifyViewport, Promise.resolve())
+  await verifyViewport(1440, 900)
+  await verifyViewport(768, 1024)
+  await verifyViewport(390, 844)
   await page.setViewportSize({ width: 320, height: 844 })
   await assertFit(page)
   await page.reload()

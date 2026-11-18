@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useHead, useRequestHeader, useResponseHeader, useRoute, useState } from '#imports'
+import { useHeadSafe, useRequestHeader, useResponseHeader, useRoute, useState } from '#imports'
 import { computed } from 'vue'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
@@ -13,9 +13,9 @@ const site = computed(() => publication.value?.settings)
 // Preserve the request header on direct content visits for later client navigation to the homepage.
 useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 const { uiLanguage } = usePublicUi()
-useHead(() => ({
+useHeadSafe(() => admin.value ? {} : ({
   title: site.value?.title,
-  htmlAttrs: admin.value ? {} : { lang: uiLanguage.value, dir: publication.value?.language.direction },
+  htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction },
   meta: [{ name: 'description', content: site.value?.description }],
 }))
 useResponseHeader('Cache-Control').value = 'no-store'

@@ -1,4 +1,3 @@
-const authPath = '/api/v1/admin/auth'
 const sessionKinds = ['preauth', 'login', 'full', 'recovery', 'enrollment'] as const
 
 export type CmsSessionKind = typeof sessionKinds[number]
@@ -10,15 +9,18 @@ export class CmsAuthError extends Error {
   }
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(authPath + path, {
-    ...init,
+function requestOptions(): RequestInit {
+  return {
     credentials: 'same-origin',
     cache: 'no-store',
     redirect: 'error',
     referrerPolicy: 'same-origin',
     signal: AbortSignal.timeout(12000),
-  })
+  }
+}
+
+async function checkedResponse(result: Promise<Response>): Promise<Response> {
+  const response = await result
   if (response.ok) return response
   const problem: unknown = await response.json().catch(() => null)
   const code = problem && typeof problem === 'object' && 'code' in problem && typeof problem.code === 'string'
@@ -36,12 +38,16 @@ function csrfToken(payload: unknown): string {
 }
 
 function isSessionKind(value: unknown): value is CmsSessionKind {
-  return sessionKinds.some(kind => kind === value)
+  return (sessionKinds as readonly unknown[]).includes(value)
+}
+
+function requestCSRF() {
+  return checkedResponse(fetch('/api/v1/admin/auth/csrf', requestOptions()))
 }
 
 export async function restoreCmsSession() {
-  const response = await request('/csrf').catch((error: unknown) => {
-    if (error instanceof CmsAuthError && error.status === 401) return request('/csrf')
+  const response = await requestCSRF().catch((error: unknown) => {
+    if (error instanceof CmsAuthError && error.status === 401) return requestCSRF()
     throw error
   })
   const payload: unknown = await response.json()
@@ -53,14 +59,24 @@ export async function restoreCmsSession() {
 }
 
 export async function submitCmsAuth(action: CmsAuthAction, csrf: string, fields: Record<string, string>) {
-  const response = await request('/' + action, {
+  const options: RequestInit = {
+    ...requestOptions(),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify(fields),
-  })
+  }
+  const response = await checkedResponse(postAuth(action, options))
   if (action === 'logout') {
     if (response.status !== 204) throw new CmsAuthError(503)
     return ''
   }
   return csrfToken(await response.json())
+}
+
+function postAuth(action: CmsAuthAction, options: RequestInit): Promise<Response> {
+  switch (action) {
+    case 'login': return fetch('/api/v1/admin/auth/login', options)
+    case 'mfa/verify': return fetch('/api/v1/admin/auth/mfa/verify', options)
+    case 'logout': return fetch('/api/v1/admin/auth/logout', options)
+  }
 }

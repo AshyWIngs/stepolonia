@@ -107,8 +107,12 @@ async function submit(action: 'login' | 'mfa/verify' | 'logout') {
   notice.value = ''
   failure.value = ''
   try {
-    const fields: Record<string, string> = action === 'login' ? { login: login.value, password: password.value }
-      : action === 'mfa/verify' ? { code: code.value } : {}
+    const fields: Record<string, string> = {}
+    if (action === 'login') {
+      fields.login = login.value
+      fields.password = password.value
+    }
+    if (action === 'mfa/verify') fields.code = code.value
     password.value = ''
     code.value = ''
     csrf = await submitCmsAuth(action, csrf, fields)
@@ -169,9 +173,9 @@ onBeforeUnmount(() => {
 
     <section class="cms-card" aria-labelledby="cms-heading">
       <h1 id="cms-heading" ref="heading" tabindex="-1">{{ t(title) }}</h1>
-      <p v-if="notice" class="cms-status" role="status">{{ t(notice) }}</p>
+      <output v-if="notice" class="cms-status">{{ t(notice) }}</output>
       <p v-if="failure" id="cms-auth-error" class="cms-error" role="alert">{{ t(failure) }}</p>
-      <p v-if="pending && phase !== null" class="cms-status" role="status">{{ t('working') }}</p>
+      <output v-if="pending && phase !== null" class="cms-status">{{ t('working') }}</output>
 
       <form v-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'cms-auth-error' : undefined" @submit.prevent="submit('login')">
         <label for="cms-login">{{ t('login') }}</label>

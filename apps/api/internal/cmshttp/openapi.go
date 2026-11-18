@@ -312,6 +312,8 @@ func authResponseHeaders() map[string]*huma.Param {
 	}
 }
 
+const setCookieHeader = "Set-Cookie"
+
 func sessionCookieHeader() *huma.Param {
 	return &huma.Param{Description: "Clears all recognized session cookies. Token responses also set exactly one current cookie with Secure; HttpOnly; SameSite=Strict; Path=/ and an expiry, without Domain. Completion, cancellation and logout only clear cookies. Multiple Set-Cookie header lines are emitted; JSON never exposes the bearer.", Schema: stringSchema("Browser-managed session cookie updates; not a request Authorization header.")}
 }
@@ -321,9 +323,9 @@ func authResponses(rt route) map[string]*huma.Response {
 	successHeaders := authResponseHeaders()
 	tag := authTag(rt)
 	if rt.operationID == csrfOperation {
-		successHeaders["Set-Cookie"] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
+		successHeaders[setCookieHeader] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
 	} else if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag {
-		successHeaders["Set-Cookie"] = sessionCookieHeader()
+		successHeaders[setCookieHeader] = sessionCookieHeader()
 	}
 	if rt.response == "" {
 		responses["204"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders}
@@ -413,11 +415,11 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 		description += " Security dependencies or credential-check capacity unavailable; fails closed."
 	case 401:
 		if rt.operationID == logoutOperation {
-			headers["Set-Cookie"] = sessionCookieHeader()
+			headers[setCookieHeader] = sessionCookieHeader()
 			description += " Expired credentials clear cookies only after the request boundary succeeds."
 		}
 		if rt.operationID == csrfOperation {
-			headers["Set-Cookie"] = &huma.Param{Description: "Expires the single rejected session cookie.", Schema: stringSchema("Browser-managed session cookie expiration.")}
+			headers[setCookieHeader] = &huma.Param{Description: "Expires the single rejected session cookie.", Schema: stringSchema("Browser-managed session cookie expiration.")}
 			description += " If one session cookie was present and rejected by the session store, it is cleared."
 		}
 	}
