@@ -86,7 +86,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/web/package-lock.json') }}
+          key: chromium-headless-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/web/package-lock.json') }}
       # Один runner и Docker daemon; CI вызывает только исполняемые цели.
       # Полный эквивалент make verify, без повторного выполнения PHONY prerequisites.
       - name: "Go: статический анализ"

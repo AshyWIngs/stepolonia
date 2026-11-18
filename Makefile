@@ -155,7 +155,7 @@ publishing-test: sdk-check
 	$(MAKE) --no-print-directory ci-publishing-test
 
 ci-publishing-test:
-	cd apps/web && npm ci --ignore-scripts && node node_modules/playwright/cli.js install --with-deps chromium
+	cd apps/web && npm ci --ignore-scripts && node node_modules/playwright/cli.js install --with-deps --only-shell chromium
 	python3 scripts/test-publishing.py --runtime
 
 sdk:
