@@ -158,6 +158,23 @@ def published_port(compose, service, target, token, log):
     return int(bindings[0]["HostPort"])
 
 
+def prepare_test_images(compose, project, log, *, runtime, reuse_images):
+    """Use the current Verify build for the same Dockerfiles and build contexts."""
+    services = ["postgres-init", "postgres"]
+    if runtime:
+        services.extend(["api", "web", "caddy"])
+    if reuse_images:
+        for service in services:
+            source = f"sp-{service}:stage0"
+            suffix = "init" if service == "postgres-init" else service
+            target = f"{project}-{suffix}:check"
+            image_id = command(["docker", "image", "inspect", "--format", "{{.Id}}", source], log, capture=True)
+            command(["docker", "image", "tag", image_id, target], log)
+            print(f"Using built image {source} {image_id} as {target}", file=log)
+        services = []
+    command([*compose, "build", *services, "db-tools"], log)
+
+
 def check_runtime(site, directory, override, compose, environment, project, token, log):
     """Принимаем контейнерный Publishing без повторения ранее принятых SQL-сценариев."""
     run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
@@ -166,7 +183,6 @@ def check_runtime(site, directory, override, compose, environment, project, toke
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
     run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
-    command([*compose, "build", "api", "web", "caddy"], log)
     command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "caddy"], log)
     port = published_port(compose, "caddy", 8080, token, log)
     base = f"http://127.0.0.1:{port}"
@@ -309,7 +325,7 @@ def check_language_configuration(base, compose, config, environment, log):
     localization_browser(base, "--config-unavailable", log)
 
 
-def main(runtime=False):
+def main(runtime=False, *, reuse_images=False):
     if shutil.which("go") is None:
         raise SystemExit("Для интеграционных проверок БД нужен Go 1.27")
     node = shutil.which("node")
@@ -334,7 +350,7 @@ def main(runtime=False):
             # Проверяем точное имя до первого запуска, а затем и перед удалением.
             verify_owned(project, token, log, volume=volume)
             resources_owned = True
-            command([*compose, "build", "postgres-init", "postgres", "db-tools"], log)
+            prepare_test_images(compose, project, log, runtime=runtime, reuse_images=reuse_images)
             command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
             port = published_port(compose, "postgres", 5432, token, log)
             # Метку БД создаёт только владелец новой тестовой установки после проверки ресурсов.
@@ -373,4 +389,4 @@ def main(runtime=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime", action="store_true", help="Приёмка Publishing через Compose/Caddy")
-    main(parser.parse_args().runtime)
+    main(parser.parse_args().runtime, reuse_images=os.environ.get("VERIFY_REUSE_IMAGES") == "1")
