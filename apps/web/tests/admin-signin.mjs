@@ -131,6 +131,25 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
+async function assertPublishedLocales(page) {
+  await heading(page, 'Sign in').waitFor()
+  await page.waitForFunction(() => document.documentElement.lang === 'en')
+  const language = page.getByRole('combobox', { name: 'Language', exact: true })
+  assert.deepEqual(await language.getByRole('option').allTextContents(), ['English', 'Français (rédaction QA)'])
+  await language.selectOption('fr')
+  await heading(page, 'Connexion à la rédaction').waitFor()
+  await page.waitForFunction(() => document.documentElement.lang === 'fr')
+  const localized = await page.reload()
+  assert.equal(localized.status(), 200)
+  assert.match(await localized.text(), /<html[^>]+lang="fr"/u)
+  await heading(page, 'Connexion à la rédaction').waitFor()
+  const langue = page.getByRole('combobox', { name: 'Langue', exact: true })
+  assert.equal(await langue.inputValue(), 'fr')
+  await langue.selectOption('en')
+  await heading(page, 'Sign in').waitFor()
+  await page.waitForFunction(() => document.documentElement.lang === 'en')
+}
+
 const browser = await chromium.launch()
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } })
@@ -141,14 +160,12 @@ try {
   const document = await page.goto(admin)
   assert.equal(document.status(), 200)
   assert.match(document.headers()['cache-control'], /no-store/u)
-  await page.getByRole('combobox', { name: 'Język', exact: true }).selectOption('en')
-  await heading(page, 'Sign in').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'en')
+  await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')
-  console.log('CMS password, TOTP, session reload, logout, revoked-cookie recovery and responsive themes passed')
+  console.log('Published CMS catalogs, password, TOTP, session reload, logout, revoked-cookie recovery and responsive themes passed')
 }
 finally {
   await browser.close()

@@ -37,7 +37,14 @@ function assertPublication(result, version, language, requestedLanguage) {
   for (const item of [site.language, ...site.languages]) {
     assert.deepEqual(new Set(Object.keys(item)), new Set(['code', 'direction', 'name', 'native_name']))
   }
-  const keys = ['articles', 'events', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home']
+  const keys = ['articles', 'events', 'empty', 'pagination', 'previous', 'next', 'navigation', 'all', 'languages', 'errors.400', 'errors.404', 'errors.503', 'errors.other', 'errors.retry', 'errors.home',
+    'cms.cms', 'cms.language', 'cms.theme', 'cms.system', 'cms.light',
+    'cms.dark', 'cms.sign_in', 'cms.login', 'cms.password', 'cms.continue',
+    'cms.two_step', 'cms.code_help', 'cms.code', 'cms.verify', 'cms.restart',
+    'cms.signed_in', 'cms.sign_out', 'cms.checking', 'cms.working', 'cms.retry',
+    'cms.invalid_credentials', 'cms.invalid_code', 'cms.unavailable', 'cms.limited', 'cms.changed',
+    'cms.restricted', 'cms.signed_out',
+  ]
   assert.deepEqual(new Set(Object.keys(site.messages)), new Set(keys))
   for (const key of keys) {
     assert.equal(site.messages[key], `Fixture ${language} ${key}`)

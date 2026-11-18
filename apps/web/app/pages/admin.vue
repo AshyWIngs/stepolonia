@@ -1,21 +1,59 @@
 <script setup lang="ts">
-import { useHead, useI18n, useResponseHeader } from '#imports'
+import { useAsyncData, useCookie, useHeadSafe, useI18n, useResponseHeader } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import en from '../../i18n/admin-en.json'
-import kk from '../../i18n/admin-kk.json'
-import pl from '../../i18n/admin-pl.json'
-import ru from '../../i18n/admin-ru.json'
 import { CmsAuthError, restoreCmsSession, submitCmsAuth } from '~/utils/cms-auth'
 import type { CmsSessionKind } from '~/utils/cms-auth'
+import { usePublicApi } from '~/composables/usePublicApi'
+import { publicError } from '~/utils/public-content'
 
 defineOptions({ name: 'CmsSignInPage' })
 
-const { t, locale } = useI18n({
-  useScope: 'local', inheritLocale: false, locale: 'pl', fallbackLocale: 'pl',
-  messages: { en, kk, pl, ru },
+const preferredLanguage = useCookie<string | null>('cms-language', { sameSite: 'lax', secure: true, maxAge: 31536000 })
+const { client, request } = usePublicApi()
+
+async function loadCatalog(language?: string | null) {
+  let result = await request(() => client.getSite(language ? { query: { lang: language } } : undefined))
+  if (result.response.status === 400 && language) result = await request(() => client.getSite())
+  if (!result.data?.messages['cms.sign_in']) throw publicError(503)
+  return result.data
+}
+
+const { data: initialCatalog, error } = await useAsyncData('cms-ui-catalog', () => loadCatalog(preferredLanguage.value))
+if (error.value || !initialCatalog.value) throw publicError(503)
+const catalog = ref(initialCatalog.value)
+const { t, locale, setLocaleMessage } = useI18n({
+  useScope: 'local', inheritLocale: false, locale: catalog.value.language.code, fallbackLocale: false,
+  flatJson: true, messages: { [catalog.value.language.code]: catalog.value.messages },
 })
+
+async function selectLanguage(event: Event) {
+  const select = event.currentTarget
+  if (!(select instanceof HTMLSelectElement) || changingLanguage.value) return
+  if (!catalog.value.languages.some(language => language.code === select.value)) return
+  changingLanguage.value = true
+  catalogFailure.value = false
+  try {
+    const next = await loadCatalog(select.value)
+    if (!active) return
+    setLocaleMessage(next.language.code, next.messages)
+    locale.value = next.language.code
+    catalog.value = next
+    preferredLanguage.value = next.language.code
+  }
+  catch {
+    if (!active) return
+    select.value = locale.value
+    catalogFailure.value = true
+  }
+  finally {
+    changingLanguage.value = false
+  }
+}
+
 const themes = ['system', 'light', 'dark'] as const
 const theme = ref<typeof themes[number]>('system')
+const changingLanguage = ref(false)
+const catalogFailure = ref(false)
 const phase = ref<CmsSessionKind | null>(null)
 const pending = ref(true)
 const notice = ref('')
@@ -31,17 +69,18 @@ let active = true
 
 const title = computed(() => {
   switch (phase.value) {
-    case 'preauth': return 'signIn'
-    case 'login': return 'twoStep'
-    case 'full': return 'signedIn'
+    case 'preauth': return 'sign_in'
+    case 'login': return 'two_step'
+    case 'full': return 'signed_in'
     case null: return pending.value ? 'checking' : 'cms'
     default: return 'cms'
   }
 })
 const blocked = computed(() => pending.value || limited.value)
-useHead(() => ({
-  title: phase.value ? `${t(title.value)} · CMS` : t('cms'),
-  htmlAttrs: { lang: locale.value, dir: 'ltr', 'data-cms-theme': theme.value },
+const localizedTitle = computed(() => t(`cms.${title.value}`))
+useHeadSafe(() => ({
+  title: `${localizedTitle.value} · ${catalog.value.settings.title}`,
+  htmlAttrs: { lang: locale.value, dir: catalog.value.language.direction, 'data-cms-theme': theme.value },
 }))
 useResponseHeader('Cache-Control').value = 'no-store'
 
@@ -54,8 +93,6 @@ function loadPreferences() {
   try {
     const savedTheme = localStorage.getItem('cms-theme')
     theme.value = themes.find(value => value === savedTheme) ?? 'system'
-    const savedLocale = localStorage.getItem('cms-language')
-    if (savedLocale === 'pl' || savedLocale === 'en' || savedLocale === 'ru' || savedLocale === 'kk') locale.value = savedLocale
   }
   catch { /* Preferences are optional when browser storage is unavailable. */ }
 }
@@ -73,7 +110,7 @@ function handleFailure(error: unknown, action?: 'login' | 'mfa/verify' | 'logout
     return
   }
   if (error instanceof CmsAuthError && error.code === 'invalid_credentials') {
-    failure.value = action === 'mfa/verify' ? 'invalidCode' : 'invalidCredentials'
+    failure.value = action === 'mfa/verify' ? 'invalid_code' : 'invalid_credentials'
     return
   }
   // A failed response may follow a successful cookie or token rotation.
@@ -118,7 +155,7 @@ async function submit(action: 'login' | 'mfa/verify' | 'logout') {
     csrf = await submitCmsAuth(action, csrf, fields)
     if (!active) return
     if (action === 'logout') {
-      notice.value = 'signedOut'
+      notice.value = 'signed_out'
       phase.value = null
       login.value = ''
       await refresh()
@@ -151,57 +188,57 @@ onBeforeUnmount(() => {
 <template>
   <main class="cms-shell">
     <header class="cms-header">
-      <span class="cms-name">Stepolonia CMS</span>
+      <span class="cms-name">{{ catalog.settings.title }} · {{ t('cms.cms') }}</span>
       <div class="cms-preferences">
         <div>
-          <label for="cms-language">{{ t('language') }}</label>
-          <select id="cms-language" v-model="locale" @change="savePreference('cms-language', locale)">
-            <option value="pl" lang="pl">Polski</option>
-            <option value="en" lang="en">English</option>
-            <option value="ru" lang="ru">Русский</option>
-            <option value="kk" lang="kk">Қазақша</option>
+          <label for="cms-language">{{ t('cms.language') }}</label>
+          <select id="cms-language" :value="locale" :disabled="changingLanguage" @change="selectLanguage">
+            <option v-for="language in catalog.languages" :key="language.code" :value="language.code" :lang="language.code" :dir="language.direction">
+              {{ language.native_name }}
+            </option>
           </select>
         </div>
         <div>
-          <label for="cms-theme">{{ t('theme') }}</label>
+          <label for="cms-theme">{{ t('cms.theme') }}</label>
           <select id="cms-theme" v-model="theme" @change="savePreference('cms-theme', theme)">
-            <option v-for="mode in themes" :key="mode" :value="mode">{{ t(mode) }}</option>
+            <option v-for="mode in themes" :key="mode" :value="mode">{{ t(`cms.${mode}`) }}</option>
           </select>
         </div>
       </div>
     </header>
 
     <section class="cms-card" aria-labelledby="cms-heading">
-      <h1 id="cms-heading" ref="heading" tabindex="-1">{{ t(title) }}</h1>
-      <output v-if="notice" class="cms-status">{{ t(notice) }}</output>
-      <p v-if="failure" id="cms-auth-error" class="cms-error" role="alert">{{ t(failure) }}</p>
-      <output v-if="pending && phase !== null" class="cms-status">{{ t('working') }}</output>
+      <h1 id="cms-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
+      <output v-if="notice" class="cms-status">{{ t(`cms.${notice}`) }}</output>
+      <p v-if="failure" id="cms-auth-error" class="cms-error" role="alert">{{ t(`cms.${failure}`) }}</p>
+      <p v-if="catalogFailure" class="cms-error" role="alert">{{ t('cms.unavailable') }}</p>
+      <output v-if="pending && phase !== null" class="cms-status">{{ t('cms.working') }}</output>
 
       <form v-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'cms-auth-error' : undefined" @submit.prevent="submit('login')">
-        <label for="cms-login">{{ t('login') }}</label>
+        <label for="cms-login">{{ t('cms.login') }}</label>
         <input id="cms-login" v-model="login" type="text" required autocomplete="username" spellcheck="false">
-        <label for="cms-password">{{ t('password') }}</label>
+        <label for="cms-password">{{ t('cms.password') }}</label>
         <input id="cms-password" v-model="password" type="password" required autocomplete="current-password">
-        <button type="submit" :disabled="blocked">{{ t('continue') }}</button>
+        <button type="submit" :disabled="blocked">{{ t('cms.continue') }}</button>
       </form>
 
       <form v-else-if="phase === 'login'" :aria-busy="pending" @submit.prevent="submit('mfa/verify')">
-        <p id="cms-code-help">{{ t('codeHelp') }}</p>
-        <label for="cms-code">{{ t('code') }}</label>
+        <p id="cms-code-help">{{ t('cms.code_help') }}</p>
+        <label for="cms-code">{{ t('cms.code') }}</label>
         <input
           id="cms-code" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required
           :aria-describedby="failure ? 'cms-code-help cms-auth-error' : 'cms-code-help'"
         >
-        <button type="submit" :disabled="blocked">{{ t('verify') }}</button>
-        <button type="button" class="cms-secondary" :disabled="blocked" @click="submit('logout')">{{ t('restart') }}</button>
+        <button type="submit" :disabled="blocked">{{ t('cms.verify') }}</button>
+        <button type="button" class="cms-secondary" :disabled="blocked" @click="submit('logout')">{{ t('cms.restart') }}</button>
       </form>
 
-      <button v-else-if="phase === 'full'" type="button" :disabled="blocked" @click="submit('logout')">{{ t('signOut') }}</button>
+      <button v-else-if="phase === 'full'" type="button" :disabled="blocked" @click="submit('logout')">{{ t('cms.sign_out') }}</button>
       <template v-else-if="phase">
-        <p>{{ t('restricted') }}</p>
-        <button type="button" :disabled="blocked" @click="submit('logout')">{{ t('restart') }}</button>
+        <p>{{ t('cms.restricted') }}</p>
+        <button type="button" :disabled="blocked" @click="submit('logout')">{{ t('cms.restart') }}</button>
       </template>
-      <button v-else-if="!pending" type="button" :disabled="limited" @click="refresh(true)">{{ t('retry') }}</button>
+      <button v-else-if="!pending" type="button" :disabled="limited" @click="refresh(true)">{{ t('cms.retry') }}</button>
     </section>
   </main>
 </template>
