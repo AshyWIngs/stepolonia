@@ -48,6 +48,12 @@ func (f *fakeDraftEditor) ReadDraftForType(_ context.Context, req identity.AuthR
 	return f.state, f.err
 }
 
+func (f *fakeDraftEditor) ListDraftsForType(_ context.Context, req identity.AuthRequest, key string, _, _ int) (identity.DraftPage, error) {
+	f.calls++
+	f.req, f.target = req, routeTarget{typeKey: key}
+	return identity.DraftPage{Items: []identity.DraftSummary{}}, f.err
+}
+
 func newDraftTLSServer(t *testing.T, editor DraftEditor) *httptest.Server {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)

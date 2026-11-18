@@ -55,13 +55,10 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 		return replaceContentAssigneesRoute, target, true
 	}
 	if target, ok := createDraftTarget(path); ok && draftEditorEnabled {
-		return createDraftRoute, target, true
+		return routeForMethod(method, collectionDraftRoutes), target, true
 	}
 	if target, ok := contentDraftTarget(path); ok && draftEditorEnabled {
-		if method == http.MethodGet {
-			return readDraftRoute, target, true
-		}
-		return saveDraftRoute, target, true
+		return routeForMethod(method, itemDraftRoutes), target, true
 	}
 	if target, rt, ok := draftCandidateTarget(path); ok && draftEditorEnabled {
 		return rt, target, true
@@ -71,13 +68,16 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 	if !ok {
 		return route{}, routeTarget{}, false
 	}
-	target := routeTarget{path: key, id: id}
+	return routeForMethod(method, candidates), routeTarget{path: key, id: id}, true
+}
+
+func routeForMethod(method string, candidates []route) route {
 	for _, rt := range candidates {
 		if rt.method == method {
-			return rt, target, true
+			return rt
 		}
 	}
-	return candidates[0], target, true
+	return candidates[0]
 }
 
 func staticAdminRoutes(path string) (string, string, []route) {
@@ -213,7 +213,7 @@ func routeMethods(path string) string {
 		return rt.method
 	}
 	if path == createDraftPath {
-		return createDraftRoute.method
+		return listDraftsRoute.method + ", " + createDraftRoute.method
 	}
 	if path == contentDraftPath {
 		return readDraftRoute.method + ", " + saveDraftRoute.method
