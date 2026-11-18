@@ -1,79 +1,17 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"github.com/pquerna/otp/totp"
 	"net/netip"
+	"stepolonia/apps/api/internal/cms"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/pquerna/otp/totp"
-	"stepolonia/apps/api/internal/cms"
 )
-
-type authFixtureState struct {
-	db      *sql.DB
-	service *cms.AuthService
-	secret  string
-	codes   []string
-	user    string
-	config  cms.AuthConfig
-}
-
-func authFixture(t *testing.T) authFixtureState {
-	t.Helper()
-	db, bootstrap, config := bootstrapFixture(t)
-	ctx := context.Background()
-	enrollment, err := bootstrap.Start(ctx, bootstrapTestLogin, bootstrapTestPassphrase)
-	requireNoError(t, err)
-	codes, err := bootstrap.Complete(ctx, bootstrapTestLogin, bootstrapTestPassphrase, bootstrapCode(t, db, enrollment.Secret))
-	requireNoError(t, err)
-	// Use a previous accepted step so login tests never wait for a wall clock tick.
-	requireNoError(t, cms.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`, enrollment.UserID)
-		return err
-	}))
-	service, err := cms.NewAuthService(db, config)
-	requireNoError(t, err)
-	requireNoError(t, service.CheckReady(ctx))
-	return authFixtureState{db, service, enrollment.Secret, codes, enrollment.UserID, config}
-}
-func authReq(tokens cms.SessionTokens) cms.AuthRequest {
-	return cms.AuthRequest{Token: tokens.Token, CSRF: tokens.CSRF, ClientIP: netip.MustParseAddr("192.0.2.1")}
-}
-
-func authRefreshStep(t *testing.T, db *sql.DB, token string) {
-	t.Helper()
-	_, err := db.Exec(`UPDATE public.sessions SET step_up_at=last_seen WHERE token_digest=$1`, authDigest(token))
-	requireNoError(t, err)
-}
-
-func authLogin(t *testing.T, f authFixtureState) cms.SessionTokens {
-	t.Helper()
-	ctx := context.Background()
-	pre, err := f.service.NewPreauth(ctx)
-	requireNoError(t, err)
-	login, err := f.service.Login(ctx, authReq(pre), bootstrapTestLogin, bootstrapTestPassphrase)
-	requireNoError(t, err)
-	return login
-}
-func authFull(t *testing.T, f authFixtureState) cms.SessionTokens {
-	t.Helper()
-	full, err := f.service.VerifyMFA(context.Background(), authReq(authLogin(t, f)), bootstrapCode(t, f.db, f.secret))
-	requireNoError(t, err)
-	return full
-}
-func authDenied(t *testing.T, err error) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("unexpected authorization success")
-	}
-}
-func authAllow(ctx context.Context, tx *sql.Tx, session cms.Session) error { return nil }
 
 func TestAuthLoginSessionRotationIntegration(t *testing.T) {
 	f := authFixture(t)
@@ -185,8 +123,6 @@ func TestAuthRecoveryAtomicIntegration(t *testing.T) {
 		t.Fatal("old code still usable")
 	}
 }
-
-func authDigest(value string) []byte { d := sha256.Sum256([]byte(value)); return d[:] }
 
 func TestAuthPersistentLimitsAndKeyIntegration(t *testing.T) {
 	f := authFixture(t)

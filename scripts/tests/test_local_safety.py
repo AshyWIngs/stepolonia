@@ -28,6 +28,33 @@ def load_script(name):
 
 setup_local = load_script("setup-local")
 publishing = load_script("test-publishing")
+auth = load_script("test-auth")
+
+
+class AuthHarnessTests(unittest.TestCase):
+    def test_auth_suite_keeps_both_packages_and_cleans_up_after_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed), patch.object(auth, "owned_container", return_value=54321), \
+                    patch.object(auth, "wait_ready"), patch("builtins.print"), \
+                    patch.object(auth, "command") as command:
+                def execute(arguments, fail_go=failed, **_kwargs):
+                    if fail_go and arguments[0] == "go":
+                        raise RuntimeError("Go suite failed")
+                    return ""
+                command.side_effect = execute
+                if failed:
+                    with self.assertRaisesRegex(RuntimeError, "Go suite failed"):
+                        auth.main()
+                else:
+                    auth.main()
+                calls = [call.args[0] for call in command.call_args_list]
+                go_calls = [arguments for arguments in calls if arguments[0] == "go"]
+                self.assertEqual(go_calls[0], [
+                    "go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
+                    "^Test(Auth|CMS|Bootstrap|Domain)", "./internal/database", "./internal/cmsintegration",
+                ])
+                self.assertEqual(calls[-2][0:3], ["docker", "container", "stop"])
+                self.assertEqual(calls[-1][0:4], ["docker", "container", "rm", "--volumes"])
 
 
 class SecretSafetyTests(unittest.TestCase):

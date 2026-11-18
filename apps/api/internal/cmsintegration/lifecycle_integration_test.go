@@ -1,10 +1,9 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"testing"
-
 	"stepolonia/apps/api/internal/cms"
+	"testing"
 )
 
 const lifecycleLogin = "lifecycle@example.test"
@@ -45,7 +44,7 @@ func lifecycleLoginFull(t *testing.T, f authFixtureState, account lifecycleAccou
 }
 
 func TestAuthLifecycleTransitionsIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
@@ -73,7 +72,7 @@ func TestAuthLifecycleTransitionsIntegration(t *testing.T) {
 }
 
 func TestAuthLifecycleReadProjectionIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
@@ -88,7 +87,7 @@ func TestAuthLifecycleReadProjectionIntegration(t *testing.T) {
 	requireNoError(t, err)
 	req := authReq(viewer)
 	req.CSRF = ""
-	qaOnboardingStaleStep(t, f.db, viewer.Token)
+	expireSessionStepUp(t, f.db, viewer.Token)
 	first, err := f.service.ListUsers(ctx, req, cms.UserPage{Limit: 2})
 	requireNoError(t, err)
 	if len(first.Items) != 2 || first.NextOffset == nil || *first.NextOffset != 2 || first.Items[0].State != lifecyclePendingState || first.Items[1].State != lifecycleDisabledState {
@@ -111,7 +110,7 @@ func TestAuthLifecycleReadProjectionIntegration(t *testing.T) {
 }
 
 func TestAuthLifecycleGuardsIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	pending, err := f.service.CreateUser(ctx, authReq(full), lifecycleLogin)
@@ -128,22 +127,22 @@ func TestAuthLifecycleGuardsIntegration(t *testing.T) {
 	req.CSRF = "forged-csrf"
 	_, err = f.service.ActivateUser(ctx, req, pending.ID, pending.Version)
 	onboardingError(t, err, cms.ErrCSRF)
-	qaOnboardingStaleStep(t, f.db, full.Token)
+	expireSessionStepUp(t, f.db, full.Token)
 	_, err = f.service.DisableUser(ctx, authReq(full), f.user, 2)
 	onboardingError(t, err, cms.ErrStepUpRequired)
 }
 
 func TestAuthLifecycleAuditRollbackIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
-	before := qaOnboardingState(t, f.db, account.user.ID)
+	before := snapshotUserSecurityState(t, f.db, account.user.ID)
 	_, err := f.db.Exec(`CREATE FUNCTION public.lifecycle_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.operation='users.activated' THEN RAISE EXCEPTION 'test lifecycle audit unavailable'; END IF; RETURN NEW; END $$; CREATE TRIGGER lifecycle_audit_failure BEFORE INSERT ON public.security_audit FOR EACH ROW EXECUTE FUNCTION public.lifecycle_audit_failure()`)
 	requireNoError(t, err)
 	_, err = f.service.ActivateUser(ctx, authReq(full), account.user.ID, account.user.Version)
 	onboardingError(t, err, cms.ErrSecurityUnavailable)
-	if qaOnboardingState(t, f.db, account.user.ID) != before {
+	if snapshotUserSecurityState(t, f.db, account.user.ID) != before {
 		t.Fatal("audit failure committed account mutation or revocation")
 	}
 }

@@ -1,4 +1,4 @@
-package database
+package cmsintegration
 
 import (
 	"context"
@@ -7,15 +7,16 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/pquerna/otp/totp"
 	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/testpostgres"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 const bootstrapTestPassphrase = "Local test enrollment ! 73029"
@@ -32,8 +33,8 @@ const bootstrapAny = "any"
 
 func bootstrapFixture(t *testing.T) (*sql.DB, *cms.BootstrapService, cms.BootstrapConfig) {
 	t.Helper()
-	cfg := cmsDisposableDatabaseConfig(t)
-	admin := Open(cfg)
+	cfg := testpostgres.CMSConfig(t)
+	admin := database.Open(cfg)
 	t.Cleanup(func() { _ = admin.Close() })
 	suffix := make([]byte, 8)
 	if _, err := rand.Read(suffix); err != nil {
@@ -44,15 +45,15 @@ func bootstrapFixture(t *testing.T) (*sql.DB, *cms.BootstrapService, cms.Bootstr
 	requireNoError(t, err)
 	local := cfg.Copy()
 	local.Database = name
-	db := Open(local)
+	db := database.Open(local)
 	db.SetMaxOpenConns(6)
 	t.Cleanup(func() {
 		_ = db.Close()
 		_, _ = admin.Exec("DROP DATABASE " + pgx.Identifier{name}.Sanitize() + " WITH (FORCE)")
 	})
 	ctx := context.Background()
-	requireNoError(t, PrepareRoles(ctx, db))
-	provider, err := Provider(db)
+	requireNoError(t, database.PrepareRoles(ctx, db))
+	provider, err := database.Provider(db)
 	requireNoError(t, err)
 	_, err = provider.Up(ctx)
 	requireNoError(t, err)
@@ -395,14 +396,14 @@ func TestBootstrapSQLIsolationIntegration(t *testing.T) {
 		}
 	}
 	conf := cms.BootstrapConfig{Site: bootstrapTestSite, EncryptionKey: make([]byte, 32), KeyVersion: 1}
-	cfg := cmsDisposableDatabaseConfig(t)
+	cfg := testpostgres.CMSConfig(t)
 	cfg.Database = func() string {
 		var n string
 		requireNoError(t, db.QueryRow("SELECT current_database()").Scan(&n))
 		return n
 	}()
 	cfg.RuntimeParams["role"] = publisherTestRole
-	publisher := Open(cfg)
+	publisher := database.Open(cfg)
 	defer func() { _ = publisher.Close() }()
 	restricted, err := cms.NewBootstrapService(publisher, conf)
 	requireNoError(t, err)

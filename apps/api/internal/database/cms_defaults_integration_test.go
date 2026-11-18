@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"stepolonia/apps/api/internal/testpostgres"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func TestCMSDefaultPrivilegesIntegration(t *testing.T) {
-	cfg := cmsDisposableDatabaseConfig(t)
+	cfg := testpostgres.CMSConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	cluster := Open(cfg)

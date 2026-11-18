@@ -1,10 +1,10 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"testing"
-
 	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/database"
+	"testing"
 )
 
 const (
@@ -21,18 +21,9 @@ type lifecycleAccessFixture struct {
 	managerRole, targetRole string
 }
 
-func lifecycleRole(t *testing.T, f authFixtureState, name, state, user string) string {
-	t.Helper()
-	var role string
-	requireNoError(t, f.db.QueryRow(`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),$1,$2) RETURNING id::text`, name, state).Scan(&role))
-	_, err := f.db.Exec(`INSERT INTO public.user_roles(user_id,role_id) VALUES($1,$2)`, user, role)
-	requireNoError(t, err)
-	return role
-}
-
 func lifecycleAccess(t *testing.T) lifecycleAccessFixture {
 	t.Helper()
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
 	manager := lifecycleEnrolled(t, f, full, "manager@example.test")
 	var err error
@@ -43,19 +34,19 @@ func lifecycleAccess(t *testing.T) lifecycleAccessFixture {
 	requireNoError(t, err)
 	_, err = f.db.Exec(`INSERT INTO public.content_fields(type_id,field_id,key) VALUES($1,$2,'title'),($1,$3,'hidden')`, lifecycleType, lifecycleField, lifecycleOtherField)
 	requireNoError(t, err)
-	role := lifecycleRole(t, f, "Lifecycle manager", "active", manager.user.ID)
-	_, err = f.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),$1,op FROM unnest(ARRAY['users.read','users.activate','users.disable']) AS op`, role)
+	roleID := createAssignedTestRole(t, f, "Lifecycle manager", "active", manager.user.ID)
+	_, err = f.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) SELECT gen_random_uuid(),$1,op FROM unnest(ARRAY['users.read','users.activate','users.disable']) AS op`, roleID)
 	requireNoError(t, err)
 	var authority string
-	requireNoError(t, f.db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,delegate_operations,target_scope,object_ceiling) VALUES(gen_random_uuid(),$1,'content.permissions.delegate','installation',$2,ARRAY['content.items.read'],'type','assigned') RETURNING id::text`, role, lifecycleType).Scan(&authority))
+	requireNoError(t, f.db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,delegate_operations,target_scope,object_ceiling) VALUES(gen_random_uuid(),$1,'content.permissions.delegate','installation',$2,ARRAY['content.items.read'],'type','assigned') RETURNING id::text`, roleID, lifecycleType).Scan(&authority))
 	_, err = f.db.Exec(`INSERT INTO public.grant_fields(grant_id,type_id,field_id) VALUES($1,$2,$3)`, authority, lifecycleType, lifecycleField)
 	requireNoError(t, err)
-	targetRole := lifecycleRole(t, f, "Latent content", "archived", target.user.ID)
+	targetRoleID := createAssignedTestRole(t, f, "Latent content", "archived", target.user.ID)
 	var grant string
-	requireNoError(t, f.db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) VALUES(gen_random_uuid(),$1,'content.items.read','content',$2,'assigned') RETURNING id::text`, targetRole, lifecycleType).Scan(&grant))
+	requireNoError(t, f.db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) VALUES(gen_random_uuid(),$1,'content.items.read','content',$2,'assigned') RETURNING id::text`, targetRoleID, lifecycleType).Scan(&grant))
 	_, err = f.db.Exec(`INSERT INTO public.grant_fields(grant_id,type_id,field_id) VALUES($1,$2,$3)`, grant, lifecycleType, lifecycleField)
 	requireNoError(t, err)
-	return lifecycleAccessFixture{f, lifecycleLoginFull(t, f, manager), target.user, role, targetRole}
+	return lifecycleAccessFixture{f, lifecycleLoginFull(t, f, manager), target.user, roleID, targetRoleID}
 }
 
 func TestAuthLifecycleTypedAuthorityIntegration(t *testing.T) {
@@ -70,7 +61,7 @@ func TestAuthLifecycleTypedAuthorityIntegration(t *testing.T) {
 	if !noData {
 		t.Fatal("authority acquired implicit data grants")
 	}
-	requireNoError(t, CheckSchema(ctx, x.f.db))
+	requireNoError(t, database.CheckSchema(ctx, x.f.db))
 }
 
 func TestAuthLifecycleLatentEnvelopeIntegration(t *testing.T) {

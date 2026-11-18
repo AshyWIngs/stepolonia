@@ -36,6 +36,10 @@ ENV PATH=/usr/libexec/postgresql18:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin 
     PG_VERSION=18.7 \
     LANG=en_US.utf8 \
     PGDATA=/var/lib/postgresql/18/docker
+
+FROM distribution AS cache-ready
+RUN test -x /usr/libexec/postgresql18/postgres && test -x /usr/local/bin/docker-ensure-initdb.sh
+
 # Штатный initdb использует shell, поэтому bootstrap выполняется отдельно.
 FROM distribution AS bootstrap
 COPY --chmod=0644 init-app.sh /docker-entrypoint-initdb.d/01-app.sh

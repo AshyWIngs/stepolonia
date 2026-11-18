@@ -1,4 +1,4 @@
-package database
+package cmsintegration
 
 import (
 	"context"
@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"stepolonia/apps/api/internal/cms"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"stepolonia/apps/api/internal/cms"
 )
 
 const (

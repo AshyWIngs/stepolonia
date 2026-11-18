@@ -15,13 +15,13 @@ func seedBootstrapRoles(ctx context.Context, tx *sql.Tx) error {
 	if err := checkBootstrapOperations(ctx, tx); err != nil {
 		return err
 	}
-	var article sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT id::text FROM public.content_types WHERE key='article'`).Scan(&article)
+	var articleTypeID sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT id::text FROM public.content_types WHERE key='article'`).Scan(&articleTypeID)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
-	for _, name := range []string{"Author", "Editor", seedAdminName} {
-		if err := seedBootstrapRole(ctx, tx, name, article); err != nil {
+	for _, roleName := range []string{"Author", "Editor", seedAdminName} {
+		if err := seedBootstrapRole(ctx, tx, roleName, articleTypeID); err != nil {
 			return err
 		}
 	}
@@ -93,43 +93,43 @@ func checkBootstrapOperations(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func seedInstallationGrants(ctx context.Context, tx *sql.Tx, role string) error {
+func seedInstallationGrants(ctx context.Context, tx *sql.Tx, roleID string) error {
 	for _, op := range bootstrapInstallationOperations {
 		id, err := randomID()
 		if err != nil {
 			return err
 		}
 		if op == opContentDelegate {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,can_delegate,delegate_operations,target_scope,object_ceiling,may_delegate_content) VALUES($1,$2,$3,'installation',true,$4::text[],'installation','any',true)`, id, role, op, bootstrapContentOperations); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,can_delegate,delegate_operations,target_scope,object_ceiling,may_delegate_content) VALUES($1,$2,$3,'installation',true,$4::text[],'installation','any',true)`, id, roleID, op, bootstrapContentOperations); err != nil {
 				return err
 			}
-		} else if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,can_delegate) VALUES($1,$2,$3,'installation',true)`, id, role, op); err != nil {
+		} else if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,can_delegate) VALUES($1,$2,$3,'installation',true)`, id, roleID, op); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func seedContentGrants(ctx context.Context, tx *sql.Tx, role, name, article string) error {
+func seedContentGrants(ctx context.Context, tx *sql.Tx, roleID, roleName, articleTypeID string) error {
 	operations := bootstrapContentOperations
 	scope := "any"
-	delegable := name == seedAdminName
-	if name == "Author" {
+	delegable := roleName == seedAdminName
+	if roleName == "Author" {
 		operations = bootstrapContentOperations[:4]
 		scope = objectScopeAssigned
 	}
-	if name == "Editor" {
+	if roleName == "Editor" {
 		operations = bootstrapContentOperations[1:6]
 	}
 	for _, op := range operations {
-		if err := seedContentGrant(ctx, tx, role, article, op, scope, delegable); err != nil {
+		if err := seedContentGrant(ctx, tx, roleID, articleTypeID, op, scope, delegable); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func seedContentGrant(ctx context.Context, tx *sql.Tx, role, article, op, scope string, delegable bool) error {
+func seedContentGrant(ctx context.Context, tx *sql.Tx, roleID, articleTypeID, op, scope string, delegable bool) error {
 	id, err := randomID()
 	if err != nil {
 		return err
@@ -138,34 +138,34 @@ func seedContentGrant(ctx context.Context, tx *sql.Tx, role, article, op, scope 
 	if op == opContentCreate {
 		objectScope = "type"
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate) VALUES($1,$2,$3,'content',$4,$5,$6)`, id, role, op, article, objectScope, delegable); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate) VALUES($1,$2,$3,'content',$4,$5,$6)`, id, roleID, op, articleTypeID, objectScope, delegable); err != nil {
 		return err
 	}
 	if op == opContentCreate || op == string(OpContentRead) || op == string(OpContentUpdate) || op == opContentReady || op == opContentPublish {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,type_id,field_id FROM public.content_fields WHERE type_id=$2`, id, article); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,type_id,field_id FROM public.content_fields WHERE type_id=$2`, id, articleTypeID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func seedBootstrapRole(ctx context.Context, tx *sql.Tx, name string, article sql.NullString) error {
-	role, err := randomID()
+func seedBootstrapRole(ctx context.Context, tx *sql.Tx, roleName string, articleTypeID sql.NullString) error {
+	roleID, err := randomID()
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO public.roles(id,name_key,state) VALUES($1,$2,'active')`, role, name); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO public.roles(id,name_key,state) VALUES($1,$2,'active')`, roleID, roleName); err != nil {
 		return err
 	}
-	if name == seedAdminName {
-		if err := seedInstallationGrants(ctx, tx, role); err != nil {
+	if roleName == seedAdminName {
+		if err := seedInstallationGrants(ctx, tx, roleID); err != nil {
 			return err
 		}
 	}
-	if !article.Valid {
+	if !articleTypeID.Valid {
 		return nil
 	}
-	if err := seedContentGrants(ctx, tx, role, name, article.String); err != nil {
+	if err := seedContentGrants(ctx, tx, roleID, roleName, articleTypeID.String); err != nil {
 		return err
 	}
 	return nil

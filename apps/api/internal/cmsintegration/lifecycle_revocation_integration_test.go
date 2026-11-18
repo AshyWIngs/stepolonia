@@ -1,14 +1,13 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"testing"
-
 	"stepolonia/apps/api/internal/cms"
+	"testing"
 )
 
 func TestAuthLifecycleRevocationIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
@@ -24,15 +23,15 @@ func TestAuthLifecycleRevocationIntegration(t *testing.T) {
 	requireNoError(t, err)
 	recovery, err := f.service.Recover(ctx, authReq(pre), account.user.Login, bootstrapTestPassphrase, account.codes[0])
 	requireNoError(t, err)
-	lock := qaBootstrapLock(t, f.db)
+	lock := holdInstallationWriteMutex(t, f.db)
 	disabled, read := make(chan error, 1), make(chan error, 1)
 	go func() {
 		_, err := f.service.DisableUser(ctx, authReq(full), account.user.ID, account.user.Version)
 		disabled <- err
 	}()
-	qaBootstrapWaiters(t, f.db, 1)
+	waitForInstallationWriteWaiters(t, f.db, 1)
 	go func() { read <- f.service.WithSession(ctx, authReq(old), false, authAllow) }()
-	qaBootstrapWaiters(t, f.db, 2)
+	waitForInstallationWriteWaiters(t, f.db, 2)
 	requireNoError(t, lock.Commit())
 	requireNoError(t, <-disabled)
 	onboardingError(t, <-read, cms.ErrAuthenticationRequired)
@@ -48,11 +47,11 @@ func TestAuthLifecycleRevocationIntegration(t *testing.T) {
 }
 
 func TestAuthLifecycleWaitingPermissionIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
-	lock := qaBootstrapLock(t, f.db)
+	lock := holdInstallationWriteMutex(t, f.db)
 	_, err := lock.Exec(`DELETE FROM public.role_grants WHERE operation='users.activate' AND role_id IN (SELECT role_id FROM public.user_roles WHERE user_id=$1)`, f.user)
 	requireNoError(t, err)
 	result := make(chan error, 1)
@@ -60,27 +59,27 @@ func TestAuthLifecycleWaitingPermissionIntegration(t *testing.T) {
 		_, err := f.service.ActivateUser(ctx, authReq(full), account.user.ID, account.user.Version)
 		result <- err
 	}()
-	qaBootstrapWaiters(t, f.db, 1)
+	waitForInstallationWriteWaiters(t, f.db, 1)
 	requireNoError(t, lock.Commit())
 	onboardingError(t, <-result, cms.ErrPermissionDenied)
 }
 
 func TestAuthLifecycleWaitingSessionIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
-	lock := qaBootstrapLock(t, f.db)
+	lock := holdInstallationWriteMutex(t, f.db)
 	_, err := lock.Exec(`UPDATE public.sessions SET revoked_at=clock_timestamp() WHERE token_digest=$1`, authDigest(full.Token))
 	requireNoError(t, err)
 	result := make(chan error, 1)
 	go func() { _, err := f.service.ListUsers(ctx, authReq(full), cms.UserPage{}); result <- err }()
-	qaBootstrapWaiters(t, f.db, 1)
+	waitForInstallationWriteWaiters(t, f.db, 1)
 	requireNoError(t, lock.Commit())
 	onboardingError(t, <-result, cms.ErrAuthenticationRequired)
 }
 
 func TestAuthLifecycleDenialBudgetIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
 	user, err := f.service.CreateUser(context.Background(), authReq(full), lifecycleLogin)
 	requireNoError(t, err)
@@ -100,7 +99,7 @@ func TestAuthLifecycleDenialBudgetIntegration(t *testing.T) {
 }
 
 func TestAuthLifecycleSelfDisableSuccessorIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	successor := lifecycleEnrolled(t, f, full, lifecycleLogin)
@@ -116,7 +115,7 @@ func TestAuthLifecycleSelfDisableSuccessorIntegration(t *testing.T) {
 }
 
 func TestAuthLifecycleDisableAuditRollbackIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	account := lifecycleEnrolled(t, f, full, lifecycleLogin)
@@ -124,12 +123,12 @@ func TestAuthLifecycleDisableAuditRollbackIntegration(t *testing.T) {
 	account.user, err = f.service.ActivateUser(ctx, authReq(full), account.user.ID, account.user.Version)
 	requireNoError(t, err)
 	old := lifecycleLoginFull(t, f, account)
-	before := qaOnboardingState(t, f.db, account.user.ID)
+	before := snapshotUserSecurityState(t, f.db, account.user.ID)
 	_, err = f.db.Exec(`CREATE FUNCTION public.lifecycle_disable_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.operation='users.disabled' THEN RAISE EXCEPTION 'test disable audit unavailable'; END IF; RETURN NEW; END $$; CREATE TRIGGER lifecycle_disable_audit_failure BEFORE INSERT ON public.security_audit FOR EACH ROW EXECUTE FUNCTION public.lifecycle_disable_audit_failure()`)
 	requireNoError(t, err)
 	_, err = f.service.DisableUser(ctx, authReq(full), account.user.ID, account.user.Version)
 	onboardingError(t, err, cms.ErrSecurityUnavailable)
-	if qaOnboardingState(t, f.db, account.user.ID) != before {
+	if snapshotUserSecurityState(t, f.db, account.user.ID) != before {
 		t.Fatal("audit failure committed revocation or disabled account")
 	}
 	requireNoError(t, f.service.WithSession(ctx, authReq(old), false, authAllow))

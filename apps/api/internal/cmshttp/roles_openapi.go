@@ -51,7 +51,7 @@ func replaceRoleGrantSchema(schema *huma.Schema) {
 
 func addRoleSchemas(schemas map[string]*huma.Schema) {
 	schemas[roleGrantSchema] = roleGrantContract()
-	example := roleResponse{ID: syntheticUserID, Name: "docs-reviewer", State: "disabled", Version: 1, Grants: []roleGrantDTO{roleGrantExample()}}
+	example := roleResponse{ID: exampleUUID, Name: "docs-reviewer", State: "disabled", Version: 1, Grants: []roleGrantDTO{roleGrantExample()}}
 	schema := responseDTOSchema("Safe role policy metadata including explicit grants and latent disabled/archived grants. No credentials, memberships, recipients, content values or field labels are exposed.", example)
 	replaceRoleGrantSchema(schema)
 	schemas[roleSchema] = schema
@@ -70,10 +70,10 @@ func roleGrantContract() *huma.Schema {
 	addContentGrantProperties(data, []string{roleAssignedObjects, roleAnyObjects})
 	installationAuthority := roleAuthoritySchema(roleInstallationScope, allContent)
 	typeAuthority := roleAuthoritySchema("type", allContent)
-	typeAuthority.Properties["type_id"] = uuidSchema(syntheticUserID)
+	typeAuthority.Properties["type_id"] = uuidSchema(exampleUUID)
 	typeAuthority.Properties["field_ids"] = roleFieldsSchema()
 	typeAuthority.Required = append(typeAuthority.Required, "type_id")
-	return &huma.Schema{Description: "One explicit registered grant. Choose exactly one closed shape: installation security, content create, content item access, installation delegation authority or type delegation authority. Irrelevant, null and unknown properties are rejected even when empty or false. Authority grants permission to delegate policies, without content data access.", OneOf: []*huma.Schema{security, create, data, installationAuthority, typeAuthority}, Examples: []any{roleGrantExample(), roleGrantDTO{Operation: string(cms.OpContentRead), Scope: roleContentScope, TypeID: syntheticUserID, ObjectScope: roleAssignedObjects, FieldIDs: []string{syntheticUserID}}, roleGrantDTO{Operation: roleAuthorityOperation, Scope: roleInstallationScope, TargetScope: roleInstallationScope, ObjectCeiling: roleAnyObjects, MayDelegateContent: &mayDelegate, DelegateOperations: []string{string(cms.OpContentRead)}}}}
+	return &huma.Schema{Description: "One explicit registered grant. Choose exactly one closed shape: installation security, content create, content item access, installation delegation authority or type delegation authority. Irrelevant, null and unknown properties are rejected even when empty or false. Authority grants permission to delegate policies, without content data access.", OneOf: []*huma.Schema{security, create, data, installationAuthority, typeAuthority}, Examples: []any{roleGrantExample(), roleGrantDTO{Operation: string(cms.OpContentRead), Scope: roleContentScope, TypeID: exampleUUID, ObjectScope: roleAssignedObjects, FieldIDs: []string{exampleUUID}}, roleGrantDTO{Operation: roleAuthorityOperation, Scope: roleInstallationScope, TargetScope: roleInstallationScope, ObjectCeiling: roleAnyObjects, MayDelegateContent: &mayDelegate, DelegateOperations: []string{string(cms.OpContentRead)}}}}
 }
 
 func roleGrantVariant(operations []string, scope string) *huma.Schema {
@@ -85,14 +85,14 @@ func roleGrantVariant(operations []string, scope string) *huma.Schema {
 }
 
 func addContentGrantProperties(schema *huma.Schema, scopes []string) {
-	schema.Properties["type_id"] = uuidSchema(syntheticUserID)
+	schema.Properties["type_id"] = uuidSchema(exampleUUID)
 	schema.Properties["object_scope"] = &huma.Schema{Type: huma.TypeString, Enum: stringValues(scopes), Description: "Create has type scope; other content actions require assigned or any."}
 	schema.Properties["field_ids"] = roleFieldsSchema()
 	schema.Required = append(schema.Required, "type_id", "object_scope")
 }
 
 func roleFieldsSchema() *huma.Schema {
-	return &huma.Schema{Type: huma.TypeArray, Items: uuidSchema(syntheticUserID), UniqueItems: true, Description: "Exact existing field UUIDs belonging to type_id. Omitted or empty means no field access; no wildcard or future field expansion."}
+	return &huma.Schema{Type: huma.TypeArray, Items: uuidSchema(exampleUUID), UniqueItems: true, Description: "Exact existing field UUIDs belonging to type_id. Omitted or empty means no field access; no wildcard or future field expansion."}
 }
 
 func roleAuthoritySchema(target string, operations []string) *huma.Schema {

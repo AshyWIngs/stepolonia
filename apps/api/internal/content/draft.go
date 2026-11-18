@@ -59,7 +59,7 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, item string, expec
 		if err != nil {
 			return err
 		}
-		if err := expectedVersion(state, expected, patch.SchemaNo); err != nil {
+		if err := validateDraftVersions(state, expected, patch.SchemaNo); err != nil {
 			return err
 		}
 		schema, err := loadSchema(ctx, tx, state.TypeID, state.SchemaNo)

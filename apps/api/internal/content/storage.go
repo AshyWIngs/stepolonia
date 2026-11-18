@@ -72,14 +72,14 @@ func loadRelations(ctx context.Context, tx *sql.Tx, item, publication string) ([
 func advanceVersion(ctx context.Context, tx *sql.Tx, state *DraftState) error {
 	return tx.QueryRowContext(ctx, `UPDATE public.content_items SET version=version+1 WHERE id=$1 RETURNING version`, state.ItemID).Scan(&state.Version)
 }
-func expectedVersion(state DraftState, expected, schema int64) error {
-	if expected <= 0 || schema <= 0 {
+func validateDraftVersions(state DraftState, expectedVersion, expectedSchemaNo int64) error {
+	if expectedVersion <= 0 || expectedSchemaNo <= 0 {
 		return problem(Validation, "expected_version_required")
 	}
-	if expected != state.Version {
+	if expectedVersion != state.Version {
 		return problem(Conflict, versionConflictCode)
 	}
-	if schema != state.SchemaNo {
+	if expectedSchemaNo != state.SchemaNo {
 		return problem(Conflict, schemaConflictCode)
 	}
 	return nil

@@ -57,7 +57,7 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		if authTag(rt) == rolesTag {
 			target = "role"
 		}
-		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(syntheticUserID)})
+		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: "path", Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
 	return op
 }
@@ -175,7 +175,7 @@ const (
 
 const syntheticOnboardingToken = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"
 
-const syntheticUserID = "11111111-1111-4111-8111-111111111111"
+const exampleUUID = "11111111-1111-4111-8111-111111111111"
 
 const syntheticCSRF = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
@@ -191,7 +191,7 @@ func privateSchemas() map[string]*huma.Schema {
 	}
 	code := stringSchema("New single-use recovery code. Store securely outside the browser; it is returned only after successful enrollment or factor replacement.", codes[0])
 	code.Pattern = "^[0-9a-f]{32}$"
-	userExample := pendingUserResponse{ID: syntheticUserID, Login: "invited-editor", State: "pending", Version: 1}
+	userExample := pendingUserResponse{ID: exampleUUID, Login: "invited-editor", State: "pending", Version: 1}
 	userSchema := responseDTOSchema("Pending account without credentials, roles, session access or private security fields. Version is required for a subsequent token mutation.", userExample)
 	tokenExample := onboardingTokenResponse{Token: syntheticOnboardingToken, ExpiresAt: time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC), User: userExample}
 	tokenSchema := responseDTOSchema("One-time disclosure of an onboarding token after its authorized mutation and audit commit. Deliver through a verified external channel; never cache or log.", tokenExample)

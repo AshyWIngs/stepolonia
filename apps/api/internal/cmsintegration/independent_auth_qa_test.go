@@ -1,22 +1,21 @@
-package database
+package cmsintegration
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/pquerna/otp/totp"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
+	"stepolonia/apps/api/internal/cms"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/pquerna/otp/totp"
-	"stepolonia/apps/api/internal/cms"
 )
 
 const qaSessionAgeSQL = `UPDATE public.sessions SET created_at=created_at-interval '10 hours',expires_at=expires_at-interval '10 hours' WHERE token_digest=$1`
@@ -63,7 +62,7 @@ func TestAuthIndependentRevocationAfterMutexIntegration(t *testing.T) {
 	f := authFixture(t)
 	ctx := context.Background()
 	full := authFull(t, f)
-	lock := qaBootstrapLock(t, f.db)
+	lock := holdInstallationWriteMutex(t, f.db)
 	_, err := lock.Exec(`UPDATE public.sessions SET revoked_at=clock_timestamp() WHERE token_digest=$1`, authDigest(full.Token))
 	requireNoError(t, err)
 	result := make(chan error, 1)
@@ -71,7 +70,7 @@ func TestAuthIndependentRevocationAfterMutexIntegration(t *testing.T) {
 	go func() {
 		result <- f.service.WithSession(ctx, authReq(full), true, func(context.Context, *sql.Tx, cms.Session) error { called <- struct{}{}; return nil })
 	}()
-	qaBootstrapWaiters(t, f.db, 1)
+	waitForInstallationWriteWaiters(t, f.db, 1)
 	requireNoError(t, lock.Commit())
 	if err := <-result; !errors.Is(err, cms.ErrAuthenticationRequired) {
 		t.Fatalf("queued request accepted revoked session: %v", err)

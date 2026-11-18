@@ -17,6 +17,9 @@ WORKDIR /src/apps/api
 RUN go mod download && go mod verify
 WORKDIR /src
 
+FROM go-dependencies AS go-cache-ready
+RUN test -x /usr/local/bin/golangci-lint && test -s /src/apps/api/go.sum
+
 FROM go-dependencies AS go-lint
 COPY .golangci.yml ./
 COPY apps/api ./apps/api
@@ -43,6 +46,10 @@ USER node
 WORKDIR /home/node
 COPY --chown=node:node infrastructure/quality/package.json infrastructure/quality/package-lock.json ./
 RUN npm ci --ignore-scripts --no-fund --no-audit
+
+FROM duplicates-build AS npm-cache-ready
+RUN test -s node_modules/jscpd/package.json
+
 # CPD исполняется в non-root distroless, npm остаётся в builder.
 FROM dhi.io/node:26.13.1-alpine3.24 AS duplicates
 WORKDIR /tools

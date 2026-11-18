@@ -1,4 +1,4 @@
-package database
+package cmsintegration
 
 import (
 	"bytes"
@@ -6,44 +6,21 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5/pgtype"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/cmshttp"
 	"stepolonia/apps/api/internal/platform"
+	"strings"
+	"testing"
+	"time"
 )
 
 const qaOnboardingPassword = "Independent invitation passphrase 731!"
 const qaUntrustedRequestID = "11111111-1111-4111-8111-111111111111"
-
-// Use the real restricted LOGIN for commands; retain the owner only for assertions.
-func qaOnboardingFixture(t *testing.T) authHTTPFixture {
-	t.Helper()
-	f := newAuthHTTPFixture(t)
-	f.state.service = qaOnboardingService(t, f.state)
-	return f
-}
-
-func qaOnboardingService(t *testing.T, f authFixtureState) *cms.AuthService {
-	t.Helper()
-	cfg := cmsDisposableDatabaseConfig(t)
-	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
-	cfg.User = cfg.Database + "_auth"
-	pool := Open(cfg)
-	t.Cleanup(func() { _ = pool.Close() })
-	requireNoError(t, CheckSecurity(context.Background(), pool))
-	service, err := cms.NewAuthService(pool, f.config)
-	requireNoError(t, err)
-	requireNoError(t, service.CheckReady(context.Background()))
-	return service
-}
 
 func qaOnboardingInvite(t *testing.T, f authFixtureState, full cms.SessionTokens, login string) cms.OnboardingToken {
 	t.Helper()
@@ -70,25 +47,19 @@ func qaOnboardingError(t *testing.T, err, expected error) {
 	}
 }
 
-func qaOnboardingStaleStep(t *testing.T, db *sql.DB, token string) {
-	t.Helper()
-	_, err := db.Exec(`WITH snapshot AS (SELECT clock_timestamp() AS n) UPDATE public.sessions SET created_at=n-interval '10 minutes',last_seen=n,step_up_at=n-interval '6 minutes',expires_at=n+interval '11 hours' FROM snapshot WHERE token_digest=$1`, authDigest(token))
-	requireNoError(t, err)
-}
-
 func TestAuthOnboardingIndependentCurrentAuthorityIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	_, err := f.db.Exec(`UPDATE public.roles SET name_key='Independent renamed authority' WHERE id IN (SELECT role_id FROM public.user_roles WHERE user_id=$1)`, f.user)
 	requireNoError(t, err)
 	_, err = f.service.CreateUser(ctx, authReq(full), "qa-allowed")
 	requireNoError(t, err)
-	qaOnboardingStaleStep(t, f.db, full.Token)
+	expireSessionStepUp(t, f.db, full.Token)
 	_, err = f.service.CreateUser(ctx, authReq(full), "qa-stale-step")
 	qaOnboardingError(t, err, cms.ErrStepUpRequired)
 	authRefreshStep(t, f.db, full.Token)
-	lock := qaBootstrapLock(t, f.db)
+	lock := holdInstallationWriteMutex(t, f.db)
 	_, err = lock.Exec(`DELETE FROM public.role_grants WHERE operation='users.create' AND role_id IN (SELECT role_id FROM public.user_roles WHERE user_id=$1)`, f.user)
 	requireNoError(t, err)
 	result := make(chan error, 1)
@@ -96,7 +67,7 @@ func TestAuthOnboardingIndependentCurrentAuthorityIntegration(t *testing.T) {
 		_, commandErr := f.service.CreateUser(ctx, authReq(full), "qa-queued-denial")
 		result <- commandErr
 	}()
-	qaBootstrapWaiters(t, f.db, 1)
+	waitForInstallationWriteWaiters(t, f.db, 1)
 	requireNoError(t, lock.Commit())
 	qaOnboardingError(t, <-result, cms.ErrPermissionDenied)
 	var absent, audited bool
@@ -104,19 +75,6 @@ func TestAuthOnboardingIndependentCurrentAuthorityIntegration(t *testing.T) {
 	if !absent || !audited {
 		t.Fatal("stale authority wrote an account or lost its separate denial audit")
 	}
-}
-
-func qaOnboardingState(t *testing.T, db *sql.DB, user string) string {
-	t.Helper()
-	var state string
-	requireNoError(t, db.QueryRow(`SELECT jsonb_build_object(
- 'user',(SELECT to_jsonb(u) FROM public.users u WHERE u.id=$1),
- 'tokens',(SELECT jsonb_agg(to_jsonb(t) ORDER BY t.digest) FROM public.onboarding_tokens t WHERE t.user_id=$1),
- 'attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.session_id) FROM public.enrollment_attempts a WHERE a.user_id=$1),
- 'sessions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.sessions s WHERE s.user_id=$1),
- 'mfa',(SELECT to_jsonb(m) FROM public.mfa_totp m WHERE m.user_id=$1),
- 'codes',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.digest) FROM public.recovery_codes c WHERE c.user_id=$1))::text`, user).Scan(&state))
-	return state
 }
 
 func qaOnboardingRejectAudit(t *testing.T, db *sql.DB) func() {
@@ -136,16 +94,16 @@ func qaOnboardingRejectAudit(t *testing.T, db *sql.DB) func() {
 }
 
 func TestAuthOnboardingIndependentReissueRollbackIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	full := authFull(t, f)
 	token := qaOnboardingInvite(t, f, full, "qa-reissue")
 	enrollment := qaOnboardingStart(t, f, token.Token)
-	before := qaOnboardingState(t, f.db, token.User.ID)
+	before := snapshotUserSecurityState(t, f.db, token.User.ID)
 	restoreAudit := qaOnboardingRejectAudit(t, f.db)
 	failed, err := f.service.IssueOnboardingToken(ctx, authReq(full), token.User.ID, token.User.Version)
 	qaOnboardingError(t, err, cms.ErrSecurityUnavailable)
-	if failed.Token != "" || before != qaOnboardingState(t, f.db, token.User.ID) {
+	if failed.Token != "" || before != snapshotUserSecurityState(t, f.db, token.User.ID) {
 		t.Fatal("failed reissue exposed a token or changed a live enrollment")
 	}
 	restoreAudit()
@@ -165,21 +123,21 @@ func TestAuthOnboardingIndependentReissueRollbackIntegration(t *testing.T) {
 }
 
 func TestAuthOnboardingIndependentCompleteRollbackRaceIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	ctx := context.Background()
 	token := qaOnboardingInvite(t, f, authFull(t, f), "qa-complete")
 	enrollment := qaOnboardingStart(t, f, token.Token)
 	code := bootstrapCode(t, f.db, enrollment.Secret)
-	before := qaOnboardingState(t, f.db, token.User.ID)
+	before := snapshotUserSecurityState(t, f.db, token.User.ID)
 	restoreAudit := qaOnboardingRejectAudit(t, f.db)
 	codes, err := f.service.CompleteEnrollment(ctx, authReq(enrollment.SessionTokens), code)
 	qaOnboardingError(t, err, cms.ErrSecurityUnavailable)
-	if len(codes) != 0 || before != qaOnboardingState(t, f.db, token.User.ID) {
+	if len(codes) != 0 || before != snapshotUserSecurityState(t, f.db, token.User.ID) {
 		t.Fatal("failed completion exposed codes or changed pending credentials")
 	}
 	restoreAudit()
-	second := qaOnboardingService(t, f)
-	lock := qaBootstrapLock(t, f.db)
+	second := newRestrictedAuthService(t, f)
+	lock := holdInstallationWriteMutex(t, f.db)
 	type outcome struct {
 		codes []string
 		err   error
@@ -191,7 +149,7 @@ func TestAuthOnboardingIndependentCompleteRollbackRaceIntegration(t *testing.T) 
 			results <- outcome{got, completeErr}
 		}()
 	}
-	qaBootstrapWaiters(t, f.db, 2)
+	waitForInstallationWriteWaiters(t, f.db, 2)
 	requireNoError(t, lock.Commit())
 	var succeeded int
 	for range 2 {
@@ -285,7 +243,7 @@ func qaOnboardingHTTP(t *testing.T, f authHTTPFixture, path, body string, sessio
 
 func TestAuthOnboardingIndependentAuditCorrelationIntegration(t *testing.T) {
 	var trace bytes.Buffer
-	f := qaOnboardingTrace(t, qaOnboardingFixture(t), &trace)
+	f := qaOnboardingTrace(t, newRestrictedAuthHTTPFixture(t), &trace)
 	full := authFull(t, f.state)
 	reply := qaOnboardingHTTP(t, f, onboardingUsersPath, `{"login":"qa-correlation"}`, full)
 	var user struct {
@@ -312,7 +270,7 @@ func TestAuthOnboardingIndependentAuditCorrelationIntegration(t *testing.T) {
 	if denied.status != 403 || strings.Contains(string(denied.data), issuedToken.Token) {
 		t.Fatal("forged CSRF obtained onboarding material")
 	}
-	qaOnboardingStaleStep(t, f.state.db, full.Token)
+	expireSessionStepUp(t, f.state.db, full.Token)
 	denied = qaOnboardingHTTP(t, f, path, `{"expected_version":2}`, full)
 	if denied.status != 403 {
 		t.Fatal("stale issuer bypassed HTTP step-up")
@@ -362,7 +320,7 @@ func qaOnboardingCorrelation(t *testing.T, f authFixtureState, reply qaOnboardin
 }
 
 func TestAuthOnboardingIndependentNearExpiryIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	token := qaOnboardingInvite(t, f, authFull(t, f), "qa-expiring")
 	_, err := f.db.Exec(`UPDATE public.onboarding_tokens SET expires_at=clock_timestamp()+interval '2 minutes' WHERE user_id=$1`, token.User.ID)
 	requireNoError(t, err)
@@ -377,7 +335,7 @@ func TestAuthOnboardingIndependentNearExpiryIntegration(t *testing.T) {
 }
 
 func TestAuthOnboardingIndependentHTTPDenialBudgetIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t)
+	f := newRestrictedAuthHTTPFixture(t)
 	for index := range 8 {
 		forged, err := f.state.service.NewPreauth(context.Background())
 		requireNoError(t, err)

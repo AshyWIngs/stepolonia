@@ -1,13 +1,12 @@
-package database
+package cmsintegration
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"stepolonia/apps/api/internal/cms"
 	"strings"
 	"testing"
-
-	"stepolonia/apps/api/internal/cms"
 )
 
 const rolesHTTPPath = "/api/v1/admin/roles"
@@ -98,8 +97,8 @@ func TestAuthRolesHTTPReadOnlySessionIntegration(t *testing.T) {
 	var err error
 	account.user, err = f.state.service.ActivateUser(context.Background(), authReq(full), account.user.ID, account.user.Version)
 	requireNoError(t, err)
-	role := lifecycleRole(t, f.state, "Policy reader", lifecycleHTTPActiveState, account.user.ID)
-	_, err = f.state.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,'roles.read')`, role)
+	roleID := createAssignedTestRole(t, f.state, "Policy reader", lifecycleHTTPActiveState, account.user.ID)
+	_, err = f.state.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation) VALUES(gen_random_uuid(),$1,'roles.read')`, roleID)
 	requireNoError(t, err)
 	reader := lifecycleLoginFull(t, f.state, account)
 	_, err = f.state.db.Exec(`UPDATE public.sessions SET step_up_at=NULL WHERE token_digest IN ($1,$2)`, authDigest(reader.Token), authDigest(full.Token))

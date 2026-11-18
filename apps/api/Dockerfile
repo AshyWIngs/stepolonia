@@ -5,6 +5,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
+FROM dependencies AS cache-ready
+RUN test -s go.sum && test -d /go/pkg/mod/github.com
+
 FROM dependencies AS source
 COPY . .
 

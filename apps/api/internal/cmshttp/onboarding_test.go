@@ -28,7 +28,7 @@ type fakeOnboarding struct {
 func (s *fakeOnboarding) CreateUser(_ context.Context, req cms.AuthRequest, login string) (cms.User, error) {
 	s.calls++
 	s.req = req
-	return cms.User{ID: syntheticUserID, Login: login, State: pendingUserFixtureState, Version: 1}, s.commandErr
+	return cms.User{ID: exampleUUID, Login: login, State: pendingUserFixtureState, Version: 1}, s.commandErr
 }
 func (s *fakeOnboarding) IssueOnboardingToken(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.OnboardingToken, error) {
 	s.calls++
@@ -62,19 +62,6 @@ func (s *fakeOnboarding) RotateCSRF(_ context.Context, token, kind string) (cms.
 	return cms.SessionTokens{Token: token, CSRF: testToken, Kind: kind, ExpiresAt: time.Now().Add(time.Minute)}, nil
 }
 
-func onboardingTLSServer(t *testing.T, service AuthService) *httptest.Server {
-	t.Helper()
-	var auth http.Handler
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { auth.ServeHTTP(w, r) }))
-	t.Cleanup(server.Close)
-	var err error
-	auth, err = NewHandler(Config{CanonicalOrigin: server.URL}, service)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return server
-}
-
 func onboardingRequest(t *testing.T, server *httptest.Server, path, body, kind string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+path, strings.NewReader(body))
@@ -99,7 +86,7 @@ func onboardingRequest(t *testing.T, server *httptest.Server, path, body, kind s
 
 func TestOnboardingTLSBoundary(t *testing.T) {
 	service := &fakeOnboarding{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	cases := []struct {
 		name, path, body, kind string
 		status                 int
@@ -109,13 +96,13 @@ func TestOnboardingTLSBoundary(t *testing.T) {
 		{"role assignment", usersPath, `{"login":"x","role":"admin"}`, fullKind, 400},
 		{"state assignment", usersPath, `{"login":"x","state":"active"}`, fullKind, 400},
 		{"duplicate login", usersPath, `{"login":"x","login":"y"}`, fullKind, 400},
-		{"missing version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{}`, fullKind, 400},
-		{"string version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":"1"}`, fullKind, 400},
-		{"null version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":null}`, fullKind, 400},
-		{"fractional version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":1.5}`, fullKind, 400},
-		{"overflow version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":9223372036854775808}`, fullKind, 400},
-		{"negative version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":-1}`, fullKind, 400},
-		{"duplicate version", usersPath + "/" + syntheticUserID + "/onboarding-token", `{"expected_version":1,"expected_version":2}`, fullKind, 400},
+		{"missing version", usersPath + "/" + exampleUUID + "/onboarding-token", `{}`, fullKind, 400},
+		{"string version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":"1"}`, fullKind, 400},
+		{"null version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":null}`, fullKind, 400},
+		{"fractional version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":1.5}`, fullKind, 400},
+		{"overflow version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":9223372036854775808}`, fullKind, 400},
+		{"negative version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":-1}`, fullKind, 400},
+		{"duplicate version", usersPath + "/" + exampleUUID + "/onboarding-token", `{"expected_version":1,"expected_version":2}`, fullKind, 400},
 		{"restricted create", usersPath, `{"login":"x"}`, enrollmentKind, 401},
 		{"preauth create", usersPath, `{"login":"x"}`, preauthKind, 401},
 		{"full enrollment start", authPrefix + enrollmentPath, `{}`, fullKind, 401},
@@ -124,7 +111,7 @@ func TestOnboardingTLSBoundary(t *testing.T) {
 		{"cross-user enrollment", authPrefix + enrollmentCompletePath, `{"code":"012345","user_id":"other"}`, enrollmentKind, 400},
 		{"token URL", authPrefix + enrollmentPath + "?token=secret", `{}`, preauthKind, 400},
 		{"extra route segment", usersPath + "/one/two/onboarding-token", `{}`, fullKind, 404},
-		{"unknown lifecycle command", usersPath + "/" + syntheticUserID + "/delete", `{}`, fullKind, 404},
+		{"unknown lifecycle command", usersPath + "/" + exampleUUID + "/delete", `{}`, fullKind, 404},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,7 +131,7 @@ func TestOnboardingTLSBoundary(t *testing.T) {
 
 func TestOnboardingCommandsUseVerifiedSessionAndPrivateDTO(t *testing.T) {
 	service := &fakeOnboarding{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	res := onboardingRequest(t, server, usersPath, `{"login":"invited-editor"}`, fullKind)
 	var user pendingUserResponse
 	if err := json.NewDecoder(res.Body).Decode(&user); err != nil {
@@ -183,8 +170,8 @@ func TestOnboardingServiceErrorsPreserveHTTPMeaning(t *testing.T) {
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			service := &fakeOnboarding{commandErr: tc.err}
-			server := onboardingTLSServer(t, service)
-			res := onboardingRequest(t, server, usersPath+"/"+syntheticUserID+"/onboarding-token", `{"expected_version":1}`, fullKind)
+			server := newAdminTLSServer(t, service)
+			res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/onboarding-token", `{"expected_version":1}`, fullKind)
 			var out authProblem
 			if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 				t.Fatal(err)
@@ -201,7 +188,7 @@ func TestOnboardingServiceErrorsPreserveHTTPMeaning(t *testing.T) {
 
 func TestEnrollmentSessionIsRestrictedAndCompletionClearsCookies(t *testing.T) {
 	service := &fakeOnboarding{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	res := onboardingRequest(t, server, authPrefix+enrollmentPath, `{"token":"`+testToken+`","password":"new secret passphrase"}`, preauthKind)
 	if res.StatusCode != 200 {
 		t.Fatal(res.StatusCode)
@@ -233,7 +220,7 @@ func TestEnrollmentSessionIsRestrictedAndCompletionClearsCookies(t *testing.T) {
 
 func TestEnrollmentMixedCookiesFailClosed(t *testing.T) {
 	service := &fakeOnboarding{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, name := range []string{cookieNames[fullKind], cookieNames[enrollmentKind]} {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+authPrefix+enrollmentCompletePath, strings.NewReader(enrolledCodeJSON))
 		if err != nil {
@@ -257,7 +244,7 @@ func TestEnrollmentMixedCookiesFailClosed(t *testing.T) {
 
 func TestEnrollmentCSRFAndLogoutRetainKind(t *testing.T) {
 	service := &fakeOnboarding{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+authPrefix+"/csrf", nil)
 	if err != nil {
 		t.Fatal(err)

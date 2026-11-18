@@ -38,9 +38,9 @@ var (
 type AuthConfig = BootstrapConfig
 
 type AuthService struct {
-	db     *sql.DB
-	config AuthConfig
-	dummy  string
+	db        *sql.DB
+	config    AuthConfig
+	dummyHash string
 }
 
 // AuthRequest contains bearer credentials and a transport-verified client address.
@@ -79,8 +79,8 @@ func NewAuthService(db *sql.DB, config AuthConfig) (*AuthService, error) {
 		return nil, err
 	}
 	// Fixed valid parameters give nonexistent identities the same expensive work.
-	dummy := "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	return &AuthService{db: db, config: b.config, dummy: dummy}, nil
+	dummyHash := "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	return &AuthService{db: db, config: b.config, dummyHash: dummyHash}, nil
 }
 func digest(value string) []byte { d := sha256.Sum256([]byte(value)); return d[:] }
 func bearer() (string, error) {

@@ -3,11 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"stepolonia/apps/api/internal/testpostgres"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"stepolonia/apps/api/internal/cms"
 )
 
 const currentDatabaseSQL = "SELECT current_database()"
@@ -35,7 +34,7 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	_, err = db.Exec("CREATE ROLE " + quoted + " LOGIN IN ROLE sp_security")
 	requireNoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DROP ROLE " + quoted) })
-	cfg := cmsDisposableDatabaseConfig(t)
+	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = login
 	security := Open(cfg)
@@ -77,7 +76,7 @@ func testSecurityLoginIdentity(t *testing.T, safe *pgx.ConnConfig) {
 	t.Helper()
 	for _, option := range []string{"role", "session_authorization", "options"} {
 		t.Run(option, func(t *testing.T) {
-			owner := cmsDisposableDatabaseConfig(t)
+			owner := testpostgres.CMSConfig(t)
 			owner.Database = safe.Database
 			value := safe.User
 			if option == "options" {
@@ -124,37 +123,4 @@ func testAuthRecoveryReservation(t *testing.T, db *sql.DB) {
 		t.Fatal("reservation consumed the recovery code")
 	}
 
-}
-
-func TestAuthSecurityPoolIntegration(t *testing.T) {
-	f := authFixture(t)
-	ctx := context.Background()
-	login := "authlogin_" + strings.ReplaceAll(f.user, "-", "")
-	quoted := pgx.Identifier{login}.Sanitize()
-	_, err := f.db.Exec("CREATE ROLE " + quoted + " LOGIN IN ROLE sp_security")
-	requireNoError(t, err)
-	t.Cleanup(func() { _, _ = f.db.Exec("DROP ROLE " + quoted) })
-	cfg := cmsDisposableDatabaseConfig(t)
-	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
-	_, err = f.db.Exec("REVOKE CREATE,TEMP ON DATABASE " + pgx.Identifier{cfg.Database}.Sanitize() + " FROM PUBLIC")
-	requireNoError(t, err)
-	cfg.User = login
-	security := Open(cfg)
-	defer func() { _ = security.Close() }()
-	requireNoError(t, CheckSecurity(ctx, security))
-	f.service, err = cms.NewAuthService(security, f.config)
-	requireNoError(t, err)
-	requireNoError(t, f.service.CheckReady(ctx))
-	full := authFull(t, f)
-	requireNoError(t, f.service.WithSession(ctx, authReq(full), true, authAllow))
-	requireNoError(t, f.service.Logout(ctx, authReq(full), full.Kind))
-	authDenied(t, f.service.WithSession(ctx, authReq(full), true, authAllow))
-	_, err = f.db.Exec(`ALTER TABLE public.sessions DISABLE TRIGGER sessions_write_mutex`)
-	requireNoError(t, err)
-	if err := CheckSecurity(ctx, security); err == nil {
-		t.Fatal("authentication pool accepted a disabled guard")
-	}
-	_, err = f.db.Exec(`ALTER TABLE public.sessions ENABLE TRIGGER sessions_write_mutex`)
-	requireNoError(t, err)
-	requireNoError(t, CheckSecurity(ctx, security))
 }

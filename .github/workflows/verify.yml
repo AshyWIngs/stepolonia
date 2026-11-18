@@ -180,6 +180,8 @@ jobs:
           retention-days: 7
           path: |
             reports/*lint.log
+            reports/*checks.log
+            reports/*docker-check.log
             reports/duplicates.log
             reports/publishing-*.log
             reports/images/*.json
@@ -187,3 +189,4 @@ jobs:
             reports/images/*.log
             reports/npm-audit.json
             reports/npm-audit.exit
+            reports/npm-audit.stderr

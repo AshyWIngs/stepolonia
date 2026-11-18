@@ -172,7 +172,7 @@ func (s *AuthService) applyUserState(ctx context.Context, tx *sql.Tx, x Session,
 		return User{}, err
 	}
 	if command.activate {
-		if err = s.enrolledFactors(ctx, tx, out.ID); err != nil {
+		if err = s.requireEnrolledFactors(ctx, tx, out.ID); err != nil {
 			return User{}, err
 		}
 	}
@@ -216,7 +216,7 @@ func writeUserState(ctx context.Context, tx *sql.Tx, out *User, activate bool) e
 	return err
 }
 
-func (s *AuthService) enrolledFactors(ctx context.Context, tx *sql.Tx, user string) error {
+func (s *AuthService) requireEnrolledFactors(ctx context.Context, tx *sql.Tx, user string) error {
 	var ciphertext []byte
 	var key int
 	var valid bool

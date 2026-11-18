@@ -1,10 +1,10 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"testing"
-
 	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/database"
+	"testing"
 )
 
 const (
@@ -59,7 +59,7 @@ func TestAuthRolesCreateEditIntegration(t *testing.T) {
 	if got.Name != edited.Name || got.Version != 2 {
 		t.Fatal("failed edit mutated role")
 	}
-	requireNoError(t, CheckSchema(ctx, x.f.db))
+	requireNoError(t, database.CheckSchema(ctx, x.f.db))
 }
 
 func TestAuthRolesInputValidationIntegration(t *testing.T) {
@@ -105,16 +105,16 @@ func TestAuthRolesEnvelopeIntegration(t *testing.T) {
 func TestAuthRolesOwnGrowthIntegration(t *testing.T) {
 	for _, state := range []string{lifecycleHTTPActiveState, lifecycleDisabledState, rolesArchivedState} {
 		t.Run(state, func(t *testing.T) {
-			f := qaOnboardingFixture(t).state
+			f := newRestrictedAuthHTTPFixture(t).state
 			full := authFull(t, f)
 			_, err := f.db.Exec(`WITH t AS(INSERT INTO public.content_types(id,key,route_namespace) VALUES($1,'role_new_type','role-new-type') RETURNING id) INSERT INTO public.content_schemas(type_id,schema_no,sealed) SELECT id,1,true FROM t`, lifecycleType)
 			requireNoError(t, err)
-			role := lifecycleRole(t, f, "Shared self role", state, f.user)
+			roleID := createAssignedTestRole(t, f, "Shared self role", state, f.user)
 			input := rolesInput("Shared self growth", cms.RoleGrant{Operation: bootstrapOpRead, Scope: rolesContentScope, TypeID: lifecycleType, ObjectScope: "any"})
-			_, err = f.service.EditRole(context.Background(), authReq(full), role, 1, input)
+			_, err = f.service.EditRole(context.Background(), authReq(full), roleID, 1, input)
 			onboardingError(t, err, cms.ErrPermissionDenied)
 			var unchanged bool
-			requireNoError(t, f.db.QueryRow(`SELECT version=1 AND name_key='Shared self role' AND NOT EXISTS(SELECT 1 FROM public.role_grants WHERE role_id=$1) FROM public.roles WHERE id=$1`, role).Scan(&unchanged))
+			requireNoError(t, f.db.QueryRow(`SELECT version=1 AND name_key='Shared self role' AND NOT EXISTS(SELECT 1 FROM public.role_grants WHERE role_id=$1) FROM public.roles WHERE id=$1`, roleID).Scan(&unchanged))
 			if !unchanged {
 				t.Fatal("self growth committed")
 			}
@@ -123,7 +123,7 @@ func TestAuthRolesOwnGrowthIntegration(t *testing.T) {
 }
 
 func TestAuthRolesLastAdminAndRollbackIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
 	var role string
 	requireNoError(t, f.db.QueryRow(`SELECT role_id::text FROM public.user_roles WHERE user_id=$1`, f.user).Scan(&role))

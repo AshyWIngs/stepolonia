@@ -1,21 +1,22 @@
-package database
+package cmsintegration
 
 import (
 	"context"
+	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/testpostgres"
 	"testing"
 	"time"
-
-	"stepolonia/apps/api/internal/cms"
 )
 
 func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
-	cfg := cmsDisposableDatabaseConfig(t)
+	f := newRestrictedAuthHTTPFixture(t).state
+	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = cfg.Database + "_auth"
-	pool := Open(cfg)
+	pool := database.Open(cfg)
 	defer func() { _ = pool.Close() }()
-	requireNoError(t, CheckSecurity(context.Background(), pool))
+	requireNoError(t, database.CheckSecurity(context.Background(), pool))
 	for _, query := range []string{
 		`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'illegal state','active')`,
 		`INSERT INTO public.roles(id,name_key,version) VALUES(gen_random_uuid(),'illegal version',99)`,
@@ -33,19 +34,19 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 	}
 	_, err := f.db.Exec(`GRANT UPDATE(state) ON public.roles TO sp_security`)
 	requireNoError(t, err)
-	if CheckSecurity(context.Background(), pool) == nil {
+	if database.CheckSecurity(context.Background(), pool) == nil {
 		t.Fatal("extra lifecycle column privilege accepted")
 	}
 	_, err = f.db.Exec(`REVOKE UPDATE(state) ON public.roles FROM sp_security`)
 	requireNoError(t, err)
-	requireNoError(t, CheckSecurity(context.Background(), pool))
+	requireNoError(t, database.CheckSecurity(context.Background(), pool))
 }
 
 func TestAuthRolesReadMetadataIntegration(t *testing.T) {
 	x := rolesManager(t)
 	req := authReq(x.actor)
 	req.CSRF = ""
-	qaOnboardingStaleStep(t, x.f.db, x.actor.Token)
+	expireSessionStepUp(t, x.f.db, x.actor.Token)
 	// Policy IDs are safe metadata. The reader has no data grants and need not
 	// possess the superior role's delegation envelope just to inspect its policy.
 	first, err := x.f.service.ListRoles(context.Background(), req, cms.RolePage{Limit: 1})
@@ -80,7 +81,7 @@ func TestAuthRolesGrantWriteRollbackIntegration(t *testing.T) {
 }
 
 func TestAuthRolesCapacityIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
 	_, err := f.db.Exec(`INSERT INTO public.roles(id,name_key) SELECT gen_random_uuid(),'role-cap-'||i FROM generate_series(1,29) i`)
 	requireNoError(t, err)
@@ -113,7 +114,7 @@ func TestAuthRolesRevokeFirstIntegration(t *testing.T) {
 	x := rolesManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	lock := qaBootstrapLock(t, x.f.db)
+	lock := holdInstallationWriteMutex(t, x.f.db)
 	_, err := lock.ExecContext(ctx, `DELETE FROM public.role_grants WHERE role_id=$1 AND operation='roles.edit'`, x.managerRole)
 	requireNoError(t, err)
 	result := make(chan error, 1)
@@ -121,7 +122,7 @@ func TestAuthRolesRevokeFirstIntegration(t *testing.T) {
 		_, err := x.f.service.EditRole(ctx, authReq(x.actor), x.targetRole, 1, rolesInput("Waiting editor", rolesContentGrant()))
 		result <- err
 	}()
-	qaBootstrapWaiters(t, x.f.db, 1)
+	waitForInstallationWriteWaiters(t, x.f.db, 1)
 	requireNoError(t, lock.Commit())
 	onboardingError(t, <-result, cms.ErrPermissionDenied)
 	var unchanged bool
@@ -135,18 +136,18 @@ func TestAuthRolesEditFirstIntegration(t *testing.T) {
 	x := rolesManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	lock := qaBootstrapLock(t, x.f.db)
+	lock := holdInstallationWriteMutex(t, x.f.db)
 	edited, revoked := make(chan error, 1), make(chan error, 1)
 	go func() {
 		_, err := x.f.service.EditRole(ctx, authReq(x.actor), x.targetRole, 1, rolesInput("Editor committed", rolesContentGrant()))
 		edited <- err
 	}()
-	qaBootstrapWaiters(t, x.f.db, 1)
+	waitForInstallationWriteWaiters(t, x.f.db, 1)
 	go func() {
 		_, err := x.f.db.ExecContext(ctx, `DELETE FROM public.role_grants WHERE role_id=$1 AND operation='roles.edit'`, x.managerRole)
 		revoked <- err
 	}()
-	qaBootstrapWaiters(t, x.f.db, 2)
+	waitForInstallationWriteWaiters(t, x.f.db, 2)
 	requireNoError(t, lock.Commit())
 	requireNoError(t, <-edited)
 	requireNoError(t, <-revoked)
