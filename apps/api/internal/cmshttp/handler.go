@@ -44,7 +44,7 @@ func NewHandler(cfg Config, service AuthService) (http.Handler, error) {
 	return NewHandlerWithDraftEditor(cfg, service, nil)
 }
 
-// NewHandlerWithDraftEditor optionally exposes draft reads and scalar saves on the private transport.
+// NewHandlerWithDraftEditor optionally exposes draft creation, reads and scalar saves on the private transport.
 func NewHandlerWithDraftEditor(cfg Config, service AuthService, editor DraftEditor) (http.Handler, error) {
 	b, err := newBoundary(cfg)
 	if err != nil {
@@ -162,6 +162,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if path == contentAssigneesPath {
 		h.serveContentAssignees(w, r, rt, target, ip)
+		return
+	}
+	if path == createDraftPath {
+		h.serveDraftCreate(w, r, rt, target, ip)
 		return
 	}
 	if path == contentDraftPath {

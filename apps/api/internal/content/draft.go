@@ -22,10 +22,8 @@ func (s *Service) Create(ctx context.Context, actor Actor, typeID string, schema
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_items(id,type_id) VALUES($1,$2)`, id, typeID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_drafts(item_id,type_id,schema_no) VALUES($1,$2,$3)`, id, typeID, schemaNo); err != nil {
+		_, err = insertEmptyDraft(ctx, tx, typeID, id, schemaNo)
+		if err != nil {
 			return err
 		}
 		out, err = s.commandResponse(ctx, tx, actor, id)
@@ -33,6 +31,18 @@ func (s *Service) Create(ctx context.Context, actor Actor, typeID string, schema
 	})
 	return out, err
 }
+
+func insertEmptyDraft(ctx context.Context, tx *sql.Tx, typeID, itemID string, schemaNo int64) (int64, error) {
+	var version int64
+	if err := tx.QueryRowContext(ctx, `INSERT INTO public.content_items(id,type_id) VALUES($1,$2) RETURNING version`, itemID, typeID).Scan(&version); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_drafts(item_id,type_id,schema_no) VALUES($1,$2,$3)`, itemID, typeID, schemaNo); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
 func (s *Service) GetDraft(ctx context.Context, actor Actor, item string) (DraftState, error) {
 	var out DraftState
 	err := s.withTx(ctx, actor, string(cms.OpContentRead), "", item, nil, func(ctx context.Context, tx *sql.Tx) error {

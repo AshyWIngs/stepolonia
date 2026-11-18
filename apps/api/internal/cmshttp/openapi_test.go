@@ -93,9 +93,22 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 	if op.RequestBody == nil {
 		t.Fatalf("missing request body %s", path)
 	}
+	checkRegistryRequestExample(t, doc, op, rt)
+	return op
+}
+
+func checkRegistryRequestExample(t *testing.T, doc privateDocument, op privateOperation, rt route) {
+	t.Helper()
 	if authTag(rt) == rolesTag && rt.fields == "" {
 		checkRoleRequestExample(t, rt, op.RequestBody.Content[jsonMediaType])
-		return op
+		return
+	}
+	if rt.operationID == createDraftOperation {
+		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+		if _, ok := parseCreateDraftInput(raw); err != nil || !ok {
+			t.Fatal("documented create draft example rejected by transport")
+		}
+		return
 	}
 	if rt.operationID == saveDraftOperation {
 		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
@@ -103,10 +116,9 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 		if err != nil || !validDraftInput(raw, &input) {
 			t.Fatal("documented draft example rejected by transport")
 		}
-		return op
+		return
 	}
 	checkCredentialProperties(t, doc, rt, op.RequestBody.Content[jsonMediaType])
-	return op
 }
 
 func checkRoleRequestExample(t *testing.T, rt route, body privateMedia) {
@@ -271,7 +283,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 		"content-assignments":     {"contentReplaceAssignees"},
-		"content-drafts":          {"contentGetDraft", "contentSaveDraft"},
+		"content-drafts":          {"contentCreateDraft", "contentGetDraft", "contentSaveDraft"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)

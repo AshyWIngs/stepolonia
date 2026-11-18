@@ -28,6 +28,7 @@ var (
 	ErrSecurityUnavailable    = errors.New("security_unavailable")
 	ErrPermissionDenied       = errors.New("permission_denied")
 	ErrStepUpRequired         = errors.New("step_up_required")
+	ErrDraftSchemaConflict    = errors.New("schema_conflict")
 	ErrVersionConflict        = errors.New("version_conflict")
 	ErrRoleInUse              = errors.New("role_in_use")
 	ErrInvalidTransition      = errors.New("invalid_transition")
@@ -99,7 +100,7 @@ func authError(err error) error {
 	if err == nil {
 		return nil
 	}
-	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, ErrPermissionDenied, ErrStepUpRequired, ErrVersionConflict, ErrInvalidTransition, ErrRoleInUse, ErrLastAdminRequired, ErrNotFound, ErrValidation, context.Canceled, context.DeadlineExceeded} {
+	for _, known := range []error{ErrInvalidCredentials, ErrAuthenticationRequired, ErrCSRF, ErrRateLimited, ErrPermissionDenied, ErrStepUpRequired, ErrDraftSchemaConflict, ErrVersionConflict, ErrInvalidTransition, ErrRoleInUse, ErrLastAdminRequired, ErrNotFound, ErrValidation, context.Canceled, context.DeadlineExceeded} {
 		if errors.Is(err, known) {
 			return err
 		}

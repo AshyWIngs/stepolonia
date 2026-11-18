@@ -22,8 +22,9 @@ const (
 	maxDraftBodyBytes  = 262144
 )
 
-// DraftEditor verifies current item and field permissions before projecting or editing a draft.
+// DraftEditor verifies current permissions before creating, projecting or editing a draft.
 type DraftEditor interface {
+	CreateDraftForType(context.Context, cms.AuthRequest, string, int64) (content.DraftState, error)
 	ReadDraftForType(context.Context, cms.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, cms.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
 }

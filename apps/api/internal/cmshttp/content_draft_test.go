@@ -30,6 +30,12 @@ type fakeDraftEditor struct {
 	err     error
 }
 
+func (f *fakeDraftEditor) CreateDraftForType(_ context.Context, req cms.AuthRequest, key string, schemaNo int64) (content.DraftState, error) {
+	f.calls++
+	f.req, f.target, f.version = req, routeTarget{typeKey: key}, schemaNo
+	return f.state, f.err
+}
+
 func (f *fakeDraftEditor) SaveDraftForType(_ context.Context, req cms.AuthRequest, key, id string, expected int64, patch content.DraftPatch) (content.DraftState, error) {
 	f.calls++
 	f.req, f.target, f.version, f.patch = req, routeTarget{typeKey: key, id: id}, expected, patch
