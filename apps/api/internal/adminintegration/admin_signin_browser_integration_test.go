@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"stepolonia/apps/api/internal/apiexamples"
+	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/siteconfig"
@@ -26,13 +28,15 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	if os.Getenv("ADMIN_UI_BROWSER_TEST") != "1" {
 		t.Skip("NOT RUN: build Nuxt and set ADMIN_UI_BROWSER_TEST=1")
 	}
-	f := newAuthHTTPFixtureWithSettings(t, func(state authFixtureState, auth http.Handler) http.Handler {
+	f := newAuthHTTPFixtureWithEditors(t, func(state authFixtureState, auth http.Handler) http.Handler {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		site := siteconfig.NewReader(openPublicationRuntimeLogin(t, state.db))
-		public := httptest.NewServer(platform.Handler(nil, nil, logger, site))
+		runtime := openPublicationRuntimeLogin(t, state.db)
+		site := siteconfig.NewReader(runtime)
+		reader := content.NewPublicReader(runtime)
+		public := httptest.NewServer(platform.Handler(nil, reader, logger, site))
 		t.Cleanup(public.Close)
 		web := startAdminFrontend(t, public.URL)
-		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, nil, logger, auth, site), logger)
+		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, reader, logger, auth, site), logger)
 	}, true)
 	assertUnpublishedAdminUnavailable(t, f)
 	publishAdminBrowserCatalog(t, f.state.db)
@@ -184,6 +188,7 @@ func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[stri
 	}
 	frLabels := map[string]string{"admin.language": "Langue", "admin.sign_in": "Connexion à la rédaction"}
 	en, fr := map[string]string{}, map[string]string{}
+	contentLabels := apiexamples.DemoSite().Catalogs["en"]
 	rows, err := db.Query(`SELECT message_key, array_to_string(placeholders, '} {') FROM public.ui_message_keys`)
 	requireNoError(t, err)
 	defer func() { _ = rows.Close() }()
@@ -192,6 +197,9 @@ func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[stri
 		var placeholders sql.NullString
 		requireNoError(t, rows.Scan(&key, &placeholders))
 		en[key] = catalogFixtureValue(enLabels[key], key, placeholders.String)
+		if strings.HasPrefix(key, "admin.content") {
+			en[key] = contentLabels[key]
+		}
 		fr[key] = catalogFixtureValue(frLabels[key], key, placeholders.String)
 	}
 	requireNoError(t, rows.Err())

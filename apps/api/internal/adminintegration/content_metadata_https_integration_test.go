@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -68,29 +69,39 @@ func assertCollectionPage(t *testing.T, body, key, schema string, hasNext bool) 
 
 func assertPinnedDraftMetadata(t *testing.T, body string) {
 	t.Helper()
+	type fieldResponse struct {
+		FieldID    string                       `json:"field_id"`
+		Key        string                       `json:"key"`
+		Kind       string                       `json:"kind"`
+		Scope      string                       `json:"scope"`
+		Visibility string                       `json:"visibility"`
+		Required   bool                         `json:"required"`
+		Editable   bool                         `json:"editable"`
+		Config     map[string]int               `json:"config"`
+		Labels     map[string]map[string]string `json:"display_labels"`
+	}
 	var data struct {
-		ItemID string `json:"item_id"`
-		Schema string `json:"schema_no"`
-		Fields []struct {
-			FieldID    string                       `json:"field_id"`
-			Key        string                       `json:"key"`
-			Kind       string                       `json:"kind"`
-			Scope      string                       `json:"scope"`
-			Visibility string                       `json:"visibility"`
-			Required   bool                         `json:"required"`
-			Config     map[string]int               `json:"config"`
-			Labels     map[string]map[string]string `json:"display_labels"`
-		} `json:"fields"`
+		ItemID        string            `json:"item_id"`
+		Schema        string            `json:"schema_no"`
+		Version       string            `json:"version"`
+		CurrentSchema string            `json:"current_schema_no"`
+		Actions       map[string]bool   `json:"actions"`
+		Published     []json.RawMessage `json:"published"`
+		Fields        []fieldResponse   `json:"fields"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.DisallowUnknownFields()
 	requireNoError(t, decoder.Decode(&data))
-	if data.ItemID != draftEditItem || data.Schema != "1" || len(data.Fields) != 1 {
+	wantActions := map[string]bool{"adopt": false, "ready": false, "publish": false, "unpublish": false}
+	if data.ItemID != draftEditItem || data.Schema != "1" || data.Version != "1" || data.CurrentSchema != "2" ||
+		!reflect.DeepEqual(data.Actions, wantActions) || data.Published == nil || len(data.Published) != 0 {
 		t.Fatalf("unexpected pinned schema or field subset: %s", body)
 	}
-	field := data.Fields[0]
-	if field.FieldID != draftHeadline || field.Key != "headline" || field.Kind != "string" || field.Scope != "shared" ||
-		field.Visibility != "public" || field.Required || len(field.Config) != 0 || field.Labels["pl"]["label"] != "Zmieniony nagłówek" {
+	wantFields := []fieldResponse{{
+		FieldID: draftHeadline, Key: "headline", Kind: "string", Scope: "shared", Visibility: "public", Editable: true,
+		Config: map[string]int{}, Labels: map[string]map[string]string{"pl": {"label": "Zmieniony nagłówek"}},
+	}}
+	if !reflect.DeepEqual(data.Fields, wantFields) {
 		t.Fatalf("expected old semantic constraints and current label: %s", body)
 	}
 }

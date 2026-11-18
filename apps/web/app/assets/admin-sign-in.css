@@ -105,6 +105,10 @@
   max-width: 52rem;
 }
 
+.admin-card--workspace {
+  max-width: 75rem;
+}
+
 .admin-card h1 {
   margin: 0 0 1.25rem;
   color: var(--admin-text);

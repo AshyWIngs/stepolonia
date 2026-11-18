@@ -188,6 +188,76 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
+async function verifyContentWorkflow(page, context) {
+  await page.getByRole('button', { name: 'Content', exact: true }).click()
+  const create = page.getByRole('button', { name: 'Create draft', exact: true })
+  await create.waitFor()
+  await create.focus()
+  await page.keyboard.press('Enter')
+  const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
+  await editor.getByLabel('title', { exact: false }).waitFor()
+  const title = 'Portal workflow verification'
+  await editor.getByLabel('title', { exact: false }).fill(title)
+  await editor.getByLabel('slug', { exact: false }).fill('portal-workflow')
+  await editor.getByLabel('body', { exact: false }).fill('An editorial draft.')
+  await assertEditorLayouts(page, editor)
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+
+  const apiPath = '/api/v1/content/article/portal-workflow?language=en'
+  const publicPath = '/en/articles/portal-workflow'
+  const request = path => context.request.get(new URL(path, origin).href)
+  assert.equal((await request(apiPath)).status(), 404)
+  await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).click()
+  await editor.getByText('Shared fields are ready.', { exact: true }).waitFor()
+  await editor.getByRole('button', { name: 'Mark translation ready', exact: true }).click()
+  await editor.getByText('This translation is ready.', { exact: true }).waitFor()
+
+  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  const publish = editor.getByRole('region', { name: 'Publish the selected translations?', exact: true })
+  await publish.getByRole('button', { name: 'Confirm', exact: true }).click()
+  const link = editor.getByRole('link', { name: publicPath, exact: true })
+  await link.waitFor()
+  assert.equal(await link.getAttribute('href'), publicPath)
+  const published = await request(apiPath)
+  assert.equal(published.status(), 200)
+  const body = await published.json()
+  assert.equal(body.localized.title.value, title)
+  const rendered = await request(publicPath)
+  assert.equal(rendered.status(), 200)
+  assert.ok((await rendered.text()).includes(title))
+
+  await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
+  const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
+  await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
+  await editor.getByText('Publication removed.', { exact: true }).waitFor()
+  assert.equal((await request(apiPath)).status(), 404)
+  assert.equal((await request(publicPath)).status(), 404)
+  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+}
+
+async function assertEditorLayouts(page, editor) {
+  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
+  const verifyViewport = async (width, height) => {
+    await page.setViewportSize({ width, height })
+    const verifyTheme = async value => {
+      await theme.selectOption(value)
+      await assertTheme(page, value, value)
+      await assertFit(page)
+      assert.ok(await editor.getByRole('button', { name: 'Save draft', exact: true }).isVisible())
+      console.log(`Draft editor visible at ${width}×${height} in ${value} mode`)
+    }
+    await verifyTheme('light')
+    await verifyTheme('dark')
+  }
+  await verifyViewport(1440, 900)
+  await verifyViewport(768, 1024)
+  await verifyViewport(390, 844)
+  await page.setViewportSize({ width: 320, height: 844 })
+  await assertFit(page)
+}
+
 async function assertPublishedLocales(page) {
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
@@ -220,6 +290,7 @@ try {
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifySettingsPublication(page, context)
+  await verifyContentWorkflow(page, context)
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')

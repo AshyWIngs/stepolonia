@@ -6,9 +6,10 @@ import (
 )
 
 type ReadableCollection struct {
-	TypeID   string `json:"type_id"`
-	TypeKey  string `json:"type_key"`
-	SchemaNo int64  `json:"schema_no,string"`
+	TypeID    string `json:"type_id"`
+	TypeKey   string `json:"type_key"`
+	SchemaNo  int64  `json:"schema_no,string"`
+	CanCreate bool   `json:"can_create"`
 }
 
 type ReadableCollectionPage struct {
@@ -35,16 +36,19 @@ func (s *AuthService) ListReadableCollections(ctx context.Context, req AuthReque
 }
 
 func readCollectionPage(ctx context.Context, tx *sql.Tx, userID string, limit, offset int) (ReadableCollectionPage, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT t.id::text, t.key, t.current_schema_no
+	rows, err := tx.QueryContext(ctx, `SELECT t.id::text, t.key, t.current_schema_no, grants.can_create
  FROM public.content_types t
  JOIN public.content_schemas s ON s.type_id=t.id AND s.schema_no=t.current_schema_no AND s.sealed
- WHERE EXISTS (
- SELECT 1 FROM public.role_grants g
+ CROSS JOIN LATERAL (
+ SELECT bool_or(g.operation=$2 AND g.object_scope IN ('any','assigned')) AS can_read,
+        bool_or(g.operation=$3 AND g.object_scope='type') AS can_create
+ FROM public.role_grants g
  JOIN public.permission_operations o ON o.key=g.operation AND o.scope='content'
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
  JOIN public.user_roles m ON m.role_id=r.id AND m.user_id=$1
- WHERE g.type_id=t.id AND g.operation=$2 AND g.scope='content' AND g.object_scope IN ('any','assigned'))
- ORDER BY t.key LIMIT $3 OFFSET $4`, userID, OpContentRead, limit+1, offset)
+ WHERE g.type_id=t.id AND g.operation IN ($2,$3) AND g.scope='content') AS grants
+ WHERE grants.can_read
+ ORDER BY t.key LIMIT $4 OFFSET $5`, userID, OpContentRead, opContentCreate, limit+1, offset)
 	if err != nil {
 		return ReadableCollectionPage{}, err
 	}
@@ -56,7 +60,7 @@ func readCollectionPage(ctx context.Context, tx *sql.Tx, userID string, limit, o
 			break
 		}
 		var item ReadableCollection
-		if err := rows.Scan(&item.TypeID, &item.TypeKey, &item.SchemaNo); err != nil {
+		if err := rows.Scan(&item.TypeID, &item.TypeKey, &item.SchemaNo, &item.CanCreate); err != nil {
 			return ReadableCollectionPage{}, err
 		}
 		page.Items = append(page.Items, item)

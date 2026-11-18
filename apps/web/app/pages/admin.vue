@@ -58,6 +58,7 @@ const phase = ref<AdminSessionKind | null>(null)
 const pending = ref(true)
 const notice = ref('')
 const settingsOpen = ref(false)
+const contentOpen = ref(false)
 const confirmingIdentity = ref(false)
 const failure = ref('')
 const limited = ref(false)
@@ -72,6 +73,7 @@ let active = true
 const title = computed(() => {
   if (phase.value === 'full' && confirmingIdentity.value) return 'fresh_auth'
   if (phase.value === 'full' && settingsOpen.value) return 'settings'
+  if (phase.value === 'full' && contentOpen.value) return 'content'
   switch (phase.value) {
     case 'preauth': return 'sign_in'
     case 'login': return 'two_step'
@@ -134,6 +136,7 @@ async function refresh(moveFocus = false) {
     phase.value = restored.kind
     if (restored.kind !== 'full') {
       settingsOpen.value = false
+      contentOpen.value = false
       confirmingIdentity.value = false
     }
   }
@@ -180,6 +183,7 @@ async function afterAuthAction(action: AdminAuthAction) {
     phase.value = null
     login.value = ''
     settingsOpen.value = false
+    contentOpen.value = false
     confirmingIdentity.value = false
     await refresh()
   }
@@ -197,7 +201,14 @@ async function changeSettingsVisibility(open: boolean) {
   await focusHeading()
 }
 
-async function confirmSettingsIdentity() {
+async function changeContentVisibility(open: boolean) {
+  contentOpen.value = open
+  confirmingIdentity.value = false
+  failure.value = ''
+  await focusHeading()
+}
+
+async function confirmActionIdentity() {
   confirmingIdentity.value = true
   failure.value = ''
   await focusHeading()
@@ -251,7 +262,11 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <section class="admin-card" :class="{ 'admin-card--wide': settingsOpen && !confirmingIdentity }" aria-labelledby="admin-heading">
+    <section
+      class="admin-card"
+      :class="{ 'admin-card--wide': settingsOpen && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
+      aria-labelledby="admin-heading"
+    >
       <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
       <output v-if="notice" class="admin-status">{{ t(`admin.${notice}`) }}</output>
       <p v-if="failure" id="admin-auth-error" class="admin-error" role="alert">{{ t(`admin.${failure}`) }}</p>
@@ -289,9 +304,14 @@ onBeforeUnmount(() => {
         <PortalSettings
           v-if="settingsOpen" v-show="!confirmingIdentity"
           :csrf="csrf" :translate="t" @published="refreshPublishedCatalog"
-          @step-up="confirmSettingsIdentity" @session-changed="refresh(true)" @close="changeSettingsVisibility(false)"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeSettingsVisibility(false)"
         />
-        <template v-if="!settingsOpen">
+        <AdminContentWorkspace
+          v-if="contentOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeContentVisibility(false)"
+        />
+        <template v-if="!settingsOpen && !contentOpen">
+          <button type="button" :disabled="blocked" @click="changeContentVisibility(true)">{{ t('admin.content') }}</button>
           <button type="button" :disabled="blocked" @click="changeSettingsVisibility(true)">{{ t('admin.settings') }}</button>
           <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.sign_out') }}</button>
         </template>
