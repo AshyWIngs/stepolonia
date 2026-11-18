@@ -23,7 +23,7 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 		`UPDATE public.roles SET id=gen_random_uuid()`,
 		`DELETE FROM public.roles`,
 		`UPDATE public.role_grants SET can_delegate=true`,
-		`INSERT INTO public.user_roles(user_id,role_id) VALUES(gen_random_uuid(),gen_random_uuid())`,
+		`UPDATE public.user_roles SET user_id=gen_random_uuid()`,
 		`SELECT key FROM public.content_types`,
 		`SELECT display_labels FROM public.content_fields`,
 		`UPDATE public.content_fields SET key='changed'`,

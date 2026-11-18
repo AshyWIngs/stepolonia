@@ -42,12 +42,15 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	requireNoError(t, CheckSecurity(ctx, security))
 	testSecurityLoginIdentity(t, cfg)
 	testRestrictedRoleDelete(t, db, security)
+	testMembershipPrivileges(t, db, security, runtime)
 	for _, query := range []string{
 		`SELECT * FROM public.public_content_items`,
 		`SELECT * FROM public.security_audit`,
 		`DELETE FROM public.users`,
 		`UPDATE public.security_audit SET reason=''`,
 		`DELETE FROM public.recovery_codes`,
+		`UPDATE public.user_roles SET role_id=gen_random_uuid()`,
+		`TRUNCATE public.user_roles`,
 		`CREATE TABLE public.auth_escape(id integer)`,
 		`CREATE TEMP TABLE auth_escape(id integer)`,
 	} {
@@ -71,6 +74,28 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	_, err = db.Exec("REVOKE sp_publisher FROM " + quoted)
 	requireNoError(t, err)
 	requireNoError(t, CheckSecurity(ctx, security))
+}
+
+func testMembershipPrivileges(t *testing.T, owner, security *sql.DB, runtime string) {
+	t.Helper()
+	var userID, roleID string
+	requireNoError(t, owner.QueryRow(`INSERT INTO public.users(id,login_key,state) VALUES(gen_random_uuid(),'membership-acl-user','disabled') RETURNING id`).Scan(&userID))
+	requireNoError(t, owner.QueryRow(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'membership-acl-role') RETURNING id`).Scan(&roleID))
+	_, err := security.Exec(`INSERT INTO public.user_roles(user_id,role_id) VALUES($1,$2)`, userID, roleID)
+	requireNoError(t, err)
+	var removed string
+	requireNoError(t, security.QueryRow(`DELETE FROM public.user_roles WHERE user_id=$1 AND role_id=$2 RETURNING role_id`, userID, roleID).Scan(&removed))
+	if removed != roleID {
+		t.Fatalf("security login deleted role %q from membership, want %q", removed, roleID)
+	}
+	for _, role := range []string{runtime, "sp_publisher", "sp_language_importer"} {
+		for _, query := range []string{
+			`INSERT INTO public.user_roles(user_id,role_id) VALUES(gen_random_uuid(),gen_random_uuid())`,
+			`DELETE FROM public.user_roles`,
+		} {
+			rejectSQL(t, context.Background(), owner, role, query, "42501")
+		}
+	}
 }
 
 func testRestrictedRoleDelete(t *testing.T, owner, security *sql.DB) {

@@ -16,8 +16,8 @@ const (
 
 type lifecycleAccessFixture struct {
 	f                       authFixtureState
-	actor                   cms.SessionTokens
-	target                  cms.User
+	admin, actor            cms.SessionTokens
+	manager, target         cms.User
 	managerRole, targetRole string
 }
 
@@ -46,7 +46,7 @@ func lifecycleAccess(t *testing.T) lifecycleAccessFixture {
 	requireNoError(t, f.db.QueryRow(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope) VALUES(gen_random_uuid(),$1,'content.items.read','content',$2,'assigned') RETURNING id::text`, targetRoleID, lifecycleType).Scan(&grant))
 	_, err = f.db.Exec(`INSERT INTO public.grant_fields(grant_id,type_id,field_id) VALUES($1,$2,$3)`, grant, lifecycleType, lifecycleField)
 	requireNoError(t, err)
-	return lifecycleAccessFixture{f, lifecycleLoginFull(t, f, manager), target.user, roleID, targetRoleID}
+	return lifecycleAccessFixture{f, full, lifecycleLoginFull(t, f, manager), manager.user, target.user, roleID, targetRoleID}
 }
 
 func TestAuthLifecycleTypedAuthorityIntegration(t *testing.T) {

@@ -240,6 +240,7 @@ GRANT INSERT (id, name_key) ON public.roles TO sp_security;
 GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
 GRANT UPDATE (name_key, state, version) ON public.roles TO sp_security;
 GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
+GRANT INSERT, DELETE ON public.user_roles TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;
 GRANT SELECT (type_id, field_id) ON public.content_fields TO sp_security;
 

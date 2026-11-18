@@ -260,7 +260,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"authentication-sessions": {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
-		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable"},
+		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 	}
 	for _, tc := range roleStateCases {

@@ -38,6 +38,7 @@ var userRoutes = map[string][]route{
 	userPath:         {getUserRoute},
 	activateUserPath: {activateUserRoute},
 	disableUserPath:  {disableUserRoute},
+	userRolesPath:    {replaceUserRolesRoute},
 	usersPath: {listUsersRoute, {kind: fullKind, fields: requestFields(createUserInput{}), method: http.MethodPost, operationID: createUserOperation, summary: "Create a pending account", response: pendingUserSchema,
 		description: "Requires an active full session, effective users.create permission and strong authentication no older than five minutes. Creates a pending account without credentials, roles or sessions. The actor and permissions come exclusively from the verified server session. The successful write and audit commit atomically."}},
 	onboardingTokenPath: {{kind: fullKind, fields: expectedVersionField, method: http.MethodPost, operationID: issueOnboardingOperation, summary: "Issue or replace a pending user's onboarding token", response: "OnboardingToken",
@@ -89,6 +90,8 @@ func userRoutePath(path string) (string, string) {
 			return activateUserPath, segments[0]
 		case "disable":
 			return disableUserPath, segments[0]
+		case "roles":
+			return userRolesPath, segments[0]
 		}
 	}
 	return "", ""

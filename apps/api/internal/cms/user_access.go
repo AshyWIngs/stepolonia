@@ -7,10 +7,12 @@ import (
 )
 
 const (
-	maxUsers           = 100
-	maxRoles           = 32
-	maxUserMemberships = 16
+	maxUsers = 100
+	maxRoles = 32
 )
+
+// MaxUserRoles bounds the complete role membership set of one user.
+const MaxUserRoles = 16
 
 // MaxRoleGrants bounds the complete explicit policy replacement for one role.
 const MaxRoleGrants = 64
@@ -53,7 +55,7 @@ func checkAccessCaps(ctx context.Context, tx *sql.Tx) error {
  (SELECT count(*) FROM public.users)<=$1 AND
  (SELECT count(*) FROM public.roles)<=$2 AND
  NOT EXISTS(SELECT 1 FROM public.role_grants GROUP BY role_id HAVING count(*)>$3) AND
- NOT EXISTS(SELECT 1 FROM public.user_roles GROUP BY user_id HAVING count(*)>$4)`, maxUsers, maxRoles, MaxRoleGrants, maxUserMemberships).Scan(&valid)
+ NOT EXISTS(SELECT 1 FROM public.user_roles GROUP BY user_id HAVING count(*)>$4)`, maxUsers, maxRoles, MaxRoleGrants, MaxUserRoles).Scan(&valid)
 	if err != nil {
 		return err
 	}

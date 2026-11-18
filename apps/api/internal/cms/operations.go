@@ -40,7 +40,7 @@ func (o Operation) Scope() (OperationScope, error) {
 		return ContentScope, nil
 	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",
-		"roles.create", "roles.read", "roles.edit", "roles.assign", opRolesDisable, opRolesEnable,
+		"roles.create", "roles.read", "roles.edit", opRolesAssign, opRolesDisable, opRolesEnable,
 		opRolesArchive, opRolesRestore, "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage:
 		return InstallationScope, nil
 	default:

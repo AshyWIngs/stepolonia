@@ -46,9 +46,9 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  SELECT e.*, CASE e.privilege
  WHEN 'SELECT' THEN e.relname IN ('users','roles','user_roles','permission_operations','role_grants',
  'grant_fields','security_state','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts','onboarding_tokens','enrollment_attempts')
- WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempts','recovery_codes','security_audit','users','mfa_totp','onboarding_tokens','enrollment_attempts','role_grants','grant_fields')
+ WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempts','recovery_codes','security_audit','users','mfa_totp','onboarding_tokens','enrollment_attempts','role_grants','grant_fields','user_roles')
  WHEN 'UPDATE' THEN e.relname IN ('users','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempts','onboarding_tokens','enrollment_attempts')
- WHEN 'DELETE' THEN e.relname IN ('auth_attempts','sessions','role_grants','grant_fields')
+ WHEN 'DELETE' THEN e.relname IN ('auth_attempts','sessions','role_grants','grant_fields','user_roles')
  ELSE false END AS allowed FROM effective e
  ) SELECT
  current_user=session_user AND session_user=$1 AND r.rolcanlogin AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)

@@ -149,6 +149,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveRole(w, r, rt, targetID, ip)
 		return
 	}
+	if path == userRolesPath {
+		h.serveUserRoles(w, r, rt, targetID, ip)
+		return
+	}
 	input, code, status := readRouteInput(w, r, rt)
 	if code != "" {
 		problem(w, status, code)
@@ -167,12 +171,9 @@ func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, tar
 		return
 	}
 	if isOnboardingRoute(path) || isLifecycleRoute(path) {
-		req.RequestID, err = newRequestID()
-		if err != nil {
-			writeError(w, cms.ErrSecurityUnavailable)
+		if !attachRequestID(w, &req) {
 			return
 		}
-		w.Header().Set(requestIDHeader, req.RequestID)
 	}
 	if isLifecycleRoute(path) && (path != usersPath || r.Method == http.MethodGet) {
 		h.executeLifecycle(w, r, rt.operationID, userID, req, input)
@@ -183,6 +184,17 @@ func (h *handler) dispatch(w http.ResponseWriter, r *http.Request, rt route, tar
 		return
 	}
 	h.execute(w, r, path, kind, req, input)
+}
+
+func attachRequestID(w http.ResponseWriter, req *cms.AuthRequest) bool {
+	id, err := newRequestID()
+	if err != nil {
+		writeError(w, cms.ErrSecurityUnavailable)
+		return false
+	}
+	req.RequestID = id
+	w.Header().Set(requestIDHeader, id)
+	return true
 }
 
 func requestSession(r *http.Request, want, ip string) (cms.AuthRequest, string, error) {
@@ -258,7 +270,7 @@ func validJSONCharset(params map[string]string) bool {
 	return len(params) == 0 || len(params) == 1 && strings.EqualFold(params["charset"], "utf-8")
 }
 
-// Reject duplicate keys and mismatched scalar types before decoding the DTO.
+// Reject duplicate keys and unexpected value types before decoding the DTO.
 func allowedObject(raw []byte, allowed string) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	token, err := dec.Token()
@@ -276,7 +288,7 @@ func allowedObject(raw []byte, allowed string) bool {
 			return false
 		}
 		seen[key] = true
-		if !allowedScalar(dec, key) {
+		if !allowedValue(dec, key) {
 			return false
 		}
 	}
@@ -287,7 +299,7 @@ func allowedObject(raw []byte, allowed string) bool {
 	return errors.Is(err, io.EOF)
 }
 
-func allowedScalar(dec *json.Decoder, key string) bool {
+func allowedValue(dec *json.Decoder, key string) bool {
 	var value json.RawMessage
 	if dec.Decode(&value) != nil || len(value) == 0 {
 		return false
@@ -295,6 +307,9 @@ func allowedScalar(dec *json.Decoder, key string) bool {
 	if key == expectedVersionField {
 		var version int64
 		return json.Unmarshal(value, &version) == nil && version > 0
+	}
+	if key == roleIDsField {
+		return value[0] == '['
 	}
 	return value[0] == '"'
 }
