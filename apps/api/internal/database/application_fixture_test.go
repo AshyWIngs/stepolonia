@@ -53,7 +53,23 @@ func publicRequest(t *testing.T, ctx context.Context, client *http.Client, targe
 	if response.StatusCode != status {
 		t.Fatalf("GET %s: got %d, want %d; body=%s", target, response.StatusCode, status, body)
 	}
-	authResponseRequestID(t, response)
-	assertAuthNoStore(t, response)
+	assertPublicResponseRequestID(t, response)
+	assertPublicNoStore(t, response)
 	return body, response.Header
+}
+
+func assertPublicResponseRequestID(t *testing.T, res *http.Response) string {
+	t.Helper()
+	id := res.Header.Get("X-Request-ID")
+	if id == "" {
+		t.Fatal("public response lacks server correlation identifier")
+	}
+	return id
+}
+
+func assertPublicNoStore(t *testing.T, res *http.Response) {
+	t.Helper()
+	if res.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("public response permits caching")
+	}
 }

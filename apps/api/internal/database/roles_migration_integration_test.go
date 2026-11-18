@@ -6,8 +6,9 @@ import (
 )
 
 func TestAuthRolesMigrationBoundaryIntegration(t *testing.T) {
-	db := newAuthHTTPFixture(t).state.db
+	db, role := domainQAFixture(t)
 	ctx := context.Background()
+	requireNoError(t, Up(ctx, db, role))
 	requireNoError(t, CheckSchema(ctx, db))
 	p, err := Provider(db)
 	requireNoError(t, err)

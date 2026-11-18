@@ -13,7 +13,7 @@ func isUserRead(rt route) bool {
 }
 
 func addLifecycleSchemas(schemas map[string]*huma.Schema) {
-	user := safeUserResponse{ID: syntheticUserID, Login: "docs-editor", State: "disabled", Version: 3}
+	user := safeUserResponse{ID: exampleUUID, Login: "docs-editor", State: "disabled", Version: 3}
 	schemas[safeUserSchema] = responseDTOSchema("Safe account projection without credentials, factors, recovery codes, onboarding tokens, sessions or grants. State does not imply CMS permissions.", user)
 	next := 1
 	list := userListResponse{Items: []safeUserResponse{user}, NextOffset: &next}

@@ -74,13 +74,13 @@ linters:
         text: '^G202:'
         source: '^\s*_, err = db\.Exec\("(GRANT DELETE ON public\.users TO |REVOKE DELETE ON public\.users FROM |GRANT sp_publisher TO |REVOKE sp_publisher FROM )" \+ quoted\)$'
       # FP: disposable PostgreSQL fixture credential, never a shipped account.
-      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+      - path: ^apps/api/internal/cmsintegration/bootstrap_integration_test\.go$
         linters: [gosec]
         text: '^G101:'
         source: '^const bootstrapTestPassphrase = '
       # FP: fixed security-table inventory in a disposable ACL negative test;
       # pgx.Identifier quotes both schema and table before execution.
-      - path: ^apps/api/internal/database/bootstrap_integration_test\.go$
+      - path: ^apps/api/internal/cmsintegration/bootstrap_integration_test\.go$
         linters: [gosec]
         text: '^G202:'
         source: '_, err = tx\.ExecContext\(ctx, "SELECT \* FROM "\+pgx\.Identifier\{"public", table\}\.Sanitize\(\)\)'

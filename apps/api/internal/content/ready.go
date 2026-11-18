@@ -12,7 +12,7 @@ func (s *Service) withCandidate(ctx context.Context, actor Actor, operation, ite
 		if err != nil {
 			return err
 		}
-		if err := expectedVersion(state, expected, schemaNo); err != nil {
+		if err := validateDraftVersions(state, expected, schemaNo); err != nil {
 			return err
 		}
 		schema, err := currentSchema(ctx, tx, state)
@@ -83,7 +83,7 @@ func (s *Service) Unpublish(ctx context.Context, actor Actor, item string, expec
 		if err != nil {
 			return err
 		}
-		if err := expectedVersion(state, expected, schemaNo); err != nil {
+		if err := validateDraftVersions(state, expected, schemaNo); err != nil {
 			return err
 		}
 		if err := s.authorize(ctx, tx, actor, "content.items.unpublish", state.TypeID, item, nil); err != nil {

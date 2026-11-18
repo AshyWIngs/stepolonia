@@ -25,7 +25,7 @@ func (s *fakeLifecycle) ListUsers(_ context.Context, req cms.AuthRequest, page c
 	s.calls++
 	s.req, s.page, s.operation = req, page, listUsersOperation
 	next := 4
-	return cms.UserList{Items: []cms.User{{ID: syntheticUserID, Login: lifecycleFixtureLogin, State: lifecycleFixtureState, Version: 7}}, NextOffset: &next}, s.commandErr
+	return cms.UserList{Items: []cms.User{{ID: exampleUUID, Login: lifecycleFixtureLogin, State: lifecycleFixtureState, Version: 7}}, NextOffset: &next}, s.commandErr
 }
 func (s *fakeLifecycle) GetUser(_ context.Context, req cms.AuthRequest, id string) (cms.User, error) {
 	s.calls++
@@ -80,7 +80,7 @@ func lifecycleResponse(t *testing.T, server *httptest.Server, req *http.Request,
 
 func TestLifecycleReadsUseFullSessionWithoutCSRF(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	out := lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"?limit=2&offset=2", fullKind), 200)
 	if service.page != (cms.UserPage{Limit: 2, Offset: 2}) || service.req.CSRF != "" || service.req.Token != testToken || service.req.RequestID == "" {
 		t.Fatal("read lost page, full session or request context")
@@ -90,9 +90,9 @@ func TestLifecycleReadsUseFullSessionWithoutCSRF(t *testing.T) {
 	}
 	item := out["items"].([]any)[0].(map[string]any)
 	assertSafeUserFields(t, item)
-	out = lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+syntheticUserID, fullKind), 200)
+	out = lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+exampleUUID, fullKind), 200)
 	assertSafeUserFields(t, out)
-	if service.operation != getUserOperation || service.userID != syntheticUserID || out["state"] != "disabled" {
+	if service.operation != getUserOperation || service.userID != exampleUUID || out["state"] != "disabled" {
 		t.Fatal("wrong detail target or state")
 	}
 }
@@ -106,13 +106,13 @@ func assertSafeUserFields(t *testing.T, item map[string]any) {
 
 func TestLifecycleRejectsInvalidPagesBeforeService(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, query := range []string{"limit=0", "limit=101", "offset=101", "offset=-1", "limit=+1", "limit=", "limit=1&limit=2", "offset=0&offset=1", "sort=login", "state=active", "limit=1.5", "offset=9999999999999999999999", "limit=%GG", "limit=1;offset=0"} {
 		t.Run(query, func(t *testing.T) {
 			lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"?"+query, fullKind), 400)
 		})
 	}
-	lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+syntheticUserID+"?limit=1", fullKind), 400)
+	lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+exampleUUID+"?limit=1", fullKind), 400)
 	if service.calls != 0 {
 		t.Fatal("invalid pagination reached service")
 	}
@@ -120,7 +120,7 @@ func TestLifecycleRejectsInvalidPagesBeforeService(t *testing.T) {
 
 func TestLifecycleReadsRejectUnsafeOriginsAndRestrictedSessions(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, kind := range []string{"", preauthKind, loginKind, recoveryKind, enrollmentKind} {
 		lifecycleResponse(t, server, lifecycleGET(t, server, usersPath, kind), 401)
 	}
@@ -142,9 +142,9 @@ func TestLifecycleReadsRejectUnsafeOriginsAndRestrictedSessions(t *testing.T) {
 
 func TestLifecycleCommandsVersionAndProjection(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, action := range []string{"activate", "disable"} {
-		res := onboardingRequest(t, server, usersPath+"/"+syntheticUserID+"/"+action, `{"expected_version":7}`, fullKind)
+		res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/"+action, `{"expected_version":7}`, fullKind)
 		raw, err := io.ReadAll(res.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -155,7 +155,7 @@ func TestLifecycleCommandsVersionAndProjection(t *testing.T) {
 		}
 		assertSafeUserFields(t, item)
 		assertVerifiedOnboardingRequest(t, service.req, res)
-		if res.StatusCode != 200 || service.userID != syntheticUserID || service.version != 7 || item["version"] != float64(8) {
+		if res.StatusCode != 200 || service.userID != exampleUUID || service.version != 7 || item["version"] != float64(8) {
 			t.Fatal("lost target or expected version")
 		}
 	}
@@ -163,10 +163,10 @@ func TestLifecycleCommandsVersionAndProjection(t *testing.T) {
 
 func TestLifecycleCommandsRejectInjectedAndMissingVersions(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, action := range []string{"activate", "disable"} {
 		for _, body := range []string{`{}`, `{"expected_version":0}`, `{"expected_version":null}`, `{"expected_version":"1"}`, `{"expected_version":1.5}`, `{"expected_version":1,"expected_version":2}`, `{"expected_version":1,"actor_id":"admin"}`, `{"expected_version":1,"state":"active"}`} {
-			res := onboardingRequest(t, server, usersPath+"/"+syntheticUserID+"/"+action, body, fullKind)
+			res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/"+action, body, fullKind)
 			if res.StatusCode != 400 {
 				t.Fatal("unsafe lifecycle body accepted", body, res.StatusCode)
 			}
@@ -179,8 +179,8 @@ func TestLifecycleCommandsRejectInjectedAndMissingVersions(t *testing.T) {
 
 func TestLifecycleErrorsAndReadMethodBoundary(t *testing.T) {
 	service := &fakeLifecycle{fakeOnboarding: fakeOnboarding{commandErr: cms.ErrNotFound}}
-	server := onboardingTLSServer(t, service)
-	out := lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+syntheticUserID, fullKind), 404)
+	server := newAdminTLSServer(t, service)
+	out := lifecycleResponse(t, server, lifecycleGET(t, server, usersPath+"/"+exampleUUID, fullKind), 404)
 	if out["code"] != "not_found" {
 		t.Fatal("target refusal leaked details")
 	}
@@ -189,7 +189,7 @@ func TestLifecycleErrorsAndReadMethodBoundary(t *testing.T) {
 	req.Header.Set(originHeader, server.URL)
 	lifecycleResponse(t, server, req, 405)
 	service.commandErr = cms.ErrStepUpRequired
-	res := onboardingRequest(t, server, usersPath+"/"+syntheticUserID+"/disable", `{"expected_version":7}`, fullKind)
+	res := onboardingRequest(t, server, usersPath+"/"+exampleUUID+"/disable", `{"expected_version":7}`, fullKind)
 	if res.StatusCode != 403 {
 		t.Fatal("lost freshness refusal")
 	}
@@ -197,7 +197,7 @@ func TestLifecycleErrorsAndReadMethodBoundary(t *testing.T) {
 
 func TestLifecycleReadOriginAndDefaultPage(t *testing.T) {
 	service := &fakeLifecycle{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	req := lifecycleGET(t, server, usersPath, fullKind)
 	req.Header.Del(fetchSiteHeader)
 	req.Header.Del(refererHeader)

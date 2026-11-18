@@ -79,7 +79,7 @@ func (s *AuthService) password(ctx context.Context, req AuthRequest, login, pass
 	}
 	hash := snap.hash
 	if snap.id == "" || state != "active" || hash == "" {
-		hash = s.dummy
+		hash = s.dummyHash
 	}
 	release, err := bootstrapHashSlot(ctx)
 	if err != nil {

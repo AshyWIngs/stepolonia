@@ -1,23 +1,24 @@
-package database
+package cmsintegration
 
 import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"github.com/jackc/pgx/v5"
+	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/testpostgres"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5"
-	"stepolonia/apps/api/internal/cms"
 )
 
 const onboardingDeniedLogin = "denied@example.test"
 const onboardingEnrollmentKind = "enrollment"
 
 func TestAuthOnboardingUnavailableTargetIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t)
+	f := newRestrictedAuthHTTPFixture(t)
 	full := authFull(t, f.state)
 	ctx := context.Background()
 	u, err := f.state.service.CreateUser(ctx, authReq(full), "unavailable-target@example.test")
@@ -357,14 +358,14 @@ func TestAuthOnboardingSecurityPoolAndConstraintsIntegration(t *testing.T) {
 	_, err := f.db.Exec("CREATE ROLE " + quoted + " LOGIN IN ROLE sp_security")
 	requireNoError(t, err)
 	t.Cleanup(func() { _, _ = f.db.Exec("DROP ROLE " + quoted) })
-	cfg := cmsDisposableDatabaseConfig(t)
+	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, f.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = name
 	_, err = f.db.Exec("REVOKE CREATE,TEMP ON DATABASE " + pgx.Identifier{cfg.Database}.Sanitize() + " FROM PUBLIC")
 	requireNoError(t, err)
-	pool := Open(cfg)
+	pool := database.Open(cfg)
 	defer func() { _ = pool.Close() }()
-	requireNoError(t, CheckSecurity(ctx, pool))
+	requireNoError(t, database.CheckSecurity(ctx, pool))
 	f.service, err = cms.NewAuthService(pool, f.config)
 	requireNoError(t, err)
 	full := authFull(t, f)
@@ -388,7 +389,7 @@ func TestAuthOnboardingSecurityPoolAndConstraintsIntegration(t *testing.T) {
 		_, err = pool.Exec(table.deletion)
 		assertSQLState(t, err, "42501")
 	}
-	requireNoError(t, CheckSchema(ctx, f.db))
+	requireNoError(t, database.CheckSchema(ctx, f.db))
 }
 
 func setOnboardingAuditFailure(t *testing.T, f authFixtureState, enabled bool) {

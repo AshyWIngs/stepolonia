@@ -1,4 +1,4 @@
-package database
+package cmsintegration
 
 import (
 	"context"
@@ -8,12 +8,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"testing"
-	"time"
-
 	"stepolonia/apps/api/internal/cms"
 	"stepolonia/apps/api/internal/cmshttp"
+	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/platform"
+	"stepolonia/apps/api/internal/testpostgres"
+	"testing"
+	"time"
 )
 
 // This browser scenario uses real security storage and the Swagger controls;
@@ -21,10 +22,10 @@ import (
 func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	requireAuthBrowser(t)
 	f := newAuthHTTPFixture(t)
-	cfg := cmsDisposableDatabaseConfig(t)
+	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, f.state.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = cfg.Database + "_auth"
-	db := Open(cfg)
+	db := database.Open(cfg)
 	t.Cleanup(func() { _ = db.Close() })
 	service, err := cms.NewAuthService(db, f.state.config)
 	requireNoError(t, err)

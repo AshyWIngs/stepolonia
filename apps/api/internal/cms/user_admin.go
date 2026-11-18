@@ -67,7 +67,7 @@ func (s *AuthService) requireAccessAdmin(ctx context.Context, tx *sql.Tx, access
 		return err
 	}
 	for _, id := range candidates {
-		err = s.enrolledFactors(ctx, tx, id)
+		err = s.requireEnrolledFactors(ctx, tx, id)
 		if err == nil {
 			return nil
 		}

@@ -23,7 +23,7 @@ type fakeRoles struct {
 func (s *fakeRoles) ListRoles(_ context.Context, req cms.AuthRequest, page cms.RolePage) (cms.RoleList, error) {
 	s.calls++
 	s.req, s.page, s.operation = req, page, listRolesOperation
-	return cms.RoleList{Items: []cms.Role{{ID: syntheticUserID, Name: "safe-policy", State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{{Operation: "users.read", Scope: roleInstallationScope}}}}}, s.commandErr
+	return cms.RoleList{Items: []cms.Role{{ID: exampleUUID, Name: "safe-policy", State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{{Operation: "users.read", Scope: roleInstallationScope}}}}}, s.commandErr
 }
 
 func (s *fakeRoles) GetRole(_ context.Context, req cms.AuthRequest, id string) (cms.Role, error) {
@@ -35,7 +35,7 @@ func (s *fakeRoles) GetRole(_ context.Context, req cms.AuthRequest, id string) (
 func (s *fakeRoles) CreateRole(_ context.Context, req cms.AuthRequest, input cms.RoleInput) (cms.Role, error) {
 	s.calls++
 	s.req, s.policy, s.operation = req, input, createRoleOperation
-	return cms.Role{ID: syntheticUserID, Name: input.Name, State: lifecycleFixtureState, Version: 1, Grants: input.Grants}, s.commandErr
+	return cms.Role{ID: exampleUUID, Name: input.Name, State: lifecycleFixtureState, Version: 1, Grants: input.Grants}, s.commandErr
 }
 
 func (s *fakeRoles) EditRole(_ context.Context, req cms.AuthRequest, id string, version int64, input cms.RoleInput) (cms.Role, error) {
@@ -59,12 +59,12 @@ func roleRequest(t *testing.T, server *httptest.Server, method, path, body, kind
 
 func TestAuthRolesDispatchAndSafeProjection(t *testing.T) {
 	service := &fakeRoles{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, tc := range []struct{ method, path, body, operation string }{
 		{http.MethodGet, rolesPath + "?limit=2&offset=1", "", listRolesOperation},
-		{http.MethodGet, rolesPath + "/" + syntheticUserID, "", getRoleOperation},
+		{http.MethodGet, rolesPath + "/" + exampleUUID, "", getRoleOperation},
 		{http.MethodPost, rolesPath, `{"name":"new-role","grants":[{"operation":"users.read","scope":"installation","can_delegate":false}]}`, createRoleOperation},
-		{http.MethodPatch, rolesPath + "/" + syntheticUserID, `{"name":"edited-role","grants":[],"expected_version":3}`, editRoleOperation},
+		{http.MethodPatch, rolesPath + "/" + exampleUUID, `{"name":"edited-role","grants":[],"expected_version":3}`, editRoleOperation},
 	} {
 		req := roleRequest(t, server, tc.method, tc.path, tc.body, fullKind)
 		req.Header.Set("X-Request-ID", "forged-request")
@@ -83,7 +83,7 @@ func TestAuthRolesDispatchAndSafeProjection(t *testing.T) {
 		}
 		assertSafeRoleFields(t, out)
 	}
-	if service.version != 3 || service.userID != syntheticUserID || service.policy.Grants == nil || len(service.policy.Grants) != 0 {
+	if service.version != 3 || service.userID != exampleUUID || service.policy.Grants == nil || len(service.policy.Grants) != 0 {
 		t.Fatal("PATCH failed complete grant replacement contract")
 	}
 }
@@ -113,8 +113,8 @@ func TestAuthRolesRejectMalformedNestedJSON(t *testing.T) {
 		`{"name":"x","grants":[{"operation":"users.read","scope":"installation","can_delegate":false,"field_ids":[]}]}`,
 		`{"name":"x","grants":[{"operation":"users.read","scope":"installation","can_delegate":false,"scope,can_delegate":"bad"}]}`,
 		`{"name":"x","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false}]}`,
-		`{"name":"x","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + syntheticUserID + `","object_scope":"any","field_ids":[null]}]}`,
-		`{"name":"x","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + syntheticUserID + `","object_scope":"any","field_ids":["unsafe"]}]}`,
+		`{"name":"x","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + exampleUUID + `","object_scope":"any","field_ids":[null]}]}`,
+		`{"name":"x","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + exampleUUID + `","object_scope":"any","field_ids":["unsafe"]}]}`,
 		`{"name":"x","grants":[{"operation":"content.permissions.delegate","scope":"installation","can_delegate":false,"target_scope":"installation","object_ceiling":"any","delegate_operations":["content.items.read"]}]}`,
 		`{"name":"x","grants":[` + strings.TrimSuffix(valid, "}") + `,"unknown":true}]}`,
 	} {
@@ -132,10 +132,10 @@ func TestAuthRolesRejectMalformedNestedJSON(t *testing.T) {
 func TestAuthRolesConditionalGrantShapesAndVersion(t *testing.T) {
 	for _, grant := range []string{
 		`{"operation":"users.read","scope":"installation","can_delegate":false}`,
-		`{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + syntheticUserID + `","object_scope":"assigned","field_ids":[]}`,
-		`{"operation":"content.items.create","scope":"content","can_delegate":false,"type_id":"` + syntheticUserID + `","object_scope":"type"}`,
+		`{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"` + exampleUUID + `","object_scope":"assigned","field_ids":[]}`,
+		`{"operation":"content.items.create","scope":"content","can_delegate":false,"type_id":"` + exampleUUID + `","object_scope":"type"}`,
 		`{"operation":"content.permissions.delegate","scope":"installation","can_delegate":true,"target_scope":"installation","object_ceiling":"any","may_delegate_content":false,"delegate_operations":["content.items.read"]}`,
-		`{"operation":"content.permissions.delegate","scope":"installation","can_delegate":false,"target_scope":"type","type_id":"` + syntheticUserID + `","field_ids":[],"object_ceiling":"assigned","may_delegate_content":true,"delegate_operations":["content.items.update"]}`,
+		`{"operation":"content.permissions.delegate","scope":"installation","can_delegate":false,"target_scope":"type","type_id":"` + exampleUUID + `","field_ids":[],"object_ceiling":"assigned","may_delegate_content":true,"delegate_operations":["content.items.update"]}`,
 	} {
 		body := `{"name":"x","grants":[` + grant + `],"expected_version":3}`
 		req := httptest.NewRequest(http.MethodPatch, rolePath, strings.NewReader(body))
@@ -178,7 +178,7 @@ func TestAuthRolesBodyDoesNotInheritCredentialLimit(t *testing.T) {
 	for i := range fields {
 		fields[i] = fmt.Sprintf("11111111-1111-4111-8111-%012x", i+1)
 	}
-	input := roleWriteInput{Name: "large-policy", Grants: []roleGrantDTO{{Operation: string(cms.OpContentRead), Scope: roleContentScope, TypeID: syntheticUserID, ObjectScope: roleAnyObjects, FieldIDs: fields}}}
+	input := roleWriteInput{Name: "large-policy", Grants: []roleGrantDTO{{Operation: string(cms.OpContentRead), Scope: roleContentScope, TypeID: exampleUUID, ObjectScope: roleAnyObjects, FieldIDs: fields}}}
 	raw, err := json.Marshal(input)
 	if err != nil || len(raw) <= 4096 {
 		t.Fatal("large policy fixture is not above credential cap")
@@ -198,7 +198,7 @@ func TestAuthRolesBodyDoesNotInheritCredentialLimit(t *testing.T) {
 
 func TestAuthRolesSessionOriginQueryAndMethodBoundary(t *testing.T) {
 	service := &fakeRoles{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, kind := range []string{"", preauthKind, loginKind, recoveryKind, enrollmentKind} {
 		lifecycleResponse(t, server, roleRequest(t, server, http.MethodGet, rolesPath, "", kind), 401)
 	}
@@ -211,7 +211,7 @@ func TestAuthRolesSessionOriginQueryAndMethodBoundary(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodPatch} {
 		path := rolesPath
 		if method == http.MethodPatch {
-			path += "/" + syntheticUserID
+			path += "/" + exampleUUID
 		}
 		for _, header := range []string{originHeader, testCSRFHeader} {
 			req := roleRequest(t, server, method, path, `{"name":"x","grants":[],"expected_version":1}`, fullKind)
@@ -219,7 +219,7 @@ func TestAuthRolesSessionOriginQueryAndMethodBoundary(t *testing.T) {
 			lifecycleResponse(t, server, req, 403)
 		}
 	}
-	for path, allow := range map[string]string{rolesPath: "GET, POST", rolesPath + "/" + syntheticUserID: "GET, PATCH"} {
+	for path, allow := range map[string]string{rolesPath: "GET, POST", rolesPath + "/" + exampleUUID: "GET, PATCH"} {
 		req := roleRequest(t, server, http.MethodDelete, path, "{}", fullKind)
 		res, err := server.Client().Do(req)
 		if err != nil {
@@ -237,13 +237,13 @@ func TestAuthRolesSessionOriginQueryAndMethodBoundary(t *testing.T) {
 
 func TestAuthRolesSafeServiceErrors(t *testing.T) {
 	service := &fakeRoles{}
-	server := onboardingTLSServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for err, expected := range map[error]struct {
 		status int
 		code   string
 	}{cms.ErrPermissionDenied: {403, "permission_denied"}, cms.ErrStepUpRequired: {403, "step_up_required"}, cms.ErrLastAdminRequired: {409, "last_admin_required"}, cms.ErrValidation: {400, "validation_failed"}, cms.ErrSecurityUnavailable: {503, "security_unavailable"}} {
 		service.commandErr = err
-		out := lifecycleResponse(t, server, roleRequest(t, server, http.MethodPatch, rolesPath+"/"+syntheticUserID, `{"name":"x","grants":[],"expected_version":3}`, fullKind), expected.status)
+		out := lifecycleResponse(t, server, roleRequest(t, server, http.MethodPatch, rolesPath+"/"+exampleUUID, `{"name":"x","grants":[],"expected_version":3}`, fullKind), expected.status)
 		if len(out) != 3 || out["code"] != expected.code {
 			t.Fatal("unsafe role problem projection")
 		}
@@ -251,7 +251,7 @@ func TestAuthRolesSafeServiceErrors(t *testing.T) {
 }
 
 func TestAuthRolesAuthorityFalseRoundTrip(t *testing.T) {
-	role := safeRole(cms.Role{ID: syntheticUserID, Name: "authority", State: lifecycleFixtureState, Version: 1, Grants: []cms.RoleGrant{{Operation: "content.permissions.delegate", Scope: roleInstallationScope, TargetScope: roleInstallationScope, ObjectCeiling: "any", DelegateOperations: []string{"content.items.read"}}}})
+	role := safeRole(cms.Role{ID: exampleUUID, Name: "authority", State: lifecycleFixtureState, Version: 1, Grants: []cms.RoleGrant{{Operation: "content.permissions.delegate", Scope: roleInstallationScope, TargetScope: roleInstallationScope, ObjectCeiling: "any", DelegateOperations: []string{"content.items.read"}}}})
 	raw, err := json.Marshal(role.Grants[0])
 	if err != nil || !strings.Contains(string(raw), `"may_delegate_content":false`) || !roleGrants(append(append([]byte{'['}, raw...), ']')) {
 		t.Fatal("false delegation flag omitted or response no longer accepted", string(raw))

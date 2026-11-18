@@ -1,10 +1,9 @@
-package database
+package cmsintegration
 
 import (
 	"context"
-	"testing"
-
 	"stepolonia/apps/api/internal/cms"
+	"testing"
 )
 
 func TestAuthLifecycleCapacityIntegration(t *testing.T) {
@@ -16,7 +15,7 @@ func TestAuthLifecycleCapacityIntegration(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := qaOnboardingFixture(t).state
+			f := newRestrictedAuthHTTPFixture(t).state
 			full := authFull(t, f)
 			var err error
 			if tc.name == "account capacity" || tc.name == "role capacity" {
@@ -42,7 +41,7 @@ func TestAuthLifecycleOperationalFactorsIntegration(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := qaOnboardingFixture(t).state
+			f := newRestrictedAuthHTTPFixture(t).state
 			full := authFull(t, f)
 			account := lifecycleEnrolled(t, f, full, lifecycleLogin)
 			_, err := f.db.Exec(tc.query, account.user.ID)
@@ -54,7 +53,7 @@ func TestAuthLifecycleOperationalFactorsIntegration(t *testing.T) {
 }
 
 func TestAuthLifecyclePaginationBoundsIntegration(t *testing.T) {
-	f := qaOnboardingFixture(t).state
+	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
 	for _, page := range []cms.UserPage{{Limit: -1}, {Limit: 101}, {Offset: -1}, {Offset: 101}} {
 		_, err := f.service.ListUsers(context.Background(), authReq(full), page)

@@ -64,8 +64,9 @@ def main():
         environment = {**os.environ,
                        "STAGE31_TEST_DATABASE_URL": f"postgres://postgres@127.0.0.1:{port}/{database}?sslmode=disable",
                        "CMS_HTTP_BROWSER_TEST": "1"}
-        command(["go", "-C", "apps/api", "test", "-race", "-count=1", "-run",
-                 "^Test(Auth|CMS|Bootstrap|Domain)", "./internal/database"],
+        # Both packages share this PostgreSQL cluster and its installation roles.
+        command(["go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
+                 "^Test(Auth|CMS|Bootstrap|Domain)", "./internal/database", "./internal/cmsintegration"],
                 environment=environment)
         command(["go", "-C", "apps/api", "test", "-race", "-count=1", "./internal/cmshttp"],
                 environment=environment)

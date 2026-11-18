@@ -17,6 +17,8 @@ group "default" {
   targets = ["go-modules", "web-dependencies", "npm-tools", "api-modules", "postgres-distribution"]
 }
 
+// Importing a remote reference alone need not retain its snapshot for later builds.
+// Run only the readiness stage afresh while its cache provider is available.
 target "_cache-only" {
   output = ["type=cacheonly"]
 }
@@ -25,7 +27,8 @@ target "go-modules" {
   inherits = ["_cache-only"]
   context = "."
   dockerfile = "infrastructure/quality/Dockerfile"
-  target = "go-dependencies"
+  target = "go-cache-ready"
+  no-cache-filter = ["go-cache-ready"]
   cache-from = cache_from("go-modules")
   cache-to = cache_to("go-modules")
 }
@@ -34,7 +37,8 @@ target "web-dependencies" {
   inherits = ["_cache-only"]
   context = "."
   dockerfile = "apps/web/Dockerfile"
-  target = "dependencies"
+  target = "cache-ready"
+  no-cache-filter = ["cache-ready"]
   cache-from = cache_from("web-dependencies")
   cache-to = cache_to("web-dependencies")
 }
@@ -43,7 +47,8 @@ target "npm-tools" {
   inherits = ["_cache-only"]
   context = "."
   dockerfile = "infrastructure/quality/Dockerfile"
-  target = "duplicates-build"
+  target = "npm-cache-ready"
+  no-cache-filter = ["npm-cache-ready"]
   cache-from = cache_from("npm-tools")
   cache-to = cache_to("npm-tools")
 }
@@ -52,7 +57,8 @@ target "api-modules" {
   inherits = ["_cache-only"]
   context = "apps/api"
   dockerfile = "Dockerfile"
-  target = "dependencies"
+  target = "cache-ready"
+  no-cache-filter = ["cache-ready"]
   cache-from = cache_from("api-modules")
   cache-to = cache_to("api-modules")
 }
@@ -61,7 +67,8 @@ target "postgres-distribution" {
   inherits = ["_cache-only"]
   context = "infrastructure/postgres"
   dockerfile = "Dockerfile"
-  target = "distribution"
+  target = "cache-ready"
+  no-cache-filter = ["cache-ready"]
   cache-from = cache_from("postgres-distribution")
   cache-to = cache_to("postgres-distribution")
 }

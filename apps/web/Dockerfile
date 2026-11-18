@@ -25,6 +25,10 @@ fs.copyFileSync('/tmp/esbuild', binaryPath);
 fs.unlinkSync('/tmp/esbuild');
 assert.equal(execFileSync('node_modules/.bin/esbuild', ['--version'], { encoding: 'utf8' }).trim(), version);
 JS
+
+FROM dependencies AS cache-ready
+RUN test -x node_modules/.bin/esbuild && test -s node_modules/nuxt/package.json
+
 FROM dependencies AS source
 COPY apps/web .
 # Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
