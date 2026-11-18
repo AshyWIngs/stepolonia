@@ -183,6 +183,10 @@ export interface ManagedCollection {
   version: string
   schema_no: string
   fields: (RegistryField & { field_id: string })[]
+  applied_access?: {
+    role_id: string
+    grants: { operation: string, object_scope?: string, field_ids?: string[] }[]
+  }
 }
 
 function registryPath(type: string) {

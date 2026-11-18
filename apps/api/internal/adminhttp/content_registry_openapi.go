@@ -50,6 +50,9 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 			draftVersionField:         contentVersionSchema("Collection version used for the next revision.", "1"),
 			schemaNoField:             contentVersionSchema("Current sealed semantic schema number.", "1"),
 			contentFieldsProperty:     managedFields,
+			"applied_access": responseDTOSchema("Exact non-delegable self-access applied by this committed write. Omitted on reads and writes without opt-in.", registryAccessReceipt{
+				RoleID: exampleUUID, Grants: []registryAccessGrant{{Operation: "content.items.create"}},
+			}),
 		},
 		[]string{typeIDField, typeKeyField, registryNamespaceProperty, draftVersionField, schemaNoField, contentFieldsProperty},
 		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, Version: 1, SchemaNo: 1, Fields: exampleFields},

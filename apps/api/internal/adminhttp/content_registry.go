@@ -28,8 +28,8 @@ const (
 type RegistryEditor interface {
 	ReadCollectionRenderers(context.Context, identity.AuthRequest) ([]content.CollectionRenderer, error)
 	ReadCollectionForManagement(context.Context, identity.AuthRequest, string) (content.TypeSchema, error)
-	CreateCollection(context.Context, identity.AuthRequest, string, []content.Definition, bool) (content.TypeSchema, error)
-	ReviseCollection(context.Context, identity.AuthRequest, string, int64, []content.Definition, bool) (content.TypeSchema, error)
+	CreateCollection(context.Context, identity.AuthRequest, string, []content.Definition, bool) (content.RegistryWriteResult, error)
+	ReviseCollection(context.Context, identity.AuthRequest, string, int64, []content.Definition, bool) (content.RegistryWriteResult, error)
 }
 
 var registryRendererRoute = route{
@@ -107,6 +107,17 @@ type managedRegistryField struct {
 	registryField
 }
 
+type registryAccessGrant struct {
+	Operation string   `json:"operation"`
+	Scope     string   `json:"object_scope,omitempty"`
+	FieldIDs  []string `json:"field_ids,omitempty"`
+}
+
+type registryAccessReceipt struct {
+	RoleID string                `json:"role_id" format:"uuid"`
+	Grants []registryAccessGrant `json:"grants"`
+}
+
 type registryCollectionResponse struct {
 	TypeID    string                 `json:"type_id"`
 	TypeKey   string                 `json:"type_key"`
@@ -114,6 +125,7 @@ type registryCollectionResponse struct {
 	Version   int64                  `json:"version,string"`
 	SchemaNo  int64                  `json:"schema_no,string"`
 	Fields    []managedRegistryField `json:"fields"`
+	Access    *registryAccessReceipt `json:"applied_access,omitempty"`
 }
 
 type registryRenderersResponse struct {
@@ -178,16 +190,28 @@ func (h *handler) serveRegistry(w http.ResponseWriter, r *http.Request, rt route
 		problem(w, status, code)
 		return
 	}
-	schema, err := runRegistryMutation(r.Context(), req, rt.operationID, target.typeKey, raw, service)
+	result, err := runRegistryMutation(r.Context(), req, rt.operationID, target.typeKey, raw, service)
 	if err != nil {
 		writeRegistryError(w, err)
 		return
 	}
+	out := collectionResponse(result.Schema)
+	if result.Access.RoleID != "" {
+		out.Access = registryReceipt(result.Access)
+	}
 	if rt.operationID == registryCreateOperation {
-		respondStatus(w, http.StatusCreated, collectionResponse(schema))
+		respondStatus(w, http.StatusCreated, out)
 		return
 	}
-	respond(w, collectionResponse(schema))
+	respond(w, out)
+}
+
+func registryReceipt(access identity.CollectionAccess) *registryAccessReceipt {
+	grants := make([]registryAccessGrant, 0, len(access.Grants))
+	for _, grant := range access.Grants {
+		grants = append(grants, registryAccessGrant{Operation: grant.Operation, Scope: grant.ObjectScope, FieldIDs: grant.FieldIDs})
+	}
+	return &registryAccessReceipt{RoleID: access.RoleID, Grants: grants}
 }
 
 func (h *handler) serveRegistryRead(w http.ResponseWriter, r *http.Request, target routeTarget, ip string, service RegistryEditor) {
@@ -223,22 +247,22 @@ func (h *handler) serveRegistryRead(w http.ResponseWriter, r *http.Request, targ
 	respond(w, collectionResponse(schema))
 }
 
-func runRegistryMutation(ctx context.Context, req identity.AuthRequest, operation, key string, raw []byte, service RegistryEditor) (content.TypeSchema, error) {
+func runRegistryMutation(ctx context.Context, req identity.AuthRequest, operation, key string, raw []byte, service RegistryEditor) (content.RegistryWriteResult, error) {
 	value, ok := decodeUniqueJSON(raw)
 	object, objectOK := value.(map[string]any)
 	if !ok || !objectOK || !utf8.Valid(raw) || !validRegistryInput(object, operation) {
-		return content.TypeSchema{}, identity.ErrValidation
+		return content.RegistryWriteResult{}, identity.ErrValidation
 	}
 	if operation == registryCreateOperation {
 		var input registryCreateInput
 		if err := json.Unmarshal(raw, &input); err != nil {
-			return content.TypeSchema{}, identity.ErrValidation
+			return content.RegistryWriteResult{}, identity.ErrValidation
 		}
 		return service.CreateCollection(ctx, req, input.Namespace, registryDefinitions(input.Fields), input.InitialAccess)
 	}
 	var input registryReviseInput
 	if err := json.Unmarshal(raw, &input); err != nil {
-		return content.TypeSchema{}, identity.ErrValidation
+		return content.RegistryWriteResult{}, identity.ErrValidation
 	}
 	return service.ReviseCollection(ctx, req, key, input.ExpectedVersion, registryDefinitions(input.Fields), input.Initialize)
 }

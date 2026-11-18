@@ -161,6 +161,18 @@ onBeforeUnmount(() => { active = false })
     <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
     <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
+    <details v-if="collection?.applied_access">
+      <summary>{{ translate('admin.registry_access_applied') }}</summary>
+      <ul>
+        <li v-for="grant in collection.applied_access.grants" :key="`${grant.operation}:${grant.object_scope}`">
+          <code>{{ grant.operation }}</code>
+          <template v-if="grant.object_scope"> · {{ grant.object_scope }}</template>
+          <template v-if="grant.field_ids?.length">
+            · {{ collection.fields.filter(field => grant.field_ids?.includes(field.field_id)).map(field => field.key).join(', ') }}
+          </template>
+        </li>
+      </ul>
+    </details>
     <button v-if="conflict || (failure && !canEdit)" type="button" :disabled="busy" @click="load">{{ translate('admin.registry_reload') }}</button>
     <form v-if="renderer" @submit.prevent="save" @input="dirty = true">
       <label for="registry-renderer">{{ translate('admin.registry_choose') }}</label>

@@ -99,6 +99,7 @@ INSERT INTO public.ui_message_keys (message_key) VALUES
 ('admin.registry_create'),
 ('admin.registry_created'),
 ('admin.registry_revised'),
+('admin.registry_access_applied'),
 ('admin.registry_reload'),
 ('admin.registry_conflict'),
 ('admin.registry_invalid');

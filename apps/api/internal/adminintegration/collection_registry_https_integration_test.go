@@ -48,6 +48,9 @@ func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 		t.Fatalf("wrong collection receipt: %s", created)
 	}
 	typeID, roleID := assertInitialEventGrants(t, f.state)
+	if !strings.Contains(created, fmt.Sprintf(`"applied_access":{"role_id":%q,"grants":[`, roleID)) {
+		t.Fatalf("missing access receipt: %s", created)
+	}
 	call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusConflict)
 	call(http.MethodPost, draftHTTPPrefix+"event", createDraftHTTPSBody, http.StatusCreated)
 	const revision = `{"expected_version":"1","initialize_new_field_access":true,"fields":[` + eventBaseFields + `,` + eventExtraField + `]}`
@@ -71,7 +74,7 @@ func assertUninitializedFieldAvailableToManagers(t *testing.T, state authFixture
 	 FROM public.content_fields f WHERE f.type_id=$1 AND f.key='internal_note'`, typeID).Scan(&fieldID, &grants))
 	read := call(http.MethodGet, eventCollectionPath, "", http.StatusOK)
 	idJSON := fmt.Sprintf(`"field_id":%q`, fieldID)
-	if grants != 0 || !strings.Contains(revised, idJSON) || !strings.Contains(read, idJSON) {
+	if grants != 0 || strings.Contains(revised, `"applied_access"`) || !strings.Contains(revised, idJSON) || !strings.Contains(read, idJSON) {
 		t.Fatalf("uninitialized field: grants=%d, revised=%s, read=%s", grants, revised, read)
 	}
 }

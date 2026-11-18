@@ -23,6 +23,12 @@ type CollectionMutation struct {
 	NewFieldIDs    []string
 }
 
+// CollectionAccess records the exact policy added by this committed command.
+type CollectionAccess struct {
+	RoleID string
+	Grants []RoleGrant
+}
+
 type collectionWriter func(context.Context, *sql.Tx) (CollectionMutation, error)
 
 // WithCollectionRead authorizes Registry maintenance reads under the same
@@ -36,15 +42,15 @@ func (s *AuthService) WithCollectionRead(ctx context.Context, req AuthRequest, r
 	})
 }
 
-func (s *AuthService) WithCollectionCreate(ctx context.Context, req AuthRequest, initialize bool, create collectionWriter) error {
+func (s *AuthService) WithCollectionCreate(ctx context.Context, req AuthRequest, initialize bool, create collectionWriter) (CollectionAccess, error) {
 	return s.withCollectionMutation(ctx, req, collectionCreatedEvent, initialize, create)
 }
 
-func (s *AuthService) WithCollectionRevision(ctx context.Context, req AuthRequest, initialize bool, revise collectionWriter) error {
+func (s *AuthService) WithCollectionRevision(ctx context.Context, req AuthRequest, initialize bool, revise collectionWriter) (CollectionAccess, error) {
 	return s.withCollectionMutation(ctx, req, collectionRevisedEvent, initialize, revise)
 }
 
-func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthRequest, event string, initialize bool, write collectionWriter) error {
+func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthRequest, event string, initialize bool, write collectionWriter) (CollectionAccess, error) {
 	permissions := []string{string(OpContentTypesManage)}
 	if initialize {
 		permissions = append(permissions, opContentInitializeAccess)
@@ -52,7 +58,8 @@ func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthReques
 			permissions = append(permissions, opRolesEdit)
 		}
 	}
-	return s.authorizedCommand(ctx, req, permissions, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
+	var access CollectionAccess
+	err := s.authorizedCommand(ctx, req, permissions, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
 		var before accessSnapshot
 		if initialize {
 			var err error
@@ -66,49 +73,57 @@ func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthReques
 			return err
 		}
 		if initialize {
-			if err := s.initializeCollectionAccess(ctx, tx, session.user, before, change, event == collectionCreatedEvent); err != nil {
+			access, err = s.initializeCollectionAccess(ctx, tx, session.user, before, change, event == collectionCreatedEvent)
+			if err != nil {
 				return err
 			}
 		}
 		return securityAudit(ctx, tx, event, session.user, change.TypeID, "")
 	})
+	if err != nil {
+		return CollectionAccess{}, err
+	}
+	return access, nil
 }
 
-func (s *AuthService) initializeCollectionAccess(ctx context.Context, tx *sql.Tx, actor string, before accessSnapshot, change CollectionMutation, fresh bool) error {
+func (s *AuthService) initializeCollectionAccess(ctx context.Context, tx *sql.Tx, actor string, before accessSnapshot, change CollectionMutation, fresh bool) (CollectionAccess, error) {
 	if err := checkNewCollectionFields(ctx, tx, actor, change, fresh); err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	grants := newCollectionGrants(before[actor].active, change, fresh)
 	if len(grants) == 0 || !withinEnvelope(before[actor].active, accessGrants(grants)) {
-		return ErrPermissionDenied
+		return CollectionAccess{}, ErrPermissionDenied
 	}
 	roleID, err := findOrCreateBoundRole(ctx, tx, actor, change.TypeID, fresh)
 	if err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	for _, grant := range grants {
 		if err := addBoundRoleGrant(ctx, tx, roleID, grant); err != nil {
-			return err
+			return CollectionAccess{}, err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE public.roles SET state='active',version=version+1 WHERE id=$1`, roleID); err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	after, err := loadAccess(ctx, tx)
 	if err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	if err := checkCollectionAccessDelta(before, after, actor, grants); err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	if err := s.requireAccessAdmin(ctx, tx, after); err != nil {
-		return err
+		return CollectionAccess{}, err
 	}
 	event := newFieldAccessEvent
 	if fresh {
 		event = initialAccessEvent
 	}
-	return recordCollectionAccess(ctx, tx, event, actor, roleID, change, grants)
+	if err := recordCollectionAccess(ctx, tx, event, actor, roleID, change, grants); err != nil {
+		return CollectionAccess{}, err
+	}
+	return CollectionAccess{RoleID: roleID, Grants: grants}, nil
 }
 
 func checkNewCollectionFields(ctx context.Context, tx *sql.Tx, actor string, change CollectionMutation, fresh bool) error {

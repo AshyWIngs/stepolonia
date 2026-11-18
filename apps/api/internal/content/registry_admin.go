@@ -70,14 +70,19 @@ func (e *DraftEditor) ReadCollectionForManagement(ctx context.Context, req ident
 	return registryCommandResult(out, err)
 }
 
-func (e *DraftEditor) CreateCollection(ctx context.Context, req identity.AuthRequest, namespace string, fields []Definition, initialize bool) (TypeSchema, error) {
+type RegistryWriteResult struct {
+	Schema TypeSchema
+	Access identity.CollectionAccess
+}
+
+func (e *DraftEditor) CreateCollection(ctx context.Context, req identity.AuthRequest, namespace string, fields []Definition, initialize bool) (RegistryWriteResult, error) {
 	if e == nil || e.auth == nil {
-		return TypeSchema{}, identity.ErrSecurityUnavailable
+		return RegistryWriteResult{}, identity.ErrSecurityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftCandidateTimeout)
 	defer cancel()
 	var out TypeSchema
-	err := e.auth.WithCollectionCreate(ctx, req, initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
+	access, err := e.auth.WithCollectionCreate(ctx, req, initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
 		if err := rejectRegistryFieldIDs(fields); err != nil {
 			return identity.CollectionMutation{}, auditedCandidateError(err)
 		}
@@ -88,17 +93,18 @@ func (e *DraftEditor) CreateCollection(ctx context.Context, req identity.AuthReq
 		}
 		return collectionChange(out, TypeSchema{}), nil
 	})
-	return registryCommandResult(out, err)
+	schema, err := registryCommandResult(out, err)
+	return RegistryWriteResult{Schema: schema, Access: access}, err
 }
 
-func (e *DraftEditor) ReviseCollection(ctx context.Context, req identity.AuthRequest, typeKey string, version int64, fields []Definition, initialize bool) (TypeSchema, error) {
+func (e *DraftEditor) ReviseCollection(ctx context.Context, req identity.AuthRequest, typeKey string, version int64, fields []Definition, initialize bool) (RegistryWriteResult, error) {
 	if e == nil || e.auth == nil {
-		return TypeSchema{}, identity.ErrSecurityUnavailable
+		return RegistryWriteResult{}, identity.ErrSecurityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftCandidateTimeout)
 	defer cancel()
 	var out TypeSchema
-	err := e.auth.WithCollectionRevision(ctx, req, initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
+	access, err := e.auth.WithCollectionRevision(ctx, req, initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
 		current, err := loadManagedCollection(ctx, tx, typeKey)
 		if err != nil {
 			return identity.CollectionMutation{}, auditedCandidateError(err)
@@ -115,7 +121,8 @@ func (e *DraftEditor) ReviseCollection(ctx context.Context, req identity.AuthReq
 		}
 		return collectionChange(out, current), nil
 	})
-	return registryCommandResult(out, err)
+	schema, err := registryCommandResult(out, err)
+	return RegistryWriteResult{Schema: schema, Access: access}, err
 }
 
 func loadManagedCollection(ctx context.Context, tx *sql.Tx, typeKey string) (TypeSchema, error) {
