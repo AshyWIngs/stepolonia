@@ -203,6 +203,17 @@ async function verifyTypeBuilder(page) {
   await page.getByRole('button', { name: 'Save schema changes', exact: true }).click()
   await page.getByText('Current schema 2', { exact: true }).waitFor()
   await page.getByText('Collection changes saved.', { exact: true }).waitFor()
+  const articleSchema = '**/api/v1/admin/content-types/article'
+  await page.route(articleSchema, route => route.fulfill({ status: 503, json: { code: 'security_unavailable' } }))
+  await renderer.selectOption('article')
+  await page.getByRole('alert').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Save schema changes', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Create collection', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
+  await page.unroute(articleSchema)
+  await page.getByRole('button', { name: 'Reload collection', exact: true }).click()
+  await page.getByRole('group', { name: 'title', exact: true }).waitFor()
+  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 }
 

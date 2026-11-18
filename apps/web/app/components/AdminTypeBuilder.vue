@@ -25,6 +25,8 @@ const kinds: FieldKind[] = ['string', 'text', 'markdown', 'boolean', 'integer', 
 let active = true
 
 const renderer = computed(() => renderers.value.find(item => item.type_key === selected.value))
+const canEdit = computed(() => renderer.value && fields.value.length > 0 &&
+  (renderer.value.available ? !collection.value : collection.value?.type_key === renderer.value.type_key))
 const hasNewFields = computed(() => fields.value.some(field => !baselineKeys.value.includes(field.key)))
 
 function showError(error: unknown) {
@@ -57,7 +59,16 @@ async function run(work: () => Promise<void>) {
 }
 
 function setFields(list: RegistryField[]) {
-  fields.value = list.map(field => ({ ...field }))
+  fields.value = list.map(field => ({
+    key: field.key,
+    kind: field.kind,
+    scope: field.scope,
+    visibility: field.visibility,
+    required: field.required,
+    target_type_id: field.target_type_id,
+    config: field.config,
+    display_labels: field.display_labels,
+  }))
   baselineKeys.value = list.map(field => field.key)
   initialize.value = false
   dirty.value = false
@@ -66,9 +77,14 @@ function setFields(list: RegistryField[]) {
 
 async function openRenderer() {
   const choice = renderer.value
+  collection.value = undefined
+  setFields([])
   if (!choice) return
-  collection.value = choice.available ? undefined : await readManagedCollection(choice.type_key)
-  if (active) setFields(collection.value?.fields ?? choice.fields)
+  const loaded = choice.available ? undefined : await readManagedCollection(choice.type_key)
+  if (!active || selected.value !== choice.type_key) return
+  if (loaded && loaded.type_key !== choice.type_key) throw new Error('Collection response does not match the selected type')
+  collection.value = loaded
+  setFields(loaded?.fields ?? choice.fields)
 }
 
 async function load() {
@@ -119,7 +135,7 @@ function changeKind(field: RegistryField) {
 
 async function save() {
   const choice = renderer.value
-  if (!choice || conflict.value) return
+  if (!choice || !canEdit.value || conflict.value) return
   await run(async () => {
     const wasPresent = collection.value
     const saved = wasPresent
@@ -145,58 +161,60 @@ onBeforeUnmount(() => { active = false })
     <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
     <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
-    <button v-if="conflict" type="button" :disabled="busy" @click="load">{{ translate('admin.registry_reload') }}</button>
+    <button v-if="conflict || (failure && !canEdit)" type="button" :disabled="busy" @click="load">{{ translate('admin.registry_reload') }}</button>
     <form v-if="renderer" @submit.prevent="save" @input="dirty = true">
       <label for="registry-renderer">{{ translate('admin.registry_choose') }}</label>
       <select id="registry-renderer" v-model="selected" :disabled="busy || dirty" @change="run(openRenderer)">
         <option v-for="item in renderers" :key="item.type_key" :value="item.type_key">{{ item.type_key }}</option>
       </select>
-      <p v-if="collection">{{ translate('admin.registry_schema') }} {{ collection.schema_no }}</p>
-      <fieldset v-for="(field, index) in fields" :key="index" :disabled="busy">
-        <legend>{{ field.key || translate('admin.registry_new_field') }}</legend>
-        <template v-if="index >= baselineKeys.length">
-          <label :for="`registry-key-${index}`">{{ translate('admin.registry_field_key') }}</label>
-          <input :id="`registry-key-${index}`" v-model="field.key" required pattern="[a-z][a-z0-9_]{0,63}">
-          <label :for="`registry-kind-${index}`">{{ translate('admin.registry_kind') }}</label>
-          <select :id="`registry-kind-${index}`" v-model="field.kind" @change="changeKind(field)">
-            <option v-for="kind in kinds" :key="kind" :value="kind">{{ kind }}</option>
-          </select>
-          <label :for="`registry-scope-${index}`">{{ translate('admin.registry_scope') }}</label>
-          <select :id="`registry-scope-${index}`" v-model="field.scope">
-            <option value="localized">{{ translate('admin.content_translation') }}</option>
-            <option value="shared">{{ translate('admin.content_shared') }}</option>
-          </select>
-          <label :for="`registry-visibility-${index}`">{{ translate('admin.registry_visibility') }}</label>
-          <select :id="`registry-visibility-${index}`" v-model="field.visibility">
-            <option value="private">{{ translate('admin.registry_private') }}</option>
-            <option value="public">{{ translate('admin.registry_public') }}</option>
-          </select>
-          <template v-if="field.kind === 'enum'">
-            <label :for="`registry-codes-${index}`">{{ translate('admin.registry_codes') }}</label>
-            <input :id="`registry-codes-${index}`" required :value="field.config?.codes?.join(', ')" @input="updateCodes(field, $event)">
-          </template>
-          <template v-if="field.kind === 'relation'">
-            <label :for="`registry-target-${index}`">{{ translate('admin.registry_target') }}</label>
-            <select :id="`registry-target-${index}`" v-model="field.target_type_id" required>
-              <option v-for="target in targets" :key="target.type_id" :value="target.type_id">{{ target.type_key }}</option>
+      <template v-if="canEdit">
+        <p v-if="collection">{{ translate('admin.registry_schema') }} {{ collection.schema_no }}</p>
+        <fieldset v-for="(field, index) in fields" :key="index" :disabled="busy">
+          <legend>{{ field.key || translate('admin.registry_new_field') }}</legend>
+          <template v-if="index >= baselineKeys.length">
+            <label :for="`registry-key-${index}`">{{ translate('admin.registry_field_key') }}</label>
+            <input :id="`registry-key-${index}`" v-model="field.key" required pattern="[a-z][a-z0-9_]{0,63}">
+            <label :for="`registry-kind-${index}`">{{ translate('admin.registry_kind') }}</label>
+            <select :id="`registry-kind-${index}`" v-model="field.kind" @change="changeKind(field)">
+              <option v-for="kind in kinds" :key="kind" :value="kind">{{ kind }}</option>
             </select>
+            <label :for="`registry-scope-${index}`">{{ translate('admin.registry_scope') }}</label>
+            <select :id="`registry-scope-${index}`" v-model="field.scope">
+              <option value="localized">{{ translate('admin.content_translation') }}</option>
+              <option value="shared">{{ translate('admin.content_shared') }}</option>
+            </select>
+            <label :for="`registry-visibility-${index}`">{{ translate('admin.registry_visibility') }}</label>
+            <select :id="`registry-visibility-${index}`" v-model="field.visibility">
+              <option value="private">{{ translate('admin.registry_private') }}</option>
+              <option value="public">{{ translate('admin.registry_public') }}</option>
+            </select>
+            <template v-if="field.kind === 'enum'">
+              <label :for="`registry-codes-${index}`">{{ translate('admin.registry_codes') }}</label>
+              <input :id="`registry-codes-${index}`" required :value="field.config?.codes?.join(', ')" @input="updateCodes(field, $event)">
+            </template>
+            <template v-if="field.kind === 'relation'">
+              <label :for="`registry-target-${index}`">{{ translate('admin.registry_target') }}</label>
+              <select :id="`registry-target-${index}`" v-model="field.target_type_id" required>
+                <option v-for="target in targets" :key="target.type_id" :value="target.type_id">{{ target.type_key }}</option>
+              </select>
+            </template>
+            <button type="button" class="admin-secondary" @click="removeField(index)">{{ translate('admin.registry_remove_field') }}</button>
           </template>
-          <button type="button" class="admin-secondary" @click="removeField(index)">{{ translate('admin.registry_remove_field') }}</button>
-        </template>
-        <p v-else>{{ field.kind }} · {{ field.scope }} · {{ field.visibility }}</p>
-        <label :for="`registry-label-${index}`">{{ translate('admin.registry_label') }}</label>
-        <input :id="`registry-label-${index}`" :value="labelFor(field, 'label')" maxlength="4096" @input="updateLabel(field, 'label', $event)">
-        <label :for="`registry-help-${index}`">{{ translate('admin.registry_help') }}</label>
-        <input :id="`registry-help-${index}`" :value="labelFor(field, 'help')" maxlength="4096" @input="updateLabel(field, 'help', $event)">
-      </fieldset>
-      <button type="button" class="admin-secondary" :disabled="busy || fields.length >= 64" @click="addField">{{ translate('admin.registry_add_field') }}</button>
-      <label v-if="!collection || hasNewFields" class="builder-check">
-        <input v-model="initialize" type="checkbox" :disabled="busy">
-        {{ translate(collection ? 'admin.registry_new_field_access' : 'admin.registry_initial_access') }}
-      </label>
-      <button type="submit" :disabled="busy || conflict || Boolean(collection && !dirty)">
-        {{ translate(collection ? 'admin.registry_save' : 'admin.registry_create') }}
-      </button>
+          <p v-else>{{ field.kind }} · {{ field.scope }} · {{ field.visibility }}</p>
+          <label :for="`registry-label-${index}`">{{ translate('admin.registry_label') }}</label>
+          <input :id="`registry-label-${index}`" :value="labelFor(field, 'label')" maxlength="4096" @input="updateLabel(field, 'label', $event)">
+          <label :for="`registry-help-${index}`">{{ translate('admin.registry_help') }}</label>
+          <input :id="`registry-help-${index}`" :value="labelFor(field, 'help')" maxlength="4096" @input="updateLabel(field, 'help', $event)">
+        </fieldset>
+        <button type="button" class="admin-secondary" :disabled="busy || fields.length >= 64" @click="addField">{{ translate('admin.registry_add_field') }}</button>
+        <label v-if="!collection || hasNewFields" class="builder-check">
+          <input v-model="initialize" type="checkbox" :disabled="busy">
+          {{ translate(collection ? 'admin.registry_new_field_access' : 'admin.registry_initial_access') }}
+        </label>
+        <button type="submit" :disabled="busy || conflict || Boolean(collection && !dirty)">
+          {{ translate(collection ? 'admin.registry_save' : 'admin.registry_create') }}
+        </button>
+      </template>
     </form>
   </section>
 </template>

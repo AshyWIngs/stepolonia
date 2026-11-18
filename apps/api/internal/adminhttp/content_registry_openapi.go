@@ -36,16 +36,23 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 	options := responseDTOSchema("Renderer choices for the installation's collection registry.", registryRenderersResponse{Items: []registryRenderer{option}})
 	options.Properties["items"] = &huma.Schema{Type: huma.TypeArray, Items: schemaRef(rendererSchema)}
 	schemas[registryRenderersSchema] = options
+	managedFields := registryFieldsSchema()
+	managedFields.Items.Properties["field_id"] = uuidSchema(exampleUUID)
+	managedFields.Items.Required = append(managedFields.Items.Required, "field_id")
+	exampleFields := make([]managedRegistryField, 0, len(option.Fields))
+	for _, field := range option.Fields {
+		exampleFields = append(exampleFields, managedRegistryField{FieldID: exampleUUID, registryField: field})
+	}
 	schemas[registryCollectionSchema] = closedObjectSchema("Current schema and optimistic version for a managed collection.",
 		map[string]*huma.Schema{
 			typeIDField: uuidSchema(exampleUUID), typeKeyField: contentTypeParameter("").Schema,
 			registryNamespaceProperty: stringSchema("Registered public renderer namespace.", option.Namespace),
 			draftVersionField:         contentVersionSchema("Collection version used for the next revision.", "1"),
 			schemaNoField:             contentVersionSchema("Current sealed semantic schema number.", "1"),
-			contentFieldsProperty:     registryFieldsSchema(),
+			contentFieldsProperty:     managedFields,
 		},
 		[]string{typeIDField, typeKeyField, registryNamespaceProperty, draftVersionField, schemaNoField, contentFieldsProperty},
-		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, Version: 1, SchemaNo: 1, Fields: option.Fields},
+		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, Version: 1, SchemaNo: 1, Fields: exampleFields},
 	)
 }
 

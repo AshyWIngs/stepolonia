@@ -102,13 +102,18 @@ type registryReviseInput struct {
 	Fields          []registryField `json:"fields"`
 }
 
+type managedRegistryField struct {
+	FieldID string `json:"field_id"`
+	registryField
+}
+
 type registryCollectionResponse struct {
-	TypeID    string          `json:"type_id"`
-	TypeKey   string          `json:"type_key"`
-	Namespace string          `json:"route_namespace"`
-	Version   int64           `json:"version,string"`
-	SchemaNo  int64           `json:"schema_no,string"`
-	Fields    []registryField `json:"fields"`
+	TypeID    string                 `json:"type_id"`
+	TypeKey   string                 `json:"type_key"`
+	Namespace string                 `json:"route_namespace"`
+	Version   int64                  `json:"version,string"`
+	SchemaNo  int64                  `json:"schema_no,string"`
+	Fields    []managedRegistryField `json:"fields"`
 }
 
 type registryRenderersResponse struct {
@@ -123,8 +128,13 @@ type registryRenderer struct {
 }
 
 func collectionResponse(schema content.TypeSchema) registryCollectionResponse {
+	definitions := registryFields(schema.Fields)
+	fields := make([]managedRegistryField, 0, len(definitions))
+	for index, field := range definitions {
+		fields = append(fields, managedRegistryField{FieldID: schema.Fields[index].ID, registryField: field})
+	}
 	return registryCollectionResponse{TypeID: schema.TypeID, TypeKey: schema.Key, Namespace: schema.RouteNamespace,
-		Version: schema.Version, SchemaNo: schema.SchemaNo, Fields: registryFields(schema.Fields)}
+		Version: schema.Version, SchemaNo: schema.SchemaNo, Fields: fields}
 }
 
 func registryFields(fields []content.Definition) []registryField {

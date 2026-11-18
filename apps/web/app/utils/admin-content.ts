@@ -182,7 +182,7 @@ export interface ManagedCollection {
   route_namespace: string
   version: string
   schema_no: string
-  fields: RegistryField[]
+  fields: (RegistryField & { field_id: string })[]
 }
 
 function registryPath(type: string) {

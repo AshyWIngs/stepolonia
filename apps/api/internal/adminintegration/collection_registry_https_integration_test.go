@@ -2,6 +2,7 @@ package adminintegration
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -54,8 +55,25 @@ func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 	assertAddedFieldGrants(t, f.state, typeID, roleID)
 	call(http.MethodPatch, eventCollectionPath, revision, http.StatusConflict)
 	call(http.MethodPatch, eventCollectionPath, strings.Replace(revision, `"expected_version":"1"`, `"expected_version":"2"`, 1), http.StatusForbidden)
-	call(http.MethodGet, eventCollectionPath, "", http.StatusOK)
+	assertUninitializedFieldAvailableToManagers(t, f.state, typeID, call)
 	assertBoundRoleGuard(t, f.state, typeID, roleID)
+}
+
+func assertUninitializedFieldAvailableToManagers(t *testing.T, state authFixtureState, typeID string, call func(string, string, string, int) string) {
+	t.Helper()
+	const extra = `{"key":"internal_note","kind":"text","scope":"localized","visibility":"private","required":false}`
+	const revise = `{"expected_version":"2","fields":[` + eventBaseFields + `,` + eventExtraField + `,` + extra + `]}`
+	revised := call(http.MethodPatch, eventCollectionPath, revise, http.StatusOK)
+	var fieldID string
+	var grants int
+	requireNoError(t, state.db.QueryRow(`SELECT f.field_id::text,
+	 (SELECT count(*) FROM public.grant_fields g WHERE g.field_id=f.field_id AND g.type_id=f.type_id)
+	 FROM public.content_fields f WHERE f.type_id=$1 AND f.key='internal_note'`, typeID).Scan(&fieldID, &grants))
+	read := call(http.MethodGet, eventCollectionPath, "", http.StatusOK)
+	idJSON := fmt.Sprintf(`"field_id":%q`, fieldID)
+	if grants != 0 || !strings.Contains(revised, idJSON) || !strings.Contains(read, idJSON) {
+		t.Fatalf("uninitialized field: grants=%d, revised=%s, read=%s", grants, revised, read)
+	}
 }
 
 func verifyRegistryAuditRollback(t *testing.T, state authFixtureState, create func()) {
@@ -81,7 +99,7 @@ func assertInitialEventGrants(t *testing.T, state authFixtureState) (string, str
  (SELECT count(*) FROM public.grant_fields f JOIN public.role_grants g ON g.id=f.grant_id WHERE g.role_id=r.id),
  (SELECT count(*) FROM public.user_roles m WHERE m.role_id=r.id AND m.user_id=$1),
  (SELECT count(*) FROM public.security_audit a WHERE a.actor_id=$1 AND a.target_id=t.id
-  AND a.operation='content.initial_access_granted' AND a.details->>'role_id'=r.id::text)
+  AND a.operation='content.initial_access_granted' AND a.details->>'reason'='explicit_initial_access' AND a.details->>'role_id'=r.id::text)
  FROM public.content_types t JOIN public.roles r ON r.self_access_type_id=t.id AND r.self_access_user_id=$1
  WHERE t.key='event' AND r.state='active'`, state.user).Scan(&typeID, &roleID, &grants, &fieldGrants, &memberships, &events))
 	if grants != 6 || fieldGrants != 10 || memberships != 1 || events != 1 {

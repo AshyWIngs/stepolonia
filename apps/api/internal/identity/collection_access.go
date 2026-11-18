@@ -267,11 +267,16 @@ func recordCollectionAccess(ctx context.Context, tx *sql.Tx, event, actor, roleI
 		Scope     string   `json:"object_scope"`
 		FieldIDs  []string `json:"field_ids,omitempty"`
 	}
+	reason := "explicit_initial_access"
+	if event == newFieldAccessEvent {
+		reason = "explicit_new_field_access"
+	}
 	details := struct {
+		Reason string        `json:"reason"`
 		RoleID string        `json:"role_id"`
 		Schema int64         `json:"schema_no"`
 		Grants []grantDetail `json:"grants"`
-	}{RoleID: roleID, Schema: change.SchemaNo}
+	}{Reason: reason, RoleID: roleID, Schema: change.SchemaNo}
 	for _, grant := range grants {
 		details.Grants = append(details.Grants, grantDetail{grant.Operation, grant.ObjectScope, grant.FieldIDs})
 	}
