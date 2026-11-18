@@ -41,8 +41,9 @@ func addContentMetadataSchemas(schemas map[string]*huma.Schema) {
 			"published": {Type: huma.TypeArray, Items: responseDTOSchema("A language and link in the current public snapshot.", content.PublicTranslation{
 				Language: "pl", Slug: "warsztaty", CanonicalURL: "/pl/articles/warsztaty",
 			})},
-		}, []string{itemIDField, schemaNoField, draftVersionField, currentSchemaField, "fields", "actions", "published"},
+			"ready_locales": {Type: huma.TypeArray, Items: stringSchema("Language code with current readiness."), Description: "Enabled locales approved for the draft's current sequences, schema and language generation."},
+		}, []string{itemIDField, schemaNoField, draftVersionField, currentSchemaField, "fields", "actions", "published", "ready_locales"},
 		content.DraftMetadata{ItemID: exampleUUID, SchemaNo: 1, Version: 2, CurrentSchemaNo: 2, Fields: []content.DraftFieldMetadata{field},
-			Actions: content.DraftActions{Ready: true}, Published: []content.PublicTranslation{}},
+			Actions: content.DraftActions{Ready: true}, Published: []content.PublicTranslation{}, ReadyLocales: []string{}},
 	)
 }

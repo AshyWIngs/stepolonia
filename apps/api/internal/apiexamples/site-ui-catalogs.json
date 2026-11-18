@@ -109,7 +109,9 @@
     "admin.content_confirm_unpublish": "Wycofać publikację i wyzerować gotowość?",
     "admin.content_confirm_reload": "Odrzucić niezapisane zmiany i wczytać ponownie?",
     "admin.content_confirm_close": "Zamknąć szkic i odrzucić niezapisane zmiany?",
-    "admin.content_publish_languages": "Języki do publikacji"
+    "admin.content_publish_languages": "Języki do publikacji",
+    "admin.content_clear_relation": "Usuń powiązanie",
+    "admin.content_links_new_tab": "Linki do publikacji otwierają się w nowej karcie."
   },
   "en": {
     "articles": "Articles",
@@ -221,7 +223,9 @@
     "admin.content_confirm_unpublish": "Remove this publication and clear readiness?",
     "admin.content_confirm_reload": "Discard unsaved changes and reload?",
     "admin.content_confirm_close": "Close the draft and discard unsaved changes?",
-    "admin.content_publish_languages": "Languages to publish"
+    "admin.content_publish_languages": "Languages to publish",
+    "admin.content_clear_relation": "Clear relation",
+    "admin.content_links_new_tab": "Published links open in a new tab."
   },
   "ru": {
     "articles": "Статьи",
@@ -333,7 +337,9 @@
     "admin.content_confirm_unpublish": "Снять материал с публикации и сбросить готовность?",
     "admin.content_confirm_reload": "Отбросить несохранённые изменения и перечитать черновик?",
     "admin.content_confirm_close": "Закрыть черновик и отбросить несохранённые изменения?",
-    "admin.content_publish_languages": "Языки публикации"
+    "admin.content_publish_languages": "Языки публикации",
+    "admin.content_clear_relation": "Удалить связь",
+    "admin.content_links_new_tab": "Ссылки на публикации открываются в новой вкладке."
   },
   "kk": {
     "articles": "Мақалалар",
@@ -438,13 +444,15 @@
     "admin.content_unpublished": "Жарияланым алып тасталды.",
     "admin.content_adopt_schema": "Ағымдағы схеманы қабылдау",
     "admin.content_schema_adopted": "Ағымдағы схема қабылданды.",
-    "admin.content_schema_outdated": "Жаңа схема қолжетімді. Оны қабылдау дайындықты қалпына келтіреді.",
+    "admin.content_schema_outdated": "Жаңа схема қолжетімді. Оны қабылдау дайындық күйін тазартады.",
     "admin.content_reload": "Нобайды қайта жүктеу",
     "admin.content_confirm": "Растау",
     "admin.content_confirm_publish": "Таңдалған аудармалар жариялансын ба?",
     "admin.content_confirm_unpublish": "Жарияланым алынып, дайындық күйі тазартылсын ба?",
     "admin.content_confirm_reload": "Сақталмаған өзгерістер тасталып, нобай қайта жүктелсін бе?",
     "admin.content_confirm_close": "Нобай жабылып, сақталмаған өзгерістер тасталсын ба?",
-    "admin.content_publish_languages": "Жариялау тілдері"
+    "admin.content_publish_languages": "Жариялау тілдері",
+    "admin.content_clear_relation": "Байланысты жою",
+    "admin.content_links_new_tab": "Жарияланым сілтемелері жаңа қойындыда ашылады."
   }
 }

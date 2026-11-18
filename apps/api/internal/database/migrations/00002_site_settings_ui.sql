@@ -75,7 +75,8 @@ INSERT INTO public.ui_message_keys (message_key) VALUES
 ('admin.content_confirm_unpublish'),
 ('admin.content_confirm_reload'),
 ('admin.content_confirm_close'),
-('admin.content_publish_languages');
+('admin.content_publish_languages'),
+('admin.content_clear_relation'), ('admin.content_links_new_tab');
 
 CREATE TABLE public.site_revisions (
     tagline text NOT NULL,

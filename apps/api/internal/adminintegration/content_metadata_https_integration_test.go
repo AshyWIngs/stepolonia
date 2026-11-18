@@ -37,6 +37,7 @@ func TestAdminDraftMetadataHTTPSIntegration(t *testing.T) {
 	assertCollectionPage(t, get(types+"?limit=1", http.StatusOK), "editorial", "2", true)
 	assertCollectionPage(t, get(types+"?limit=1&offset=1", http.StatusOK), "event", "1", false)
 	assertPinnedDraftMetadata(t, get(itemSchema, http.StatusOK))
+	assertMetadataReadyGeneration(t, f, func() string { return get(itemSchema, http.StatusOK) })
 
 	_, err = f.owner.Exec(`UPDATE public.role_grants SET object_scope='assigned'
  WHERE role_id=$1 AND type_id=$2 AND operation='content.items.read'`, f.roleID, draftEditorType)
@@ -87,14 +88,16 @@ func assertPinnedDraftMetadata(t *testing.T, body string) {
 		CurrentSchema string            `json:"current_schema_no"`
 		Actions       map[string]bool   `json:"actions"`
 		Published     []json.RawMessage `json:"published"`
+		ReadyLocales  []string          `json:"ready_locales"`
 		Fields        []fieldResponse   `json:"fields"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(body))
 	decoder.DisallowUnknownFields()
 	requireNoError(t, decoder.Decode(&data))
-	wantActions := map[string]bool{"adopt": false, "ready": false, "publish": false, "unpublish": false}
+	wantActions := map[string]bool{"adopt": false, "ready": false, "shared_ready": false, "publish": false, "unpublish": false}
 	if data.ItemID != draftEditItem || data.Schema != "1" || data.Version != "1" || data.CurrentSchema != "2" ||
-		!reflect.DeepEqual(data.Actions, wantActions) || data.Published == nil || len(data.Published) != 0 {
+		!reflect.DeepEqual(data.Actions, wantActions) || data.Published == nil || len(data.Published) != 0 ||
+		data.ReadyLocales == nil || len(data.ReadyLocales) != 0 {
 		t.Fatalf("unexpected pinned schema or field subset: %s", body)
 	}
 	wantFields := []fieldResponse{{
@@ -103,6 +106,33 @@ func assertPinnedDraftMetadata(t *testing.T, body string) {
 	}}
 	if !reflect.DeepEqual(data.Fields, wantFields) {
 		t.Fatalf("expected old semantic constraints and current label: %s", body)
+	}
+}
+
+func assertMetadataReadyGeneration(t *testing.T, f draftEditorFixture, read func() string) {
+	t.Helper()
+	_, err := f.owner.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
+ VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT (code) DO UPDATE SET is_enabled=true`)
+	requireNoError(t, err)
+	_, err = f.owner.Exec(`INSERT INTO public.content_draft_locales(
+ item_id,locale_code,ready_local_seq,ready_shared_seq,ready_schema_no,ready_locale_generation)
+ SELECT d.item_id,l.code,1,d.shared_seq,d.schema_no,l.generation
+ FROM public.content_drafts d CROSS JOIN public.languages l WHERE d.item_id=$1 AND l.code='pl'`, draftEditItem)
+	requireNoError(t, err)
+	var result struct {
+		Ready []string `json:"ready_locales"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(read()), &result))
+	if !reflect.DeepEqual(result.Ready, []string{"pl"}) {
+		t.Fatalf("initial ready locales: %v", result.Ready)
+	}
+	_, err = f.owner.Exec(`UPDATE public.languages SET is_enabled=false WHERE code='pl'`)
+	requireNoError(t, err)
+	_, err = f.owner.Exec(`UPDATE public.languages SET is_enabled=true WHERE code='pl'`)
+	requireNoError(t, err)
+	requireNoError(t, json.Unmarshal([]byte(read()), &result))
+	if result.Ready == nil || len(result.Ready) != 0 {
+		t.Fatalf("old language generation inherited readiness: %v", result.Ready)
 	}
 }
 

@@ -10,7 +10,7 @@ const props = defineProps<{
   invalid: boolean
   translate: (key: string) => string
 }>()
-const emit = defineEmits<{ change: [value: Scalar | undefined] }>()
+const emit = defineEmits<{ change: [value: Scalar | undefined], 'clear-relation': [] }>()
 const id = computed(() => `material-field-${props.field.field_id}`)
 const describedBy = computed(() => [
   props.help && `${id.value}-help`,
@@ -61,6 +61,10 @@ function change(event: Event) {
       :autocomplete="field.kind === 'relation' ? 'off' : undefined"
       @input="change"
     >
+    <button
+      v-if="field.kind === 'relation' && field.editable" type="button" class="admin-secondary"
+      @click="emit('clear-relation')"
+    >{{ translate('admin.content_clear_relation') }}</button>
   </div>
 </template>
 

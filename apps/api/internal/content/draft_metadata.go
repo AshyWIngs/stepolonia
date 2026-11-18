@@ -48,13 +48,15 @@ type DraftMetadata struct {
 	Fields          []DraftFieldMetadata `json:"fields"`
 	Actions         DraftActions         `json:"actions"`
 	Published       []PublicTranslation  `json:"published"`
+	ReadyLocales    []string             `json:"ready_locales"`
 }
 
 type DraftActions struct {
-	Ready     bool `json:"ready" doc:"The session holds an item-level readiness grant. The command also requires the relevant field grants."`
-	Publish   bool `json:"publish" doc:"The session holds an item-level publication grant. Field grants and readiness are checked by the command."`
-	Unpublish bool `json:"unpublish" doc:"The session holds a grant to remove this item's publication."`
-	Adopt     bool `json:"adopt" doc:"The session can update all fields of the current collection schema."`
+	SharedReady bool `json:"shared_ready" doc:"The actor may mark the shared fields ready."`
+	Ready       bool `json:"ready" doc:"The actor may mark a translation ready, subject to validation."`
+	Publish     bool `json:"publish" doc:"The actor holds the item and field grants required for publication."`
+	Unpublish   bool `json:"unpublish" doc:"The session holds a grant to remove this item's publication."`
+	Adopt       bool `json:"adopt" doc:"The session can update all fields of the current collection schema."`
 }
 
 // ListReadableCollections returns the collection choices for the draft browser.
@@ -100,11 +102,10 @@ func (e *DraftEditor) ReadDraftMetadata(ctx context.Context, req identity.AuthRe
 		if err != nil {
 			return err
 		}
-		if err := loadDraftActionHints(ctx, tx, session, access.TypeID, &out); err != nil {
+		if err := loadDraftActionHints(ctx, tx, session, &out); err != nil {
 			return err
 		}
-		out.Published, err = readDraftPublicationLinks(ctx, tx, itemID)
-		return err
+		return loadDraftLanguageStatus(ctx, tx, &out)
 	})
 	if err != nil {
 		return DraftMetadata{}, err
@@ -112,7 +113,34 @@ func (e *DraftEditor) ReadDraftMetadata(ctx context.Context, req identity.AuthRe
 	return out, nil
 }
 
-func loadDraftActionHints(ctx context.Context, tx *sql.Tx, session identity.Session, typeID string, out *DraftMetadata) error {
+func loadDraftLanguageStatus(ctx context.Context, tx *sql.Tx, out *DraftMetadata) error {
+	var err error
+	out.Published, err = readDraftPublicationLinks(ctx, tx, out.ItemID)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT l.locale_code FROM public.content_draft_locales l
+ JOIN public.content_drafts d ON d.item_id=l.item_id
+ JOIN public.languages lang ON lang.code=l.locale_code AND lang.is_enabled
+ WHERE l.item_id=$1 AND l.ready_local_seq=l.local_seq AND l.ready_shared_seq=d.shared_seq
+   AND l.ready_schema_no=d.schema_no AND l.ready_locale_generation=lang.generation
+ ORDER BY l.locale_code`, out.ItemID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	out.ReadyLocales = []string{}
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return err
+		}
+		out.ReadyLocales = append(out.ReadyLocales, code)
+	}
+	return rows.Err()
+}
+
+func loadDraftActionHints(ctx context.Context, tx *sql.Tx, session identity.Session, out *DraftMetadata) error {
 	update, err := optionalItemAccess(ctx, tx, session, identity.OpContentUpdate, out.ItemID)
 	if err != nil {
 		return err
@@ -121,33 +149,48 @@ func loadDraftActionHints(ctx context.Context, tx *sql.Tx, session identity.Sess
 		out.Fields[i].Editable = update.AllowsField(out.Fields[i].FieldID)
 	}
 	if out.CurrentSchemaNo != out.SchemaNo && update.TypeID != "" {
-		ids := update.FieldIDs()
-		if ids == nil {
-			ids = []string{}
-		}
-		err = tx.QueryRowContext(ctx, `SELECT NOT EXISTS (
- SELECT 1 FROM public.content_field_definitions
- WHERE type_id=$1 AND schema_no=$2 AND NOT (field_id=ANY($3::uuid[])))`,
-			typeID, out.CurrentSchemaNo, ids).Scan(&out.Actions.Adopt)
+		out.Actions.Adopt, _, err = schemaAccessCoverage(ctx, tx, update, out.CurrentSchemaNo)
 		if err != nil {
 			return err
 		}
 	}
-	for _, hint := range []struct {
-		op      identity.Operation
-		allowed *bool
-	}{
-		{identity.OpContentReady, &out.Actions.Ready},
-		{identity.OpContentPublish, &out.Actions.Publish},
-		{identity.OpContentUnpublish, &out.Actions.Unpublish},
-	} {
-		access, err := optionalItemAccess(ctx, tx, session, hint.op, out.ItemID)
-		if err != nil {
-			return err
-		}
-		*hint.allowed = access.TypeID != ""
+	return loadPublicationActionHints(ctx, tx, session, out)
+}
+
+func loadPublicationActionHints(ctx context.Context, tx *sql.Tx, session identity.Session, out *DraftMetadata) error {
+	ready, err := optionalItemAccess(ctx, tx, session, identity.OpContentReady, out.ItemID)
+	if err != nil {
+		return err
 	}
-	return nil
+	out.Actions.Ready, out.Actions.SharedReady, err = schemaAccessCoverage(ctx, tx, ready, out.SchemaNo)
+	if err != nil {
+		return err
+	}
+	publish, err := optionalItemAccess(ctx, tx, session, identity.OpContentPublish, out.ItemID)
+	if err != nil {
+		return err
+	}
+	out.Actions.Publish, _, err = schemaAccessCoverage(ctx, tx, publish, out.SchemaNo)
+	if err != nil {
+		return err
+	}
+	unpublish, err := optionalItemAccess(ctx, tx, session, identity.OpContentUnpublish, out.ItemID)
+	out.Actions.Unpublish = unpublish.TypeID != ""
+	return err
+}
+
+func schemaAccessCoverage(ctx context.Context, tx *sql.Tx, access identity.ContentItemAccess, schemaNo int64) (all, shared bool, err error) {
+	if access.TypeID == "" {
+		return false, false, nil
+	}
+	ids := access.FieldIDs()
+	if ids == nil {
+		ids = []string{}
+	}
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(bool_and(field_id=ANY($3::uuid[])),true),
+ COALESCE(bool_and(field_id=ANY($3::uuid[])) FILTER (WHERE scope='shared'),true)
+ FROM public.content_field_definitions WHERE type_id=$1 AND schema_no=$2`, access.TypeID, schemaNo, ids).Scan(&all, &shared)
+	return all, shared, err
 }
 
 func optionalItemAccess(ctx context.Context, tx *sql.Tx, session identity.Session, op identity.Operation, itemID string) (identity.ContentItemAccess, error) {

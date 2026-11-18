@@ -34,12 +34,17 @@ let active = true
 const sharedFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'shared') ?? [])
 const localeFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'localized') ?? [])
 const hiddenLanguages = computed(() => Object.keys(draft.value?.locales ?? {}).filter(code => !activeLanguage(code)))
-const readyLanguages = computed(() => props.languages.filter(language => draft.value?.locales[language.code]?.ready != null))
+const readyLanguages = computed(() => props.languages.filter(language => localeReady(language.code)))
 const publicLinks = computed(() => metadata.value?.published.filter(item => /^\/[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+$/u.test(item.canonical_url)) ?? [])
 const locked = computed(() => busy.value || conflict.value || edits.value.size > 0)
+const outdated = computed(() => draft.value?.schema_no !== metadata.value?.current_schema_no)
 
 function activeLanguage(code: string) {
   return props.languages.some(language => language.code === code)
+}
+
+function localeReady(code: string) {
+  return metadata.value?.ready_locales.includes(code) === true && draft.value?.locales[code]?.ready != null
 }
 
 function showError(error: unknown) {
@@ -111,6 +116,12 @@ function edit(field: EditorField, locale: string, value: Scalar | undefined) {
   if (value === savedFieldValue(draft.value, field, locale)) edits.value.delete(key)
   else edits.value.set(key, { field, locale, value })
   invalid.value.delete(field.field_id)
+}
+
+function clearRelation(field: EditorField, locale: string) {
+  if (draft.value && field.editable && field.kind === 'relation') {
+    edits.value.set(editKey(field, locale), { field, locale, value: undefined })
+  }
 }
 
 async function save() {
@@ -221,20 +232,22 @@ onBeforeUnmount(() => { active = false })
       <section aria-labelledby="draft-published-heading">
         <h3 id="draft-published-heading">{{ translate('admin.content_public_links') }}</h3>
         <p v-if="publicLinks.length === 0">{{ translate('admin.content_not_published') }}</p>
-        <ul v-else>
+        <p v-else>{{ translate('admin.content_links_new_tab') }}</p>
+        <ul v-if="publicLinks.length">
           <li v-for="item in publicLinks" :key="item.language">
-            <a :href="item.canonical_url" :hreflang="item.language">{{ item.canonical_url }}</a>
+            <a :href="item.canonical_url" :hreflang="item.language" target="_blank" rel="noopener">{{ item.canonical_url }}</a>
           </li>
         </ul>
       </section>
-      <p v-if="draft.schema_no !== metadata.current_schema_no" role="status">{{ translate('admin.content_schema_outdated') }}</p>
+      <p v-if="outdated" role="status">{{ translate('admin.content_schema_outdated') }}</p>
 
       <form ref="form" @submit.prevent="save">
         <fieldset v-if="sharedFields.length" :disabled="busy || confirmation !== null">
           <legend>{{ translate('admin.content_shared') }}</legend>
           <DraftFieldControl
             v-for="field in sharedFields" :key="field.field_id" :field="field" v-bind="description(field)"
-            :value="valueFor(field, '')" :invalid="invalid.has(field.field_id)" :translate="translate" @change="edit(field, '', $event)"
+            :value="valueFor(field, '')" :invalid="invalid.has(field.field_id)" :translate="translate"
+            @change="edit(field, '', $event)" @clear-relation="clearRelation(field, '')"
           />
         </fieldset>
         <fieldset v-if="languages.length || hiddenLanguages.length" :disabled="busy || confirmation !== null">
@@ -248,31 +261,31 @@ onBeforeUnmount(() => { active = false })
           </select>
           <p v-if="selectedLanguage && !activeLanguage(selectedLanguage)">{{ translate('admin.content_language_disabled') }}</p>
           <p v-if="draft.shared_ready_seq">{{ translate('admin.content_shared_ready') }}</p>
-          <p v-if="draft.locales[selectedLanguage]?.ready">{{ translate('admin.content_locale_ready') }}</p>
+          <p v-if="localeReady(selectedLanguage)">{{ translate('admin.content_locale_ready') }}</p>
           <template v-if="selectedLanguage">
             <DraftFieldControl
               v-for="field in localeFields" :key="`${field.field_id}/${selectedLanguage}`" :field="field" v-bind="description(field)"
               :value="valueFor(field, selectedLanguage)" :invalid="invalid.has(field.field_id)" :translate="translate"
-              @change="edit(field, selectedLanguage, $event)"
+              @change="edit(field, selectedLanguage, $event)" @clear-relation="clearRelation(field, selectedLanguage)"
             />
           </template>
         </fieldset>
         <div class="draft-bar">
           <button type="submit" :disabled="busy || conflict || !edits.size || confirmation !== null">{{ translate('admin.save_draft') }}</button>
           <button
-            v-if="metadata.actions.ready" type="button" class="admin-secondary" :disabled="locked || confirmation !== null"
+            v-if="metadata.actions.shared_ready && !outdated" type="button" class="admin-secondary" :disabled="locked || confirmation !== null"
             @click="markReady(true)"
           >{{ translate('admin.content_mark_shared') }}</button>
           <button
-            v-if="metadata.actions.ready && draft.locales[selectedLanguage] && activeLanguage(selectedLanguage)"
+            v-if="metadata.actions.ready && !outdated && draft.locales[selectedLanguage] && activeLanguage(selectedLanguage)"
             type="button" class="admin-secondary" :disabled="locked || confirmation !== null" @click="markReady(false)"
           >{{ translate('admin.content_mark_locale') }}</button>
           <button
-            v-if="metadata.actions.adopt && draft.schema_no !== metadata.current_schema_no"
+            v-if="metadata.actions.adopt && outdated"
             type="button" class="admin-secondary" :disabled="locked || confirmation !== null" @click="transition('adopt-schema')"
           >{{ translate('admin.content_adopt_schema') }}</button>
           <button
-            v-if="metadata.actions.publish" type="button" :disabled="locked || !draft.shared_ready_seq || !readyLanguages.length || confirmation !== null"
+            v-if="metadata.actions.publish && !outdated" type="button" :disabled="locked || !draft.shared_ready_seq || !readyLanguages.length || confirmation !== null"
             @click="ask('publish')"
           >{{ translate('admin.content_publish') }}</button>
           <button

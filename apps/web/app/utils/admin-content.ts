@@ -59,8 +59,9 @@ export interface EditorMetadata {
   current_schema_no: string
   version: string
   fields: EditorField[]
-  actions: { ready: boolean, publish: boolean, unpublish: boolean, adopt: boolean }
+  actions: { shared_ready: boolean, ready: boolean, publish: boolean, unpublish: boolean, adopt: boolean }
   published: { language: string, canonical_url: string }[]
+  ready_locales: string[]
 }
 
 interface ScalarPatch {
