@@ -29,10 +29,16 @@ async function assertFit(page) {
 }
 
 async function assertTheme(page, preference, actual) {
-  await page.waitForFunction(({ preference, actual }) =>
-    document.documentElement.dataset.cmsTheme === preference &&
-    getComputedStyle(document.documentElement).colorScheme === actual,
-  { preference, actual })
+  await page.waitForFunction(({ preference, actual }) => {
+    const shell = document.querySelector('.cms-shell')
+    const card = document.querySelector('.cms-card')
+    const shellColor = actual === 'dark' ? 'rgb(20, 28, 26)' : 'rgb(241, 244, 240)'
+    const cardColor = actual === 'dark' ? 'rgb(28, 42, 37)' : 'rgb(255, 255, 255)'
+    return document.documentElement.dataset.cmsTheme === preference &&
+      getComputedStyle(document.documentElement).colorScheme === actual &&
+      shell && getComputedStyle(shell).backgroundColor === shellColor &&
+      card && getComputedStyle(card).backgroundColor === cardColor
+  }, { preference, actual })
 }
 
 async function assertLayouts(page) {
