@@ -137,5 +137,5 @@ func safeReadPath(raw string) bool {
 		return true
 	}
 	role, _ := roleRoutePath(raw)
-	return isRoleRoute(role)
+	return role == rolesPath || role == rolePath
 }

@@ -13,6 +13,19 @@ import (
 	"stepolonia/apps/api/internal/cms"
 )
 
+const (
+	roleFixtureName     = "safe-policy"
+	roleFixtureActive   = "active"
+	roleFixtureArchived = "archived"
+)
+
+var roleStateCases = []struct{ action, operation, state string }{
+	{"enable", "rolesEnable", roleFixtureActive},
+	{"disable", "rolesDisable", lifecycleFixtureState},
+	{"archive", "rolesArchive", roleFixtureArchived},
+	{"restore", "rolesRestore", lifecycleFixtureState},
+}
+
 type fakeRoles struct {
 	fakeOnboarding
 	page      cms.RolePage
@@ -23,13 +36,13 @@ type fakeRoles struct {
 func (s *fakeRoles) ListRoles(_ context.Context, req cms.AuthRequest, page cms.RolePage) (cms.RoleList, error) {
 	s.calls++
 	s.req, s.page, s.operation = req, page, listRolesOperation
-	return cms.RoleList{Items: []cms.Role{{ID: exampleUUID, Name: "safe-policy", State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{{Operation: "users.read", Scope: roleInstallationScope}}}}}, s.commandErr
+	return cms.RoleList{Items: []cms.Role{{ID: exampleUUID, Name: roleFixtureName, State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{{Operation: "users.read", Scope: roleInstallationScope}}}}}, s.commandErr
 }
 
 func (s *fakeRoles) GetRole(_ context.Context, req cms.AuthRequest, id string) (cms.Role, error) {
 	s.calls++
 	s.req, s.userID, s.operation = req, id, getRoleOperation
-	return cms.Role{ID: id, Name: "safe-policy", State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{}}, s.commandErr
+	return cms.Role{ID: id, Name: roleFixtureName, State: lifecycleFixtureState, Version: 3, Grants: []cms.RoleGrant{}}, s.commandErr
 }
 
 func (s *fakeRoles) CreateRole(_ context.Context, req cms.AuthRequest, input cms.RoleInput) (cms.Role, error) {
@@ -42,6 +55,28 @@ func (s *fakeRoles) EditRole(_ context.Context, req cms.AuthRequest, id string, 
 	s.calls++
 	s.req, s.userID, s.version, s.policy, s.operation = req, id, version, input, editRoleOperation
 	return cms.Role{ID: id, Name: input.Name, State: lifecycleFixtureState, Version: version + 1, Grants: input.Grants}, s.commandErr
+}
+
+func (s *fakeRoles) EnableRole(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.Role, error) {
+	return s.changeState(req, id, version, "rolesEnable", roleFixtureActive)
+}
+
+func (s *fakeRoles) DisableRole(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.Role, error) {
+	return s.changeState(req, id, version, "rolesDisable", lifecycleFixtureState)
+}
+
+func (s *fakeRoles) ArchiveRole(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.Role, error) {
+	return s.changeState(req, id, version, "rolesArchive", roleFixtureArchived)
+}
+
+func (s *fakeRoles) RestoreRole(_ context.Context, req cms.AuthRequest, id string, version int64) (cms.Role, error) {
+	return s.changeState(req, id, version, "rolesRestore", lifecycleFixtureState)
+}
+
+func (s *fakeRoles) changeState(req cms.AuthRequest, id string, version int64, action, state string) (cms.Role, error) {
+	s.calls++
+	s.req, s.userID, s.version, s.operation = req, id, version, action
+	return cms.Role{ID: id, Name: roleFixtureName, State: state, Version: version + 1}, s.commandErr
 }
 
 func roleRequest(t *testing.T, server *httptest.Server, method, path, body, kind string) *http.Request {
@@ -255,5 +290,51 @@ func TestAuthRolesAuthorityFalseRoundTrip(t *testing.T) {
 	raw, err := json.Marshal(role.Grants[0])
 	if err != nil || !strings.Contains(string(raw), `"may_delegate_content":false`) || !roleGrants(append(append([]byte{'['}, raw...), ']')) {
 		t.Fatal("false delegation flag omitted or response no longer accepted", string(raw))
+	}
+}
+
+func TestAuthRoleStateCommands(t *testing.T) {
+	service := &fakeRoles{}
+	server := newAdminTLSServer(t, service)
+	for _, tc := range roleStateCases {
+		action := tc.action
+		t.Run(action, func(t *testing.T) {
+			path := rolesPath + "/" + exampleUUID + "/" + action
+			req := roleRequest(t, server, http.MethodPost, path, `{"expected_version":6}`, fullKind)
+			req.Header.Set(requestIDHeader, "client-chosen")
+			out := lifecycleResponse(t, server, req, 200)
+			assertSafeRoleFields(t, out)
+			if service.operation != tc.operation || service.version != 6 || service.userID != exampleUUID || service.req.Token != testToken || service.req.CSRF != testToken || !roleUUID(service.req.RequestID) || out["state"] != tc.state || out["version"] != float64(7) {
+				t.Fatal("role state dispatch or response drifted", action)
+			}
+		})
+	}
+}
+
+func TestAuthRoleStateRejectsInvalidRequests(t *testing.T) {
+	service := &fakeRoles{}
+	server := newAdminTLSServer(t, service)
+	const body = `{"expected_version":1}`
+	path := rolesPath + "/" + exampleUUID + "/restore"
+	for _, raw := range append([]string{`[null]`, `{"expected_version":1,"actor":"me"}`, `{"expected_version":1,"permissions":[]}`, body + " {}"}, invalidVersionBodies...) {
+		lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path, raw, fullKind), 400)
+	}
+	lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path, body+strings.Repeat(" ", 4096), fullKind), 413)
+	for _, kind := range []string{"", preauthKind, loginKind, recoveryKind, enrollmentKind} {
+		lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path, body, kind), 401)
+	}
+	for _, header := range []string{originHeader, testCSRFHeader} {
+		req := roleRequest(t, server, http.MethodPost, path, body, fullKind)
+		req.Header.Del(header)
+		lifecycleResponse(t, server, req, 403)
+	}
+	lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, path+"?state=active", body, fullKind), 400)
+	lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, rolesPath+"/invalid/restore", body, fullKind), 400)
+	lifecycleResponse(t, server, roleRequest(t, server, http.MethodPost, rolesPath+"/"+exampleUUID+"/delete", body, fullKind), 404)
+	req := roleRequest(t, server, http.MethodGet, path, "", fullKind)
+	req.Header.Set(originHeader, server.URL)
+	lifecycleResponse(t, server, req, 405)
+	if service.calls != 0 {
+		t.Fatal("rejected request reached role service")
 	}
 }

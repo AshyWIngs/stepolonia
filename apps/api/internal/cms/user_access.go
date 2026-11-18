@@ -64,15 +64,23 @@ func checkAccessCaps(ctx context.Context, tx *sql.Tx) error {
 }
 
 func loadAccess(ctx context.Context, tx *sql.Tx) (accessSnapshot, error) {
+	roles, err := boundedRolePolicies(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return membershipAccess(ctx, tx, roles)
+}
+
+func boundedRolePolicies(ctx context.Context, tx *sql.Tx) (map[string][]accessGrant, error) {
 	if err := checkAccessCaps(ctx, tx); err != nil {
 		return nil, err
 	}
 	// Decode each role once. Memberships share immutable field/operation slices,
 	// rather than multiplying potentially large policy sets by every recipient.
-	roles, err := loadRolePolicies(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
+	return loadRolePolicies(ctx, tx)
+}
+
+func membershipAccess(ctx context.Context, tx *sql.Tx, roles map[string][]accessGrant) (accessSnapshot, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT ur.user_id::text,ur.role_id::text,r.state='active' FROM public.user_roles ur JOIN public.roles r ON r.id=ur.role_id ORDER BY ur.user_id,r.id`)
 	if err != nil {
 		return nil, err

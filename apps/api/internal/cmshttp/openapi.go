@@ -40,7 +40,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation and disable operations, and role policy reads, disabled creation and atomic editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation and disable operations, and role policy reads, disabled creation, atomic editing and versioned state transitions. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -66,7 +66,11 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 	name := rt.operationID + "Request"
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
-	if authTag(rt) == rolesTag {
+	if rt.roleState != nil {
+		schema.Description = "Role state change for the current version. The request path selects the transition."
+		schema.Properties[expectedVersionField].Description = "Positive current role version checked under the shared security mutex."
+		description = "One JSON object, at most 4096 bytes, containing only the positive integer expected_version. Duplicate keys, unknown fields and trailing JSON are rejected."
+	} else if authTag(rt) == rolesTag {
 		schema, example = roleRequestSchema(rt)
 		description = "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
 	}
@@ -278,7 +282,14 @@ func authResponses(rt route) map[string]*huma.Response {
 		responses["204"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders}
 	} else {
 		schema := privateSchemas()[rt.response]
-		responses["200"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: schema.Examples[0]}}}
+		example := schema.Examples[0]
+		if rt.roleState != nil {
+			role := example.(roleResponse)
+			role.State = rt.resultState
+			role.Version = 2
+			example = role
+		}
+		responses["200"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: example}}}
 	}
 	for status, codes := range authErrorCodes(rt) {
 		responses[strconv.Itoa(status)] = authErrorResponse(rt, status, codes)
@@ -409,11 +420,14 @@ func authTags() []*huma.Tag {
 		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without CMS access."},
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation and disable."},
-		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation and atomic explicit-grant replacement."},
+		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement and versioned state transitions."},
 	}
 }
 
 func authTag(rt route) string {
+	if rt.roleState != nil {
+		return rolesTag
+	}
 	switch rt.operationID {
 	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation:
 		return rolesTag

@@ -169,6 +169,13 @@ const assert=require('node:assert/strict');
   assert.equal(edited.state,'disabled');assert.equal(edited.version,2);assert.deepEqual(edited.grants,[]);
   const stale=await send(rolePath,patch,full.csrf_token,409,'PATCH');assert.equal(stale.code,'version_conflict');
   await send(rolePath,{...patch,expected_version:2,actor_id:created.id},full.csrf_token,400,'PATCH');
+  let version=edited.version;
+  for (const [action,state] of [['enable','active'],['disable','disabled'],['archive','archived'],['restore','disabled']]) {
+   const path=rolePath+'/'+action, body={expected_version:version};
+   await send(path,body,undefined,403);
+   const next=await send(path,body,full.csrf_token,200);
+   assert.deepEqual(next,{...edited,state,version:++version});
+  }
  } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});
 `

@@ -20,7 +20,6 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 	for _, query := range []string{
 		`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'illegal state','active')`,
 		`INSERT INTO public.roles(id,name_key,version) VALUES(gen_random_uuid(),'illegal version',99)`,
-		`UPDATE public.roles SET state='active'`,
 		`UPDATE public.roles SET id=gen_random_uuid()`,
 		`DELETE FROM public.roles`,
 		`UPDATE public.role_grants SET can_delegate=true`,
@@ -32,12 +31,17 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 		_, err := pool.Exec(query)
 		assertSQLState(t, err, "42501")
 	}
-	_, err := f.db.Exec(`GRANT UPDATE(state) ON public.roles TO sp_security`)
+	_, err := f.db.Exec(`GRANT UPDATE(id) ON public.roles TO sp_security`)
 	requireNoError(t, err)
 	if database.CheckSecurity(context.Background(), pool) == nil {
-		t.Fatal("extra lifecycle column privilege accepted")
+		t.Fatal("extra role identity privilege accepted")
 	}
-	_, err = f.db.Exec(`REVOKE UPDATE(state) ON public.roles FROM sp_security`)
+	_, err = f.db.Exec(`REVOKE UPDATE(id,state) ON public.roles FROM sp_security`)
+	requireNoError(t, err)
+	if database.CheckSecurity(context.Background(), pool) == nil {
+		t.Fatal("missing role state privilege accepted")
+	}
+	_, err = f.db.Exec(`GRANT UPDATE(state) ON public.roles TO sp_security`)
 	requireNoError(t, err)
 	requireNoError(t, database.CheckSecurity(context.Background(), pool))
 }
@@ -54,8 +58,7 @@ func TestAuthRolesReadMetadataIntegration(t *testing.T) {
 	if len(first.Items) != 1 || first.NextOffset == nil || first.Items[0].Grants == nil {
 		t.Fatal("bounded policy projection missing")
 	}
-	var admin string
-	requireNoError(t, x.f.db.QueryRow(`SELECT role_id::text FROM public.user_roles WHERE user_id=$1`, x.f.user).Scan(&admin))
+	admin := bootstrapAdminRoleID(t, x.f)
 	got, err := x.f.service.GetRole(context.Background(), req, admin)
 	requireNoError(t, err)
 	if len(got.Grants) == 0 || got.ID != admin {

@@ -51,7 +51,7 @@ func replaceRoleGrantSchema(schema *huma.Schema) {
 
 func addRoleSchemas(schemas map[string]*huma.Schema) {
 	schemas[roleGrantSchema] = roleGrantContract()
-	example := roleResponse{ID: exampleUUID, Name: "docs-reviewer", State: "disabled", Version: 1, Grants: []roleGrantDTO{roleGrantExample()}}
+	example := roleResponse{ID: exampleUUID, Name: "docs-reviewer", State: roleDisabled, Version: 1, Grants: []roleGrantDTO{roleGrantExample()}}
 	schema := responseDTOSchema("Safe role policy metadata including explicit grants and latent disabled/archived grants. No credentials, memberships, recipients, content values or field labels are exposed.", example)
 	replaceRoleGrantSchema(schema)
 	schemas[roleSchema] = schema
@@ -111,7 +111,7 @@ func rolePageParameters() []*huma.Param {
 
 func roleErrorCodes(rt route) map[int][]string {
 	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode}, 403: {originCode, permissionCode}, 405: {methodNotAllowedCode}, 503: {securityUnavailableCode}}
-	if rt.operationID == getRoleOperation || rt.operationID == editRoleOperation {
+	if rt.operationID == getRoleOperation || rt.operationID == editRoleOperation || rt.roleState != nil {
 		codes[404] = []string{notFoundCode}
 	}
 	if rt.method != http.MethodGet {
@@ -124,6 +124,9 @@ func roleErrorCodes(rt route) map[int][]string {
 }
 
 func roleSuccessDescription(rt route) string {
+	if rt.roleState != nil {
+		return "Role is now " + rt.resultState + ". State, version increment and audit committed atomically."
+	}
 	switch rt.operationID {
 	case listRolesOperation:
 		return "Bounded role policy page returned after current roles.read authorization; next_offset is null at the end."

@@ -26,6 +26,10 @@ func TestAuthLifecycleCapacityIntegration(t *testing.T) {
 			requireNoError(t, err)
 			_, err = f.service.ListUsers(context.Background(), authReq(full), cms.UserPage{})
 			onboardingError(t, err, cms.ErrSecurityUnavailable)
+			var role string
+			requireNoError(t, f.db.QueryRow(`SELECT role_id::text FROM public.user_roles WHERE user_id=$1 LIMIT 1`, f.user).Scan(&role))
+			_, err = f.service.DisableRole(context.Background(), authReq(full), role, 1)
+			onboardingError(t, err, cms.ErrSecurityUnavailable)
 			_, err = f.service.DisableUser(context.Background(), authReq(full), f.user, 2)
 			onboardingError(t, err, cms.ErrSecurityUnavailable)
 		})

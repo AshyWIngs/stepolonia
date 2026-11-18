@@ -40,8 +40,8 @@ func (o Operation) Scope() (OperationScope, error) {
 		return ContentScope, nil
 	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",
-		"roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable",
-		"roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage:
+		"roles.create", "roles.read", "roles.edit", "roles.assign", opRolesDisable, opRolesEnable,
+		opRolesArchive, opRolesRestore, "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage:
 		return InstallationScope, nil
 	default:
 		return 0, fmt.Errorf("unregistered CMS operation %q", o)
