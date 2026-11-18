@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
@@ -142,7 +143,10 @@ func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable
 	if unavailable {
 		command.Args = append(command.Args, "--unavailable")
 	}
-	command.Env = append(os.Environ(), "STAGE22_API_URL="+f.server.URL, "STAGE22_VERSION="+f.publication)
+	keys, err := json.Marshal(slices.Sorted(maps.Keys(siteFixture().Catalogs["en"])))
+	requireNoError(t, err)
+	command.Env = append(os.Environ(), "STAGE22_API_URL="+f.server.URL, "STAGE22_VERSION="+f.publication,
+		"STAGE22_MESSAGE_KEYS="+string(keys))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("site SDK failed: %v\n%s", err, output)
