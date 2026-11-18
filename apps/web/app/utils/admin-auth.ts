@@ -1,7 +1,7 @@
 const sessionKinds = ['preauth', 'login', 'full', 'recovery', 'enrollment'] as const
 
 export type AdminSessionKind = typeof sessionKinds[number]
-type AdminAuthAction = 'login' | 'mfa/verify' | 'step-up' | 'logout'
+export type AdminAuthAction = 'login' | 'mfa/verify' | 'step-up' | 'logout'
 
 export class AdminAuthError extends Error {
   constructor(readonly status: number, readonly code?: string, readonly retryAfter?: number) {

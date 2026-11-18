@@ -53,11 +53,11 @@ func execAdministrationFixture(t *testing.T, ctx context.Context, db *sql.DB, qu
 type defaultGrant struct{ schema, privilege, objects, recipient string }
 
 const (
-	publicDefaultScope = " IN SCHEMA public"
-	defaultGrantSelect      = "SELECT"
-	defaultGrantTables      = "TABLES"
-	defaultGrantExecute     = "EXECUTE"
-	defaultGrantFunctions   = "FUNCTIONS"
+	publicDefaultScope    = " IN SCHEMA public"
+	defaultGrantSelect    = "SELECT"
+	defaultGrantTables    = "TABLES"
+	defaultGrantExecute   = "EXECUTE"
+	defaultGrantFunctions = "FUNCTIONS"
 )
 
 func unsafeDefaultGrants(otherRole string) []defaultGrant {

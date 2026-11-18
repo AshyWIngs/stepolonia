@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/testpostgres"
 )
 

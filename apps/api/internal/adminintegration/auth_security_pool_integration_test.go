@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func TestAuthSecurityPoolIntegration(t *testing.T) {

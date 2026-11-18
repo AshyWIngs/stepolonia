@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/stdlib"
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 )
 
 // CheckSecurity verifies the dedicated authentication login and effective privileges.

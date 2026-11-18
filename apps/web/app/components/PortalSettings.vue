@@ -29,14 +29,11 @@ const notice = ref('')
 let active = true
 
 const language = computed(() => draft.value?.languages.find(item => item.code === selectedLanguage.value))
-const messages = computed(() => {
-  const catalogs = draft.value?.catalogs
-  const code = selectedLanguage.value
-  return catalogs && Object.hasOwn(catalogs, code) ? catalogs[code] : undefined
-})
+const catalogsByLanguage = computed(() => new Map(Object.entries(draft.value?.catalogs ?? {})))
+const messages = computed(() => catalogsByLanguage.value.get(selectedLanguage.value))
 const catalogLanguages = computed(() => {
   const editable = draft.value
-  return editable?.languages.filter(item => Object.hasOwn(editable.catalogs, item.code)) ?? []
+  return editable?.languages.filter(item => catalogsByLanguage.value.has(item.code)) ?? []
 })
 const disabledCatalogCodes = computed(() => {
   const editable = draft.value
@@ -51,26 +48,35 @@ function errorMessage(key: string) {
 }
 
 function handleFailure(error: unknown) {
-  if (!(error instanceof AdminSettingsError)) return errorMessage('admin.unavailable')
+  if (!(error instanceof AdminSettingsError)) {
+    errorMessage('admin.unavailable')
+    return
+  }
   if (error.code === 'step_up_required') {
     emit('step-up')
-    return errorMessage('admin.step_up_required')
+    errorMessage('admin.step_up_required')
+    return
   }
   if (error.status === 401 || error.code === 'csrf_failed') {
     emit('session-changed')
-    return errorMessage('admin.changed')
+    errorMessage('admin.changed')
+    return
   }
   switch (error.status) {
     case 400:
     case 413:
-      return errorMessage('admin.settings_invalid')
+      errorMessage('admin.settings_invalid')
+      break
     case 403:
       draft.value = null
-      return errorMessage('admin.access_denied')
+      errorMessage('admin.access_denied')
+      break
     case 409:
       conflict.value = true
-      return errorMessage('admin.settings_conflict')
-    default: return errorMessage('admin.unavailable')
+      errorMessage('admin.settings_conflict')
+      break
+    default:
+      errorMessage('admin.unavailable')
   }
 }
 
@@ -145,9 +151,10 @@ function draftCatalogs(catalogs: EditablePortal['catalogs']): EditablePortal['ca
 }
 
 function incompleteCatalog(editable: EditablePortal): string | undefined {
-  return Object.entries(editable.catalogs).find(([, entries]) =>
-    editable.message_keys.some(key => !entries[key]?.trim()),
-  )?.[0]
+  return Object.entries(editable.catalogs).find(([, entries]) => {
+    const nonBlankKeys = new Set(Object.entries(entries).filter(([, text]) => text.trim()).map(([key]) => key))
+    return editable.message_keys.some(key => !nonBlankKeys.has(key))
+  })?.[0]
 }
 
 async function confirmPublication() {

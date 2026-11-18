@@ -2,7 +2,7 @@
 import { useAsyncData, useCookie, useHeadSafe, useI18n, useResponseHeader } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
-import type { AdminSessionKind } from '~/utils/admin-auth'
+import type { AdminAuthAction, AdminSessionKind } from '~/utils/admin-auth'
 import { usePublicApi } from '~/composables/usePublicApi'
 import { publicError } from '~/utils/public-content'
 
@@ -106,7 +106,7 @@ async function focusHeading() {
   heading.value?.focus()
 }
 
-function handleFailure(error: unknown, action?: 'login' | 'mfa/verify' | 'step-up' | 'logout') {
+function handleFailure(error: unknown, action?: AdminAuthAction) {
   if (error instanceof AdminAuthError && error.status === 429) {
     failure.value = 'limited'
     limited.value = true
@@ -146,7 +146,7 @@ async function refresh(moveFocus = false) {
   if (moveFocus) await focusHeading()
 }
 
-async function submit(action: 'login' | 'mfa/verify' | 'step-up' | 'logout') {
+async function submit(action: AdminAuthAction) {
   if (blocked.value) return
   pending.value = true
   notice.value = ''
@@ -174,7 +174,7 @@ async function submit(action: 'login' | 'mfa/verify' | 'step-up' | 'logout') {
   }
 }
 
-async function afterAuthAction(action: 'login' | 'mfa/verify' | 'step-up' | 'logout') {
+async function afterAuthAction(action: AdminAuthAction) {
   if (action === 'logout') {
     notice.value = 'signed_out'
     phase.value = null

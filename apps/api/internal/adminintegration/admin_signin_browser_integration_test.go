@@ -179,7 +179,8 @@ func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[stri
 		"admin.code": "Verification code", "admin.signed_in": "Signed in", "admin.sign_out": "Sign out",
 		"admin.settings": "Portal settings", "admin.portal_name": "Portal name", "admin.save_draft": "Save draft",
 		"admin.publish_draft": "Publish draft", "admin.confirm_publish": "Publish the saved settings and interface texts?",
-		"admin.draft_saved": "Draft saved.", "admin.published": "Settings published.", "admin.close": "Close",
+		"admin.settings_invalid": "Complete each selected translation.",
+		"admin.draft_saved":      "Draft saved.", "admin.published": "Settings published.", "admin.close": "Close",
 	}
 	frLabels := map[string]string{"admin.language": "Langue", "admin.sign_in": "Connexion à la rédaction"}
 	en, fr := map[string]string{}, map[string]string{}

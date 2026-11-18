@@ -7,8 +7,8 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
-	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/adminhttp"
+	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/content"
 )
 

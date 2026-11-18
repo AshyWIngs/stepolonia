@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 )
 
 type fakeCandidateDraftEditor struct {

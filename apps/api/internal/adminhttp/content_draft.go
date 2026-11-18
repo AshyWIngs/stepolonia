@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 )
 
 const (

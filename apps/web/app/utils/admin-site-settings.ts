@@ -62,8 +62,9 @@ function isEditablePortal(value: unknown): value is EditablePortal {
 }
 
 function isPortalFields(value: unknown): value is PortalFields {
-  const required = ['title', 'description', 'tagline', 'notice', 'accent', 'default_language', 'fallback_language']
-  return isRecord(value) && required.every(key => typeof value[key] === 'string')
+  if (!isRecord(value)) return false
+  const { title, description, tagline, notice, accent, default_language, fallback_language } = value
+  return [title, description, tagline, notice, accent, default_language, fallback_language].every(field => typeof field === 'string')
 }
 
 function isPortalLanguage(value: unknown): value is PortalLanguage {

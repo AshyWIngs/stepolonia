@@ -13,9 +13,9 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
-	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/database"
+	"stepolonia/apps/api/internal/identity"
 )
 
 const totpKeyFileEnv = "ADMIN_TOTP_KEY_FILE"
