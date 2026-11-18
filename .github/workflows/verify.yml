@@ -133,9 +133,13 @@ jobs:
         run: make SITE=ci.test ci-build
       - name: "PostgreSQL: миграции, роли и CLI"
         if: steps.scope.outputs.full == 'true'
+        env:
+          VERIFY_REUSE_IMAGES: "1"
         run: make SITE=ci.test ci-db-test
       - name: "Публикации: API, SSR и браузер"
         if: steps.scope.outputs.full == 'true'
+        env:
+          VERIFY_REUSE_IMAGES: "1"
         run: make SITE=ci.test ci-publishing-test
       - name: "Authentication: PostgreSQL, TLS и browser security"
         if: steps.scope.outputs.full == 'true'
