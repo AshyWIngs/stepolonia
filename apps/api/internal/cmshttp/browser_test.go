@@ -3,7 +3,6 @@ package cmshttp
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"stepolonia/apps/api/internal/cms"
@@ -17,9 +16,10 @@ func TestBrowserCSRF(t *testing.T) {
 	if os.Getenv("CMS_HTTP_BROWSER_TEST") != "1" {
 		t.Skip("set CMS_HTTP_BROWSER_TEST=1 with local Playwright Chromium installed")
 	}
-	var auth http.Handler
+	server := newAdminServer(t, &fakeAuth{logoutErr: cms.ErrCSRF})
+	auth := server.Config.Handler
 	observed := make(chan http.Header, 1)
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/admin" {
 			w.Header().Set(contentTypeHeader, "text/html")
 			_, _ = w.Write([]byte("<!doctype html><title>Auth transport fixture</title>"))
@@ -29,13 +29,8 @@ func TestBrowserCSRF(t *testing.T) {
 			observed <- r.Header.Clone()
 		}
 		auth.ServeHTTP(w, r)
-	}))
-	defer server.Close()
-	var err error
-	auth, err = NewHandler(Config{CanonicalOrigin: server.URL}, &fakeAuth{logoutErr: cms.ErrCSRF})
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
+	server.StartTLS()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "node", "-e", browserCSRFScript)

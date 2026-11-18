@@ -117,16 +117,25 @@ func newAuthHTTPFixture(t *testing.T) authHTTPFixture {
 	service, err := cms.NewAuthService(db, f.config)
 	requireNoError(t, err)
 	requireNoError(t, service.CheckReady(context.Background()))
-	var handler http.Handler
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
-	t.Cleanup(server.Close)
-	auth, err := cmshttp.NewHandler(cmshttp.Config{CanonicalOrigin: server.URL}, service)
-	requireNoError(t, err)
-	handler = platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler {
+		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	})
 	client := server.Client()
 	client.Jar, err = cookiejar.New(nil)
 	requireNoError(t, err)
 	return authHTTPFixture{f, server, client}
+}
+
+func newAuthTLSServer(t *testing.T, service *cms.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewUnstartedServer(nil)
+	t.Cleanup(server.Close)
+	origin := "https://" + server.Listener.Addr().String()
+	auth, err := cmshttp.NewHandler(cmshttp.Config{CanonicalOrigin: origin}, service)
+	requireNoError(t, err)
+	server.Config.Handler = wrap(auth)
+	server.StartTLS()
+	return server
 }
 
 func (f authHTTPFixture) request(t *testing.T, method, path, csrf, body string, status int) (map[string]string, *http.Response) {

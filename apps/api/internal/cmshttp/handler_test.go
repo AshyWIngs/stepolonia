@@ -32,18 +32,6 @@ func (s *fakeAuth) Login(_ context.Context, req cms.AuthRequest, _, _ string) (c
 	s.req = req
 	return cms.SessionTokens{Token: testToken, CSRF: testToken, Kind: "login", ExpiresAt: time.Now().Add(time.Minute)}, nil
 }
-func tlsServer(t *testing.T, s *fakeAuth) *httptest.Server {
-	t.Helper()
-	var auth http.Handler
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { auth.ServeHTTP(w, r) }))
-	t.Cleanup(server.Close)
-	var err error
-	auth, err = NewHandler(Config{CanonicalOrigin: server.URL}, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return server
-}
 
 type authRequestOptions struct {
 	method, path, body, origin, media, csrf string
@@ -73,7 +61,7 @@ func requestAuth(t *testing.T, server *httptest.Server, opts authRequestOptions)
 }
 func TestTransportRejectsBeforeService(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	cases := []struct {
 		name, path, body, origin, media, csrf string
 		status                                int
@@ -109,7 +97,7 @@ func TestTransportRejectsBeforeService(t *testing.T) {
 }
 func TestLoginCookieAndUntrustedForwardedIP(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	res := requestAuth(t, server, authRequestOptions{
 		method: http.MethodPost, path: loginPath, body: `{"login":"admin","password":"secret"}`,
 		origin: server.URL, media: jsonMediaType, csrf: testToken,
@@ -152,7 +140,7 @@ func TestLogoutCookieBoundary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			service := &fakeAuth{logoutErr: tc.serviceErr}
-			server := tlsServer(t, service)
+			server := newAdminTLSServer(t, service)
 			origin := tc.origin
 			if origin == sameTestOrigin {
 				origin = server.URL
@@ -224,7 +212,7 @@ func TestCanonicalOriginAndProxyTrust(t *testing.T) {
 
 func TestCSRFRequiresSameOriginAndBootstrapsRestrictedSession(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, origin := range []string{"", server.URL} {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+authPrefix+"/csrf", nil)
 		if err != nil {
@@ -256,7 +244,7 @@ func TestCSRFRequiresSameOriginAndBootstrapsRestrictedSession(t *testing.T) {
 
 func TestRestrictedCookieCannotCrossRoute(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	for _, name := range []string{cookieNames[fullKind], cookieNames[recoveryKind]} {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+authPrefix+loginPath, strings.NewReader(`{"login":"admin","password":"secret"}`))
 		if err != nil {
@@ -282,7 +270,7 @@ func TestRestrictedCookieCannotCrossRoute(t *testing.T) {
 
 func TestBrowserCSRFMetadata(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	cases := []struct {
 		name, site, referer, origin string
 		status                      int

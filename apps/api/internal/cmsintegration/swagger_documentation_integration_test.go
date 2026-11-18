@@ -5,11 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"stepolonia/apps/api/internal/cms"
-	"stepolonia/apps/api/internal/cmshttp"
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/testpostgres"
@@ -29,12 +27,9 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	service, err := cms.NewAuthService(db, f.state.config)
 	requireNoError(t, err)
-	var handler http.Handler
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
-	defer server.Close()
-	auth, err := cmshttp.NewHandler(cmshttp.Config{CanonicalOrigin: server.URL}, service)
-	requireNoError(t, err)
-	handler = platform.HandlerWithDocumentation(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler {
+		return platform.HandlerWithDocumentation(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaSwaggerBrowserScript)

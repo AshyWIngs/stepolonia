@@ -214,7 +214,7 @@ func checkMediaExamples(t *testing.T, registry huma.Registry, path, status strin
 
 func TestCSRFRegistryPreservesMethodBoundary(t *testing.T) {
 	service := &fakeAuth{}
-	server := tlsServer(t, service)
+	server := newAdminTLSServer(t, service)
 	response := requestAuth(t, server, authRequestOptions{method: http.MethodPost, path: "/csrf", body: "{}", origin: server.URL, media: jsonMediaType, csrf: testToken})
 	if response.StatusCode != http.StatusNotFound || service.calls != 0 {
 		t.Fatal("POST csrf changed transport behavior", response.StatusCode)
