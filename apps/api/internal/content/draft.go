@@ -74,7 +74,7 @@ func (s *Service) SaveDraft(ctx context.Context, actor Actor, item string, expec
 				return err
 			}
 		}
-		if err := applyDraftPatch(ctx, tx, &state, schema, patch); err != nil {
+		if err := applyDraftPatch(ctx, tx, &state, schema, patch, nil); err != nil {
 			return err
 		}
 		out, err = s.commandResponse(ctx, tx, actor, item)
@@ -139,22 +139,13 @@ func patchValues(schema TypeSchema, scope string, current ScalarValues, patch Va
 	after, _ := json.Marshal(values)
 	return values, !bytes.Equal(before, after), nil
 }
-func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, patch DraftPatch) error {
-	values, sharedChanged, err := patchValues(schema, scopeShared, state.Shared, ValuePatch{patch.Shared, patch.UnsetShared})
+func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, patch DraftPatch, writeOnlyFields map[string]bool) error {
+	sharedPatch := ValuePatch{patch.Shared, patch.UnsetShared}
+	changed, err := saveSharedPatch(ctx, tx, *state, schema, sharedPatch, touchesWriteOnlyField(sharedPatch, writeOnlyFields))
 	if err != nil {
 		return err
 	}
-	if sharedChanged {
-		raw, _ := json.Marshal(values)
-		if _, err := tx.ExecContext(ctx, `UPDATE public.content_drafts SET shared_values=$2,shared_seq=shared_seq+1,shared_ready_seq=NULL WHERE item_id=$1`, state.ItemID, raw); err != nil {
-			return err
-		}
-		if err := resetReady(ctx, tx, state.ItemID); err != nil {
-			return err
-		}
-	}
-	changed := sharedChanged
-	localeChanged, err := saveLocalePatches(ctx, tx, *state, schema, patch.Locales)
+	localeChanged, err := saveLocalePatches(ctx, tx, *state, schema, patch.Locales, writeOnlyFields)
 	if err != nil {
 		return err
 	}
@@ -175,7 +166,19 @@ func applyDraftPatch(ctx context.Context, tx *sql.Tx, state *DraftState, schema 
 	}
 	return nil
 }
-func saveLocalePatch(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, locale string, patch ValuePatch) (bool, error) {
+func saveSharedPatch(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, patch ValuePatch, forceWrite bool) (bool, error) {
+	values, changed, err := patchValues(schema, scopeShared, state.Shared, patch)
+	if err != nil || !changed && !forceWrite {
+		return false, err
+	}
+	raw, _ := json.Marshal(values)
+	if _, err := tx.ExecContext(ctx, `UPDATE public.content_drafts SET shared_values=$2,shared_seq=shared_seq+1,shared_ready_seq=NULL WHERE item_id=$1`, state.ItemID, raw); err != nil {
+		return false, err
+	}
+	return true, resetReady(ctx, tx, state.ItemID)
+}
+
+func saveLocalePatch(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, locale string, patch ValuePatch, forceWrite bool) (bool, error) {
 	if _, err := normalizeLanguage(locale); err != nil {
 		return false, err
 	}
@@ -187,7 +190,7 @@ func saveLocalePatch(ctx context.Context, tx *sql.Tx, state DraftState, schema T
 	if err != nil {
 		return false, err
 	}
-	if !changed && exists {
+	if !changed && !forceWrite && exists {
 		return false, nil
 	}
 	raw, _ := json.Marshal(values)
@@ -227,16 +230,35 @@ func (s *Service) AdoptSchema(ctx context.Context, actor Actor, item string, exp
 	return out, err
 }
 
-func saveLocalePatches(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, patches map[string]ValuePatch) (bool, error) {
+func saveLocalePatches(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, patches map[string]ValuePatch, writeOnlyFields map[string]bool) (bool, error) {
 	changed := false
 	for locale, patch := range patches {
-		localeChanged, err := saveLocalePatch(ctx, tx, state, schema, locale, patch)
+		localeChanged, err := saveLocalePatch(ctx, tx, state, schema, locale, patch, touchesWriteOnlyField(patch, writeOnlyFields))
 		if err != nil {
 			return false, err
 		}
 		changed = changed || localeChanged
 	}
 	return changed, nil
+}
+
+// Blind writes must have identical version and readiness effects whether or not
+// the old value matched the supplied value or was already absent.
+func touchesWriteOnlyField(patch ValuePatch, fields map[string]bool) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	for key := range patch.Values {
+		if fields[key] {
+			return true
+		}
+	}
+	for _, key := range patch.Unset {
+		if fields[key] {
+			return true
+		}
+	}
+	return false
 }
 
 func adoptDraftSchema(ctx context.Context, tx *sql.Tx, state *DraftState, current int64) error {

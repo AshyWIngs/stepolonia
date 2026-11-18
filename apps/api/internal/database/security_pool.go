@@ -6,10 +6,31 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/stdlib"
+	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/content"
 )
 
 // CheckSecurity verifies the dedicated authentication login and effective privileges.
 func CheckSecurity(ctx context.Context, db *sql.DB) error {
+	return checkCMSLogin(ctx, db, false)
+}
+
+// NewDraftEditor verifies the dedicated Engine login before constructing the editor.
+func NewDraftEditor(ctx context.Context, db *sql.DB, config cms.AuthConfig) (*content.DraftEditor, error) {
+	if err := checkCMSLogin(ctx, db, true); err != nil {
+		return nil, err
+	}
+	auth, err := cms.NewAuthService(db, config)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.CheckReady(ctx); err != nil {
+		return nil, err
+	}
+	return content.NewDraftEditor(auth), nil
+}
+
+func checkCMSLogin(ctx context.Context, db *sql.DB, contentEditor bool) error {
 	connection, err := db.Conn(ctx)
 	if err != nil {
 		return err
@@ -26,16 +47,16 @@ func CheckSecurity(ctx context.Context, db *sql.DB) error {
 	}); err != nil {
 		return err
 	}
-	if err = checkSecurityConnection(ctx, connection, login); err != nil {
+	if err = checkSecurityConnection(ctx, connection, login, contentEditor); err != nil {
 		return err
 	}
 	if err = connection.Close(); err != nil {
 		return err
 	}
-	return checkSecurityDefinitions(ctx, db)
+	return checkSecurityDefinitions(ctx, db, contentEditor)
 }
 
-func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login string) error {
+func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login string, contentEditor bool) error {
 	var safe bool
 	err := connection.QueryRowContext(ctx, `WITH effective AS (
  SELECT c.oid,c.relname,p.privilege
@@ -54,10 +75,20 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  current_user=session_user AND session_user=$1 AND r.rolcanlogin AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
  AND r.oid<>(SELECT datdba FROM pg_catalog.pg_database WHERE datname=current_database())
  AND pg_catalog.pg_has_role(r.oid,'sp_security','USAGE')
+ AND (NOT $2 OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles p WHERE p.rolname='sp_publisher'
+ AND pg_catalog.pg_has_role(r.oid,p.oid,'USAGE')
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=p.oid)
+ AND NOT (p.rolcanlogin OR p.rolsuper OR p.rolcreatedb OR p.rolcreaterole OR p.rolreplication OR p.rolbypassrls)
+ AND NOT pg_catalog.has_database_privilege(p.oid,current_database(),'CREATE,TEMP')
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n
+ WHERE n.nspowner=p.oid OR pg_catalog.has_schema_privilege(p.oid,n.oid,'CREATE'))
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relowner=p.oid)
+ AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=p.oid)))
  AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles s WHERE s.rolname='sp_security'
  AND NOT (s.rolcanlogin OR s.rolsuper OR s.rolcreatedb OR s.rolcreaterole OR s.rolreplication OR s.rolbypassrls))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles p WHERE p.oid<>r.oid
- AND p.rolname<>'sp_security' AND pg_catalog.pg_has_role(r.oid,p.oid,'MEMBER'))
+ AND p.rolname<>'sp_security' AND (NOT $2 OR p.rolname<>'sp_publisher') AND pg_catalog.pg_has_role(r.oid,p.oid,'MEMBER'))
+ AND (NOT $2 OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid AND admin_option))
  AND NOT pg_catalog.has_database_privilege(r.oid,current_database(),'CREATE,TEMP')
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n
  WHERE n.nspowner=r.oid OR pg_catalog.has_schema_privilege(r.oid,n.oid,'CREATE'))
@@ -65,31 +96,37 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=r.oid)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE p.pronamespace='public'::regnamespace
  AND pg_catalog.has_function_privilege(r.oid,p.oid,'EXECUTE')<>
- (p.oid='public.delete_archived_role(uuid,bigint)'::regprocedure))
+ (p.oid='public.delete_archived_role(uuid,bigint)'::regprocedure
+ OR $2 AND pg_catalog.has_function_privilege('sp_publisher',p.oid,'EXECUTE')))
  AND pg_catalog.has_schema_privilege(r.oid,'public','USAGE')
  AND NOT EXISTS (SELECT 1 FROM expected e WHERE
- pg_catalog.has_table_privilege(r.oid,e.oid,e.privilege)<>e.allowed)
+ pg_catalog.has_table_privilege(r.oid,e.oid,e.privilege)<>
+ (e.allowed OR $2 AND pg_catalog.has_table_privilege('sp_publisher',e.oid,e.privilege)))
  AND NOT EXISTS (SELECT 1 FROM expected e
  JOIN pg_catalog.pg_attribute col ON col.attrelid=e.oid AND col.attnum>0 AND NOT col.attisdropped
  WHERE e.privilege IN ('SELECT','INSERT','UPDATE','REFERENCES') AND
  pg_catalog.has_column_privilege(r.oid,e.oid,col.attnum,e.privilege)<>
- (e.allowed OR e.privilege='INSERT' AND e.relname='roles' AND col.attname IN ('id','name_key')
+ (e.allowed OR $2 AND pg_catalog.has_column_privilege('sp_publisher',e.oid,col.attnum,e.privilege)
+ OR e.privilege='INSERT' AND e.relname='roles' AND col.attname IN ('id','name_key')
  OR e.privilege='UPDATE' AND e.relname='roles' AND col.attname IN ('name_key','state','version')
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
  OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')
  OR e.relname='content_items' AND col.attname IN ('id','type_id','version')
  OR e.relname='content_fields' AND col.attname IN ('type_id','field_id'))))
- FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login).Scan(&safe)
+ FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login, contentEditor).Scan(&safe)
 	if err != nil {
 		return fmt.Errorf("check authentication pool privileges: %w", err)
 	}
 	if !safe {
+		if contentEditor {
+			return fmt.Errorf("draft editor pool requires an isolated login inheriting only sp_security and sp_publisher")
+		}
 		return fmt.Errorf("authentication pool requires an isolated login inheriting only sp_security")
 	}
 	return nil
 }
 
-func checkSecurityDefinitions(ctx context.Context, db *sql.DB) error {
+func checkSecurityDefinitions(ctx context.Context, db *sql.DB, contentEditor bool) error {
 	contract, err := readSchemaContract()
 	if err != nil {
 		return err
@@ -116,6 +153,11 @@ func checkSecurityDefinitions(ctx context.Context, db *sql.DB) error {
 	}
 	if !safe {
 		return fmt.Errorf("authentication schema ownership or guards drifted")
+	}
+	if contentEditor {
+		if err := checkCMSPrivileges(ctx, tx); err != nil {
+			return err
+		}
 	}
 	return checkSchemaDefinitions(ctx, tx, contract.definitions())
 }
