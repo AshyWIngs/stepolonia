@@ -68,7 +68,7 @@ func TestAdminCreateOnlyGrantOptionsHTTPSIntegration(t *testing.T) {
 		t.Fatalf("create-only authority returned %d options", len(result.Options))
 	}
 	for _, option := range result.Options {
-		if option.Operation != "content.items.create" || option.ObjectScope != "type" || option.TypeKey == "" || len(option.Fields) != 0 {
+		if option.Operation != bootstrapOpCreate || option.ObjectScope != publicationCreateScope || option.TypeKey == "" || len(option.Fields) != 0 {
 			t.Fatalf("create-only grant exposed field information: %+v", option)
 		}
 	}
