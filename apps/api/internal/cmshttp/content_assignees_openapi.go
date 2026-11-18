@@ -17,7 +17,7 @@ type contentAssigneesResponse struct {
 	AssigneeIDs []string `json:"assignee_ids"`
 }
 
-func contentAssigneesParameters() []*huma.Param {
+func contentItemParameters() []*huma.Param {
 	typeKey := stringSchema("Stable Registry collection key.", "article")
 	typeKey.Pattern = `^[a-z][a-z0-9_]{0,63}$`
 	itemID := uuidSchema(exampleUUID)

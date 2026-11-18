@@ -89,6 +89,10 @@ func validContentVersion(raw json.RawMessage) bool {
 	if json.Unmarshal(raw, &value) != nil {
 		return false
 	}
+	return isContentVersion(value)
+}
+
+func isContentVersion(value string) bool {
 	version, err := strconv.ParseInt(value, 10, 64)
 	return err == nil && version > 0 && strconv.FormatInt(version, 10) == value
 }

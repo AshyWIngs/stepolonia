@@ -67,6 +67,7 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 		mux.Handle("/api/v1/admin/roles", auth)
 		mux.Handle("/api/v1/admin/roles/", auth)
 		mux.Handle("/api/v1/admin/content/{type_key}/{item_id}/assignees", auth)
+		mux.Handle("/api/v1/admin/content/{type_key}/{item_id}", auth)
 	}
 	if docs {
 		registerDocumentation(mux, api, auth != nil)

@@ -20,6 +20,18 @@ func NewDraftEditor(auth *cms.AuthService) *DraftEditor {
 
 // SaveDraft sets or unsets scalar fields using current CMS item and field permissions.
 func (e *DraftEditor) SaveDraft(ctx context.Context, req cms.AuthRequest, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+	return e.saveDraft(ctx, req, "", itemID, expected, patch)
+}
+
+// SaveDraftForType binds the requested collection key to the authorized item.
+func (e *DraftEditor) SaveDraftForType(ctx context.Context, req cms.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
+	if typeKey == "" {
+		return DraftState{}, cms.ErrNotFound
+	}
+	return e.saveDraft(ctx, req, typeKey, itemID, expected, patch)
+}
+
+func (e *DraftEditor) saveDraft(ctx context.Context, req cms.AuthRequest, typeKey, itemID string, expected int64, patch DraftPatch) (DraftState, error) {
 	if e == nil || e.auth == nil {
 		return DraftState{}, cms.ErrSecurityUnavailable
 	}
@@ -28,6 +40,9 @@ func (e *DraftEditor) SaveDraft(ctx context.Context, req cms.AuthRequest, itemID
 		update, err := session.LoadContentItemAccess(ctx, tx, cms.OpContentUpdate, itemID)
 		if err != nil {
 			return err
+		}
+		if typeKey != "" && update.TypeKey != typeKey {
+			return cms.ErrNotFound
 		}
 		out, err = saveAuthorizedDraft(ctx, tx, session, update, itemID, expected, patch)
 		return err

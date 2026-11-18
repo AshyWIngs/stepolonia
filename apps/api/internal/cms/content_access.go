@@ -31,8 +31,9 @@ func (s *AuthService) WithDraftUpdate(ctx context.Context, req AuthRequest, item
 // ContentItemAccess holds the exact field IDs granted for one operation on one item.
 // Its contents are valid only inside the transaction that loaded them.
 type ContentItemAccess struct {
-	TypeID string
-	fields map[string]struct{}
+	TypeID  string
+	TypeKey string
+	fields  map[string]struct{}
 }
 
 func (a ContentItemAccess) AllowsField(fieldID string) bool {
@@ -50,8 +51,9 @@ func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operatio
 	if !valid {
 		return ContentItemAccess{}, ErrNotFound
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT i.type_id::text, f.field_id::text
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT i.type_id::text, t.key, f.field_id::text
  FROM public.content_items i
+ JOIN public.content_types t ON t.id=i.type_id
  JOIN public.role_grants g ON g.type_id=i.type_id
  JOIN public.permission_operations o ON o.key=g.operation
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
@@ -68,7 +70,7 @@ func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operatio
 	access := ContentItemAccess{fields: make(map[string]struct{})}
 	for rows.Next() {
 		var field sql.NullString
-		if err := rows.Scan(&access.TypeID, &field); err != nil {
+		if err := rows.Scan(&access.TypeID, &access.TypeKey, &field); err != nil {
 			return ContentItemAccess{}, err
 		}
 		if field.Valid {

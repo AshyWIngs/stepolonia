@@ -15,6 +15,7 @@ import (
 // AuthenticationConfig keeps the private pool separate from public reads.
 type AuthenticationConfig struct {
 	Database          *pgxpool.Config
+	DraftDatabase     *pgxpool.Config
 	Service           cms.AuthConfig
 	Origin            string
 	TrustedProxyCIDRs []string
@@ -24,7 +25,8 @@ type AuthenticationConfig struct {
 func Authentication(runtime *pgxpool.Config) (*AuthenticationConfig, error) {
 	enabled := os.Getenv("CMS_AUTH_ENABLED")
 	if enabled == "" || enabled == "false" {
-		return nil, nil
+		_, err := draftDatabase(runtime, "", false)
+		return nil, err
 	}
 	if enabled != "true" || runtime == nil {
 		return nil, fmt.Errorf("CMS_AUTH_ENABLED must be true or false")
@@ -34,30 +36,56 @@ func Authentication(runtime *pgxpool.Config) (*AuthenticationConfig, error) {
 	if user == "" || user == runtime.ConnConfig.User || path == "" || origin == "" || site == "" {
 		return nil, fmt.Errorf("CMS requires separate CMS_DB_USER, CMS_DB_PASSWORD_FILE, CMS_AUTH_ORIGIN and SITE")
 	}
-	password, err := privateFile(path, 4096)
+	db, err := privatePool(runtime, user, path, "sp-cms-auth")
 	if err != nil {
-		return nil, fmt.Errorf("read private CMS database password: %w", err)
+		return nil, err
 	}
-	defer clear(password)
-	if strings.TrimSpace(string(password)) == "" {
-		return nil, fmt.Errorf("CMS database password is empty")
+	draft, err := draftDatabase(runtime, user, true)
+	if err != nil {
+		return nil, err
 	}
 	key, version, err := InstallationKey()
 	if err != nil {
 		return nil, err
 	}
-	db := runtime.Copy()
-	db.ConnConfig.User, db.ConnConfig.Password = user, strings.TrimSpace(string(password))
-	// Public pool startup options and hooks must never change the private login.
-	db.ConnConfig.RuntimeParams = map[string]string{"application_name": "sp-cms-auth", "statement_timeout": "15000"}
-	db.AfterConnect, db.BeforeConnect = nil, nil
-	db.ConnConfig.AfterConnect = nil
-	db.MaxConns = 4
 	var peers []string
 	if raw := os.Getenv("CMS_AUTH_PROXY_CIDRS"); raw != "" {
 		peers = strings.Split(raw, ",")
 	}
-	return &AuthenticationConfig{Database: db, Service: cms.AuthConfig{Site: site, KeyVersion: version, EncryptionKey: key}, Origin: origin, TrustedProxyCIDRs: peers}, nil
+	return &AuthenticationConfig{Database: db, DraftDatabase: draft, Service: cms.AuthConfig{Site: site, KeyVersion: version, EncryptionKey: key}, Origin: origin, TrustedProxyCIDRs: peers}, nil
+}
+
+func draftDatabase(runtime *pgxpool.Config, authUser string, authEnabled bool) (*pgxpool.Config, error) {
+	user, path := os.Getenv("CMS_DRAFT_DB_USER"), os.Getenv("CMS_DRAFT_DB_PASSWORD_FILE")
+	if user == "" && path == "" {
+		return nil, nil
+	}
+	if !authEnabled {
+		return nil, fmt.Errorf("CMS draft editing requires CMS_AUTH_ENABLED=true")
+	}
+	if user == "" || path == "" || user == authUser || user == runtime.ConnConfig.User {
+		return nil, fmt.Errorf("CMS draft editing requires a distinct CMS_DRAFT_DB_USER and CMS_DRAFT_DB_PASSWORD_FILE")
+	}
+	return privatePool(runtime, user, path, "sp-cms-draft")
+}
+
+func privatePool(runtime *pgxpool.Config, user, path, application string) (*pgxpool.Config, error) {
+	password, err := privateFile(path, 4096)
+	if err != nil {
+		return nil, fmt.Errorf("read %s database password: %w", application, err)
+	}
+	defer clear(password)
+	if strings.TrimSpace(string(password)) == "" {
+		return nil, fmt.Errorf("%s database password is empty", application)
+	}
+	db := runtime.Copy()
+	db.ConnConfig.User, db.ConnConfig.Password = user, strings.TrimSpace(string(password))
+	// Public pool startup options and hooks must never change the private login.
+	db.ConnConfig.RuntimeParams = map[string]string{"application_name": application, "statement_timeout": "15000"}
+	db.AfterConnect, db.BeforeConnect = nil, nil
+	db.ConnConfig.AfterConnect = nil
+	db.MaxConns = 4
+	return db, nil
 }
 
 // InstallationKey reads the operator-owned raw AEAD key without following symlinks.
