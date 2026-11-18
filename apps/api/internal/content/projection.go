@@ -8,7 +8,6 @@ import (
 )
 
 func (s *Service) projectDraft(ctx context.Context, tx *sql.Tx, actor Actor, state DraftState, schema TypeSchema) (DraftState, error) {
-	allowed := map[string]bool{}
 	ids := map[string]bool{}
 	for _, field := range schema.Fields {
 		err := s.authorize(ctx, tx, actor, string(cms.OpContentRead), state.TypeID, state.ItemID, []string{field.Key})
@@ -19,8 +18,19 @@ func (s *Service) projectDraft(ctx context.Context, tx *sql.Tx, actor Actor, sta
 		if err != nil {
 			return DraftState{}, err
 		}
-		allowed[field.Key] = true
 		ids[field.ID] = true
+	}
+	return projectDraftState(state, schema, func(id string) bool { return ids[id] }, func(relation Relation) (bool, error) {
+		return s.visibleRelation(ctx, tx, actor, relation)
+	})
+}
+
+func projectDraftState(state DraftState, schema TypeSchema, allowsField func(string) bool, visibleRelation func(Relation) (bool, error)) (DraftState, error) {
+	allowed := map[string]bool{}
+	for _, field := range schema.Fields {
+		if allowsField(field.ID) {
+			allowed[field.Key] = true
+		}
 	}
 	state.Shared = projectValues(state.Shared, allowed)
 	for locale, local := range state.Locales {
@@ -29,10 +39,10 @@ func (s *Service) projectDraft(ctx context.Context, tx *sql.Tx, actor Actor, sta
 	}
 	relations := []Relation{}
 	for _, relation := range state.Relations {
-		if !ids[relation.FieldID] {
+		if !allowsField(relation.FieldID) {
 			continue
 		}
-		visible, err := s.visibleRelation(ctx, tx, actor, relation)
+		visible, err := visibleRelation(relation)
 		if err != nil {
 			return DraftState{}, err
 		}

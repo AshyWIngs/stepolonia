@@ -57,6 +57,9 @@ func databaseError(err error) error {
 	if errors.As(err, &domain) {
 		return err
 	}
+	if conflict := transactionConflict(err); conflict != nil {
+		return conflict
+	}
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) {
 		switch pg.Code {
@@ -64,12 +67,21 @@ func databaseError(err error) error {
 			return problem(Validation, "invalid_value")
 		case "23505":
 			return problem(Conflict, "route_conflict")
-		case "40001", "40P01", "55P03":
-			return problem(Conflict, versionConflictCode)
 		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return problem(NotFound, "not_found")
 	}
 	return fmt.Errorf("%w: %w", problem(Unavailable, "dependency_unavailable"), err)
+}
+
+func transactionConflict(err error) *Error {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		switch pg.Code {
+		case "40001", "40P01", "55P03":
+			return &Error{Kind: Conflict, Code: versionConflictCode}
+		}
+	}
+	return nil
 }
