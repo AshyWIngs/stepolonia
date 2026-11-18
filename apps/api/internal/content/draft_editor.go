@@ -9,7 +9,7 @@ import (
 	"stepolonia/apps/api/internal/cms"
 )
 
-// DraftEditor reads and edits existing CMS drafts.
+// DraftEditor creates, reads and edits CMS drafts.
 type DraftEditor struct {
 	auth *cms.AuthService
 }
@@ -17,6 +17,30 @@ type DraftEditor struct {
 // NewDraftEditor binds the editor to an AuthService on the verified CMS Engine pool.
 func NewDraftEditor(auth *cms.AuthService) *DraftEditor {
 	return &DraftEditor{auth: auth}
+}
+
+// CreateDraftForType creates an empty draft at the expected current schema.
+// The response is a receipt. Reading the draft requires a separate read grant.
+func (e *DraftEditor) CreateDraftForType(ctx context.Context, req cms.AuthRequest, typeKey string, schemaNo int64) (DraftState, error) {
+	if e == nil || e.auth == nil {
+		return DraftState{}, cms.ErrSecurityUnavailable
+	}
+	var receipt DraftState
+	err := e.auth.WithDraftCreate(ctx, req, typeKey, schemaNo, func(ctx context.Context, tx *sql.Tx, typeID, itemID string) error {
+		version, err := insertEmptyDraft(ctx, tx, typeID, itemID, schemaNo)
+		if err != nil {
+			return err
+		}
+		receipt = DraftState{ItemID: itemID, TypeID: typeID, SchemaNo: schemaNo, Version: version}
+		return nil
+	})
+	if errors.Is(err, cms.ErrDraftSchemaConflict) {
+		return DraftState{}, problem(Conflict, schemaConflictCode)
+	}
+	if err != nil {
+		return DraftState{}, err
+	}
+	return receipt, nil
 }
 
 const (

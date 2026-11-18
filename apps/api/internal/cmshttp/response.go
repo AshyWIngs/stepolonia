@@ -49,7 +49,12 @@ type authProblem struct {
 }
 
 func respond(w http.ResponseWriter, value any) {
+	respondStatus(w, http.StatusOK, value)
+}
+
+func respondStatus(w http.ResponseWriter, status int, value any) {
 	w.Header().Set(contentTypeHeader, jsonMediaType)
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
 func problem(w http.ResponseWriter, status int, code string) {

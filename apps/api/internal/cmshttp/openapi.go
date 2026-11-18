@@ -44,7 +44,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, projected draft reads and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, empty draft creation, projected draft reads and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -65,13 +65,18 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		}
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
-	if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
+	if rt.operationID == createDraftOperation {
+		op.Parameters = append(op.Parameters, contentTypeParameter("Collection in which to create the draft."))
+	} else if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
 		op.Parameters = append(op.Parameters, contentItemParameters()...)
 	}
 	return op
 }
 
 func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
+	if rt.operationID == createDraftOperation {
+		return createDraftRequestBody(registry)
+	}
 	name := rt.operationID + "Request"
 	if rt.operationID == replaceUserRolesOperation {
 		schema, example := userRolesRequestSchema(rt)
@@ -251,6 +256,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
 	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
+	schemas[createdDraftSchema] = createdDraftResultSchema()
 	schemas[contentDraftSchema] = draftResultSchema()
 	schemas[readableDraftSchema] = draftReadSchema()
 	return schemas
@@ -319,7 +325,15 @@ func authResponses(rt route) map[string]*huma.Response {
 			role.Version = 2
 			example = role
 		}
-		responses["200"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: example}}}
+		status := "200"
+		if rt.operationID == createDraftOperation {
+			status = "201"
+			successHeaders["Location"] = &huma.Param{
+				Description: "Relative private URL of the created draft. GET still requires current read permission.",
+				Schema:      stringSchema("Created draft URL.", adminContentPrefix+"article/"+exampleUUID),
+			}
+		}
+		responses[status] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: example}}}
 	}
 	for status, codes := range authErrorCodes(rt) {
 		responses[strconv.Itoa(status)] = authErrorResponse(rt, status, codes)
@@ -377,24 +391,10 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 	headers := authResponseHeaders()
 	description := http.StatusText(status) + ": " + strings.Join(codes, ", ") + "."
 	switch status {
-	case 404:
-		switch rt.operationID {
-		case replaceUserRolesOperation:
-			description += " Account or requested role is missing or outside the actor's assignment envelope."
-		case saveDraftOperation:
-			description += " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
-		case readDraftOperation:
-			description += " Item is missing, belongs to a different collection or is outside the actor's authorized read scope."
-		case replaceContentAssigneesOperation:
-			description += " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
-		}
-	case 409:
-		if rt.operationID == replaceContentAssigneesOperation {
-			description += " The item version differs or a recipient in scope is inactive."
-		}
-		if rt.operationID == saveDraftOperation {
-			description += " The expected item version or pinned schema differs. Reload before editing again."
-		}
+	case http.StatusNotFound:
+		description += authNotFoundDescription(rt.operationID)
+	case http.StatusConflict:
+		description += authConflictDescription(rt.operationID)
 	case 429:
 		description += authRateDescription(rt)
 		headers["Retry-After"] = &huma.Param{Description: "Fixed retry delay in seconds; obey it before retrying credential checks.", Schema: constantStringSchema("900", "900")}
@@ -417,8 +417,38 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 	return &huma.Response{Description: description, Headers: headers, Content: map[string]*huma.MediaType{"application/problem+json": {Schema: schema, Examples: examples}}}
 }
 
+func authNotFoundDescription(operationID string) string {
+	switch operationID {
+	case replaceUserRolesOperation:
+		return " Account or requested role is missing or outside the actor's assignment envelope."
+	case createDraftOperation:
+		return " Collection is missing or outside the actor's authorized create scope."
+	case saveDraftOperation:
+		return " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
+	case readDraftOperation:
+		return " Item is missing, belongs to a different collection or is outside the actor's authorized read scope."
+	case replaceContentAssigneesOperation:
+		return " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
+	default:
+		return ""
+	}
+}
+
+func authConflictDescription(operationID string) string {
+	switch operationID {
+	case replaceContentAssigneesOperation:
+		return " The item version differs or a recipient in scope is inactive."
+	case saveDraftOperation:
+		return " The expected item version or pinned schema differs. Reload before editing again."
+	case createDraftOperation:
+		return " The expected schema differs from the current collection schema."
+	default:
+		return ""
+	}
+}
+
 func authRateDescription(rt route) string {
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation || rt.operationID == createDraftOperation {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -451,6 +481,7 @@ func privateRoutes() map[string][]route {
 		all[path] = methods
 	}
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
+	all[createDraftPath] = []route{createDraftRoute}
 	all[contentDraftPath] = []route{readDraftRoute, saveDraftRoute}
 	return all
 }
@@ -478,7 +509,7 @@ func authTags() []*huma.Tag {
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation, disable and role membership replacement."},
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
-		{Name: contentDraftTag, Description: "Projected draft reads and versioned scalar editing when the installation enables its draft editor."},
+		{Name: contentDraftTag, Description: "Empty draft creation, projected reads and versioned scalar editing when the installation enables its draft editor."},
 	}
 }
 
@@ -493,7 +524,7 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
-	case readDraftOperation, saveDraftOperation:
+	case createDraftOperation, readDraftOperation, saveDraftOperation:
 		return contentDraftTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
@@ -511,10 +542,7 @@ func authSuccessDescription(rt route) string {
 	case usersTag:
 		return userSuccessDescription(rt)
 	case contentDraftTag:
-		if rt.operationID == readDraftOperation {
-			return "Returns the current draft version and actor-readable state."
-		}
-		return "Draft and audit committed. Returns the current item version and any actor-readable draft state."
+		return draftSuccessDescription(rt.operationID)
 	case contentAssigneesTag:
 		return "Complete assignee set and audit committed; returns the item UUID, assignment set and incremented version."
 	}

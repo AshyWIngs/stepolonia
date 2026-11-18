@@ -3,9 +3,61 @@ package cms
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
-const draftSavedEvent = "content.draft_saved"
+const (
+	draftCreatedEvent = "content.draft_created"
+	draftSavedEvent   = "content.draft_saved"
+)
+
+// WithDraftCreate authorizes a new draft on the requested collection and commits
+// the creator assignment and success audit with the draft.
+func (s *AuthService) WithDraftCreate(ctx context.Context, req AuthRequest, typeKey string, expectedSchemaNo int64, create func(ctx context.Context, tx *sql.Tx, typeID, itemID string) error) error {
+	if create == nil {
+		return ErrSecurityUnavailable
+	}
+	return s.auditedCommand(ctx, req, draftCreatedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
+		if !session.FreshStepUp() {
+			return ErrStepUpRequired
+		}
+		typeID, schemaNo, err := draftCreateTarget(ctx, tx, session.user, typeKey)
+		if err != nil {
+			return err
+		}
+		if schemaNo != expectedSchemaNo {
+			return ErrDraftSchemaConflict
+		}
+		itemID, err := randomID()
+		if err != nil {
+			return err
+		}
+		if err := create(ctx, tx, typeID, itemID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_item_assignments(item_id,user_id) VALUES($1,$2)`, itemID, session.user); err != nil {
+			return err
+		}
+		return securityAudit(ctx, tx, draftCreatedEvent, session.user, itemID, "")
+	})
+}
+
+func draftCreateTarget(ctx context.Context, tx *sql.Tx, userID, typeKey string) (string, int64, error) {
+	var typeID string
+	var schemaNo int64
+	err := tx.QueryRowContext(ctx, `SELECT t.id::text,t.current_schema_no
+ FROM public.content_types t WHERE t.key=$1 AND EXISTS (
+ SELECT 1 FROM public.role_grants g
+ JOIN public.permission_operations o ON o.key=g.operation AND o.scope='content'
+ JOIN public.roles r ON r.id=g.role_id AND r.state='active'
+ JOIN public.user_roles m ON m.role_id=r.id AND m.user_id=$2
+ WHERE g.type_id=t.id AND g.operation=$3 AND g.scope='content' AND g.object_scope='type')`,
+		typeKey, userID, opContentCreate).Scan(&typeID, &schemaNo)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, ErrNotFound
+	}
+	return typeID, schemaNo, err
+}
 
 // WithDraftUpdate checks the full session, CSRF and step-up under the installation
 // mutex, and audits a successful Engine update in the same transaction.

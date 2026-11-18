@@ -42,6 +42,11 @@ type authFixtureState struct {
 func authFixture(t *testing.T) authFixtureState {
 	t.Helper()
 	db, bootstrap, config := bootstrapFixture(t)
+	return authFixtureFromBootstrap(t, db, bootstrap, config)
+}
+
+func authFixtureFromBootstrap(t *testing.T, db *sql.DB, bootstrap *cms.BootstrapService, config cms.BootstrapConfig) authFixtureState {
+	t.Helper()
 	ctx := context.Background()
 	enrollment, err := bootstrap.Start(ctx, bootstrapTestLogin, bootstrapTestPassphrase)
 	requireNoError(t, err)

@@ -23,11 +23,15 @@ const (
 	draftExampleField   = "headline"
 )
 
-type savedDraftResponse struct {
+type draftReceipt struct {
 	ItemID   string `json:"item_id"`
 	TypeID   string `json:"type_id"`
 	SchemaNo int64  `json:"schema_no,string"`
 	Version  int64  `json:"version,string"`
+}
+
+type savedDraftResponse struct {
+	draftReceipt
 	*readableDraft
 }
 
@@ -60,8 +64,12 @@ type readableDraftRelation struct {
 	TargetItemID string `json:"target_item_id"`
 }
 
+func newDraftReceipt(state content.DraftState) draftReceipt {
+	return draftReceipt{ItemID: state.ItemID, TypeID: state.TypeID, SchemaNo: state.SchemaNo, Version: state.Version}
+}
+
 func draftResponse(state content.DraftState) savedDraftResponse {
-	out := savedDraftResponse{ItemID: state.ItemID, TypeID: state.TypeID, SchemaNo: state.SchemaNo, Version: state.Version}
+	out := savedDraftResponse{draftReceipt: newDraftReceipt(state)}
 	// A positive shared sequence identifies a readable projection. The service
 	// returns the identity and version only when the actor lacks item read access.
 	if state.SharedSeq == 0 {
@@ -152,7 +160,7 @@ func draftResultSchema() *huma.Schema {
 	}, []string{"field_id", "locale", "target_type_id", "target_item_id"}, nil)
 	readySeq := contentVersionSchema("Approved shared sequence or null until approved.", "1")
 	readySeq.Nullable = true
-	example := savedDraftResponse{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 3, readableDraft: &readableDraft{
+	example := savedDraftResponse{draftReceipt: draftReceipt{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 3}, readableDraft: &readableDraft{
 		Shared: content.ScalarValues{}, SharedSeq: 1, Relations: []readableDraftRelation{},
 		Locales: map[string]readableDraftLocale{"en": {Values: content.ScalarValues{draftExampleField: json.RawMessage(`"Spring workshops"`)}, LocalSeq: 2}},
 	}}
@@ -166,11 +174,39 @@ func draftResultSchema() *huma.Schema {
 		"relations":       {Type: huma.TypeArray, Items: relation},
 		"publication_id":  uuidSchema(exampleUUID),
 	}, []string{itemIDField, typeIDField, schemaNoField, draftVersionField}, example)
-	schema.Examples = append(schema.Examples, savedDraftResponse{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 3})
+	schema.Examples = append(schema.Examples, example.draftReceipt)
 	return schema
 }
 
+func createDraftRequestBody(registry huma.Registry) *huma.RequestBody {
+	name := createDraftOperation + "Request"
+	example := map[string]string{schemaNoField: "1"}
+	registry.Map()[name] = closedObjectSchema("Schema revision to pin to the empty draft.", map[string]*huma.Schema{
+		schemaNoField: contentVersionSchema("Current collection schema checked under the shared security mutex.", "1"),
+	}, []string{schemaNoField}, example)
+	return &huma.RequestBody{
+		Required: true, Description: "One JSON object, at most 4096 bytes. Provide only schema_no as a canonical positive int64 string. Duplicate or unknown properties, null and trailing JSON are rejected.",
+		Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}},
+	}
+}
+
+func createdDraftResultSchema() *huma.Schema {
+	return closedObjectSchema("Identity and initial version of a committed empty draft.", map[string]*huma.Schema{
+		itemIDField: uuidSchema(exampleUUID), typeIDField: uuidSchema(exampleUUID),
+		schemaNoField:     contentVersionSchema("Current collection schema pinned to the new draft.", "1"),
+		draftVersionField: contentVersionSchema("Initial item version; use it for the first edit.", "1"),
+	}, []string{itemIDField, typeIDField, schemaNoField, draftVersionField},
+		draftReceipt{ItemID: exampleUUID, TypeID: exampleUUID, SchemaNo: 1, Version: 1})
+}
+
 func draftErrorCodes(rt route) map[int][]string {
+	if rt.operationID == createDraftOperation {
+		return map[int][]string{
+			400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, stepUpRequiredCode},
+			404: {notFoundCode}, 405: {methodNotAllowedCode}, 409: {schemaConflictCode},
+			413: {bodyTooLargeCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode},
+		}
+	}
 	if rt.method == http.MethodGet {
 		return map[int][]string{
 			400: {validationCode}, 401: {authenticationCode}, 403: {originCode}, 404: {notFoundCode},
@@ -190,4 +226,15 @@ func draftReadSchema() *huma.Schema {
 	schema.Required = append(schema.Required, draftSharedField, sharedSequenceField, "shared_ready_seq", draftLocalesField, "relations")
 	schema.Examples = schema.Examples[:1]
 	return schema
+}
+
+func draftSuccessDescription(operationID string) string {
+	switch operationID {
+	case createDraftOperation:
+		return "Item, empty draft, creator assignment and audit committed. Returns the new item and collection IDs and the draft version."
+	case readDraftOperation:
+		return "Returns the current draft version and actor-readable state."
+	default:
+		return "Draft and audit committed. Returns the current item version and any actor-readable draft state."
+	}
 }
