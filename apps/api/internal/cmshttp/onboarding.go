@@ -63,6 +63,9 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 		}
 		return saveDraftRoute, target, true
 	}
+	if target, rt, ok := draftCandidateTarget(path); ok && draftEditorEnabled {
+		return rt, target, true
+	}
 	key, id := userRoutePath(path)
 	candidates, ok := userRoutes[key]
 	if !ok {
@@ -198,6 +201,9 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
+	if rt, ok := draftCandidateRoutes[path]; ok {
+		return rt.method
+	}
 	if path == createDraftPath {
 		return createDraftRoute.method
 	}

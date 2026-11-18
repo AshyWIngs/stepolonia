@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+
+	"stepolonia/apps/api/internal/cms"
 )
 
 type publicationLocale struct {
@@ -22,33 +24,38 @@ type publicationCandidate struct {
 }
 
 func (s *Service) Publish(ctx context.Context, actor Actor, item string, expected, schemaNo int64, intended []string) (DraftState, error) {
-	return s.withCandidate(ctx, actor, "content.items.publish", item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
-		candidate, err := publicationPlan(ctx, tx, *state, schema, intended)
-		if err != nil {
-			return err
-		}
-		for locale, local := range candidate.Locales {
-			relations := append(append([]Relation{}, candidate.Relations...), local.Relations...)
-			if err := s.authorizeRelations(ctx, tx, actor, schema, relations, locale, true); err != nil {
-				return err
-			}
-		}
-		id, err := storePublication(ctx, tx, *state, schema, candidate)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE public.content_items SET published_id=$2 WHERE id=$1`, item, id); err != nil {
-			return err
-		}
-		return advanceVersion(ctx, tx, state)
+	return s.withCandidate(ctx, actor, string(cms.OpContentPublish), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
+		return publishCandidate(ctx, tx, state, schema, intended, s.relationAccess(ctx, tx, actor))
 	})
+}
+
+func publishCandidate(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, intended []string, readable relationAccess) error {
+	candidate, err := publicationPlan(ctx, tx, *state, schema, intended)
+	if err != nil {
+		return err
+	}
+	for locale, local := range candidate.Locales {
+		relations := append(append([]Relation{}, candidate.Relations...), local.Relations...)
+		if err := checkCandidateRelations(ctx, tx, schema, relations, locale, true, readable); err != nil {
+			return err
+		}
+	}
+	id, err := storePublication(ctx, tx, *state, schema, candidate)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE public.content_items SET published_id=$2 WHERE id=$1`, state.ItemID, id); err != nil {
+		return err
+	}
+	state.PublicationID = id
+	return advanceVersion(ctx, tx, state)
 }
 func publicationPlan(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, intended []string) (publicationCandidate, error) {
 	candidate, err := previousPublication(ctx, tx, state)
 	if err != nil {
 		return candidate, err
 	}
-	if len(intended) == 0 || len(intended) > 20 {
+	if len(intended) == 0 || len(intended) > MaxDraftLocales {
 		return candidate, problem(Validation, "invalid_locales")
 	}
 	if !state.SharedReadySeq.Valid || state.SharedReadySeq.Int64 != state.SharedSeq {

@@ -24,7 +24,7 @@ func expectedCreateDraftReceipt(t *testing.T) map[string]any {
 	t.Helper()
 	var receipt map[string]any
 	const example = `{"item_id":%q,"type_id":%q,"schema_no":"1","version":"1"}`
-	if err := json.Unmarshal([]byte(fmt.Sprintf(example, exampleUUID, exampleUUID)), &receipt); err != nil {
+	if err := json.Unmarshal(fmt.Appendf(nil, example, exampleUUID, exampleUUID), &receipt); err != nil {
 		t.Fatal(err)
 	}
 	return receipt

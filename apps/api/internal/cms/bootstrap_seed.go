@@ -8,7 +8,7 @@ import (
 
 const seedAdminName = "Site Admin"
 
-var bootstrapContentOperations = []string{opContentCreate, string(OpContentRead), string(OpContentUpdate), opContentReady, opContentPublish, "content.items.unpublish", opContentAssign}
+var bootstrapContentOperations = []string{opContentCreate, string(OpContentRead), string(OpContentUpdate), string(OpContentReady), string(OpContentPublish), "content.items.unpublish", opContentAssign}
 var bootstrapInstallationOperations = []string{string(OpContentTypesManage), opContentInitializeAccess, opContentDelegate, "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", opRolesAssign, opRolesDisable, opRolesEnable, opRolesArchive, opRolesRestore, "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage}
 
 func seedBootstrapRoles(ctx context.Context, tx *sql.Tx) error {
@@ -141,7 +141,7 @@ func seedContentGrant(ctx context.Context, tx *sql.Tx, roleID, articleTypeID, op
 	if _, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate) VALUES($1,$2,$3,'content',$4,$5,$6)`, id, roleID, op, articleTypeID, objectScope, delegable); err != nil {
 		return err
 	}
-	if op == opContentCreate || op == string(OpContentRead) || op == string(OpContentUpdate) || op == opContentReady || op == opContentPublish {
+	if op == opContentCreate || op == string(OpContentRead) || op == string(OpContentUpdate) || op == string(OpContentReady) || op == string(OpContentPublish) {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,type_id,field_id FROM public.content_fields WHERE type_id=$2`, id, articleTypeID); err != nil {
 			return err
 		}

@@ -44,7 +44,7 @@ func OpenAPIJSON() ([]byte, error) {
 	}
 	return json.Marshal(&huma.OpenAPI{
 		OpenAPI: "3.1.0",
-		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, empty draft creation, projected draft reads and scalar draft editing. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
+		Info:    &huma.Info{Title: "Stepolonia private CMS API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, empty draft creation, projected draft reads, scalar draft editing, readiness and publication. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants CMS permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
@@ -74,6 +74,9 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 }
 
 func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
+	if schema, ok := draftCandidateContracts[rt.operationID]; ok {
+		return draftCandidateRequestBody(registry, rt.operationID, schema)
+	}
 	if rt.operationID == createDraftOperation {
 		return createDraftRequestBody(registry)
 	}
@@ -259,6 +262,7 @@ func privateSchemas() map[string]*huma.Schema {
 	schemas[createdDraftSchema] = createdDraftResultSchema()
 	schemas[contentDraftSchema] = draftResultSchema()
 	schemas[readableDraftSchema] = draftReadSchema()
+	schemas[publishedDraftSchema] = publishedDraftResultSchema()
 	return schemas
 }
 
@@ -423,6 +427,8 @@ func authNotFoundDescription(operationID string) string {
 		return " Account or requested role is missing or outside the actor's assignment envelope."
 	case createDraftOperation:
 		return " Collection is missing or outside the actor's authorized create scope."
+	case readySharedOperation, readyLocaleOperation, publishOperation:
+		return " Item is missing, belongs to a different collection or is outside the actor's authorized command scope. A draft locale may also be absent."
 	case saveDraftOperation:
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
 	case readDraftOperation:
@@ -448,7 +454,10 @@ func authConflictDescription(operationID string) string {
 }
 
 func authRateDescription(rt route) string {
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || rt.operationID == saveDraftOperation || rt.operationID == createDraftOperation {
+	if rt.operationID == readySharedOperation || rt.operationID == readyLocaleOperation {
+		return " Shared and locale readiness use the same denial budget: 5 per client address in 15 minutes. Publish has a separate operation budget. Both count toward limits of 30 per IP and 100 per installation. Successful commands do not consume denial capacity."
+	}
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag && rt.method != http.MethodGet {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -483,6 +492,9 @@ func privateRoutes() map[string][]route {
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
 	all[createDraftPath] = []route{createDraftRoute}
 	all[contentDraftPath] = []route{readDraftRoute, saveDraftRoute}
+	for path, rt := range draftCandidateRoutes {
+		all[path] = []route{rt}
+	}
 	return all
 }
 
@@ -509,7 +521,7 @@ func authTags() []*huma.Tag {
 		{Name: usersTag, Description: "Authorized safe account reads, pending-account creation, onboarding token issuance, activation, disable and role membership replacement."},
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
-		{Name: contentDraftTag, Description: "Empty draft creation, projected reads and versioned scalar editing when the installation enables its draft editor."},
+		{Name: contentDraftTag, Description: "Empty draft creation, projected reads, versioned editing, readiness and publication when the installation enables its draft editor."},
 	}
 }
 
@@ -524,7 +536,7 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
-	case createDraftOperation, readDraftOperation, saveDraftOperation:
+	case createDraftOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation:
 		return contentDraftTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
