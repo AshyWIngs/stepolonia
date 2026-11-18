@@ -59,7 +59,7 @@ func TestUserRolesRejectsInvalidBodiesBeforeService(t *testing.T) {
 		`{"role_ids":[]}`,
 		`{"expected_version":0,"role_ids":[]}`,
 		`{"expected_version":"1","role_ids":[]}`,
-		`{"expected_version":7}`,
+		`{"expected_version":1}`,
 		`{"expected_version":1,"role_ids":null}`,
 		`{"expected_version":1,"role_ids":{}}`,
 		`{"expected_version":1,"role_ids":[null]}`,

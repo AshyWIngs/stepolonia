@@ -46,19 +46,10 @@ func (s *AuthService) replaceUserRoles(ctx context.Context, tx *sql.Tx, x Sessio
 	if err != nil {
 		return User{}, err
 	}
-	user, err := findUser(ctx, tx, userID)
+	actor := before[x.user]
+	user, err := roleAssignmentTarget(ctx, tx, userID, command.version, before, actor.active)
 	if err != nil {
 		return User{}, err
-	}
-	actor := before[x.user]
-	if !withinEnvelope(actor.active, before[user.ID].latent) {
-		return User{}, ErrNotFound
-	}
-	if command.version < 1 {
-		return User{}, ErrValidation
-	}
-	if user.Version != command.version {
-		return User{}, ErrVersionConflict
 	}
 	requested, err := validateUserRoleIDs(command.roleIDs, policies, actor.active)
 	if err != nil {
@@ -82,6 +73,23 @@ func (s *AuthService) replaceUserRoles(ctx context.Context, tx *sql.Tx, x Sessio
 		return User{}, err
 	}
 	return user, securityAudit(ctx, tx, userRolesReplacedEvent, x.user, user.ID, "")
+}
+
+func roleAssignmentTarget(ctx context.Context, tx *sql.Tx, userID string, version int64, before accessSnapshot, actor []accessGrant) (User, error) {
+	user, err := findUser(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	if !withinEnvelope(actor, before[user.ID].latent) {
+		return User{}, ErrNotFound
+	}
+	if version < 1 {
+		return User{}, ErrValidation
+	}
+	if user.Version != version {
+		return User{}, ErrVersionConflict
+	}
+	return user, nil
 }
 
 func validateUserRoleIDs(input []string, policies map[string][]accessGrant, actor []accessGrant) ([]string, error) {
