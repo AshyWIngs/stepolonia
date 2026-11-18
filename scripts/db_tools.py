@@ -38,7 +38,8 @@ def disposable_marker(site):
     return marker
 
 
-def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow_disposable_down=False):
+def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow_disposable_down=False,
+             build_image=True):
     marker = None
     if list(arguments) == ["migrate", "down"]:
         if not allow_disposable_down:
@@ -59,7 +60,9 @@ def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow
     command = compose_command(site)
     if override is not None:
         command += ["-f", str(override)]
-    command += ["run", "--build", "--rm", "--no-deps", "-T"]
+    command.append("run")
+    command.extend(["--build"] if build_image else ["--pull", "never"])
+    command += ["--rm", "--no-deps", "-T"]
     if marker is not None:
         command += ["--env", "DB_DISPOSABLE_TOKEN"]
     if input_file is not None:
