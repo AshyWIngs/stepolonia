@@ -51,13 +51,7 @@ func (s *AuthService) WithCollectionRevision(ctx context.Context, req AuthReques
 }
 
 func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthRequest, event string, initialize bool, write collectionWriter) (CollectionAccess, error) {
-	permissions := []string{string(OpContentTypesManage)}
-	if initialize {
-		permissions = append(permissions, opContentInitializeAccess)
-		if event == collectionRevisedEvent {
-			permissions = append(permissions, opRolesEdit)
-		}
-	}
+	permissions := collectionWritePermissions(event, initialize)
 	var access CollectionAccess
 	err := s.authorizedCommand(ctx, req, permissions, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
 		var before accessSnapshot
@@ -84,6 +78,17 @@ func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthReques
 		return CollectionAccess{}, err
 	}
 	return access, nil
+}
+
+func collectionWritePermissions(event string, initialize bool) []string {
+	permissions := []string{string(OpContentTypesManage)}
+	if initialize {
+		permissions = append(permissions, opContentInitializeAccess)
+		if event == collectionRevisedEvent {
+			permissions = append(permissions, opRolesEdit)
+		}
+	}
+	return permissions
 }
 
 func (s *AuthService) initializeCollectionAccess(ctx context.Context, tx *sql.Tx, actor string, before accessSnapshot, change CollectionMutation, fresh bool) (CollectionAccess, error) {

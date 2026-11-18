@@ -340,14 +340,11 @@ func (s *AuthService) Logout(ctx context.Context, req AuthRequest, kind string) 
 	})
 }
 func (s *AuthService) RevokeAll(ctx context.Context, req AuthRequest) error {
-	return s.WithSession(ctx, req, true, func(ctx context.Context, tx *sql.Tx, x Session) error {
-		if !x.FreshStepUp() {
-			return ErrAuthenticationRequired
-		}
+	return s.accountCredentialCommand(ctx, req, sessionsRevokedEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		if err := revokeUser(ctx, tx, x.user); err != nil {
 			return err
 		}
-		return authAudit(ctx, tx, "auth.sessions_revoked", x.user, false)
+		return securityAudit(ctx, tx, sessionsRevokedEvent, x.user, x.user, "")
 	})
 }
 func revokeUser(ctx context.Context, tx *sql.Tx, user string) error {

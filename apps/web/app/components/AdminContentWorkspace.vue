@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { AdminContentError } from '~/utils/admin-request'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { usePublicApi } from '~/composables/usePublicApi'
-import { AdminContentError, createDraft, listCollections, listDrafts } from '~/utils/admin-content'
+import { createDraft, listCollections, listDrafts } from '~/utils/admin-content'
 import type { CollectionChoice, DraftSummary } from '~/utils/admin-content'
 
 const props = defineProps<{

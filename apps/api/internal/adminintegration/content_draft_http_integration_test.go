@@ -47,7 +47,7 @@ func sendDraftRequest(t *testing.T, server *httptest.Server, method, token strin
 	} else {
 		setAuthHTTPHeaders(req, server.URL, input.csrf)
 	}
-	req.AddCookie(&http.Cookie{Name: "__Host-sp_session", Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: authFullSessionCookie, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	res, err := server.Client().Do(req)
 	requireNoError(t, err)
 	defer func() { _ = res.Body.Close() }()

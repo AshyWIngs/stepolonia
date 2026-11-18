@@ -180,3 +180,15 @@
   background: var(--admin-error-bg);
   color: var(--admin-error);
 }
+
+nav.access-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+nav.access-navigation [aria-pressed="true"] {
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+}

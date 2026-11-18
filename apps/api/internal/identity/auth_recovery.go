@@ -228,15 +228,10 @@ func (s *AuthService) replaceRecoveryFactors(ctx context.Context, tx *sql.Tx, x 
 	if _, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,confirmed_at=$4,last_counter=$5 WHERE user_id=$1`, x.user, completion.ciphertext, completion.keyVersion, x.now, completion.acceptedCounter); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE public.recovery_codes SET consumed_at=$2 WHERE user_id=$1 AND consumed_at IS NULL`, x.user, x.now); err != nil {
+	if err := storeReplacementCodes(ctx, tx, x, completion.codeDigests); err != nil {
 		return err
 	}
-	for _, d := range completion.codeDigests {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.recovery_codes(user_id,digest)VALUES($1,$2)`, x.user, d); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE public.users SET credential_version=credential_version+1,version=version+1 WHERE id=$1`, x.user); err != nil {
+	if err := advanceCredentialVersion(ctx, tx, x.user); err != nil {
 		return err
 	}
 	if err := revokeUser(ctx, tx, x.user); err != nil {

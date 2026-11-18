@@ -15,21 +15,22 @@ const (
 )
 
 const (
-	authenticationCode      = "authentication_required"
-	originCode              = "origin_denied"
-	validationCode          = "validation_failed"
-	csrfCode                = "csrf_failed"
-	notFoundCode            = "not_found"
-	permissionCode          = "permission_denied"
-	methodNotAllowedCode    = "method_not_allowed"
-	bodyTooLargeCode        = "body_too_large"
-	securityUnavailableCode = "security_unavailable"
-	stepUpRequiredCode      = "step_up_required"
-	lastAdminRequiredCode   = "last_admin_required"
-	versionConflictCode     = "version_conflict"
-	roleInUseCode           = "role_in_use"
-	invalidTransitionCode   = "invalid_transition"
-	rateLimitedCode         = "rate_limited"
+	authenticationCode         = "authentication_required"
+	rejectedAuthenticationCode = "invalid_credentials"
+	originCode                 = "origin_denied"
+	validationCode             = "validation_failed"
+	csrfCode                   = "csrf_failed"
+	notFoundCode               = "not_found"
+	permissionCode             = "permission_denied"
+	methodNotAllowedCode       = "method_not_allowed"
+	bodyTooLargeCode           = "body_too_large"
+	securityUnavailableCode    = "security_unavailable"
+	stepUpRequiredCode         = "step_up_required"
+	lastAdminRequiredCode      = "last_admin_required"
+	versionConflictCode        = "version_conflict"
+	roleInUseCode              = "role_in_use"
+	invalidTransitionCode      = "invalid_transition"
+	rateLimitedCode            = "rate_limited"
 )
 
 type csrfResponse struct {
@@ -72,7 +73,7 @@ func writeError(w http.ResponseWriter, err error) {
 	status, code := http.StatusServiceUnavailable, securityUnavailableCode
 	switch {
 	case errors.Is(err, identity.ErrInvalidCredentials):
-		status, code = http.StatusUnauthorized, "invalid_credentials"
+		status, code = http.StatusUnauthorized, rejectedAuthenticationCode
 	case errors.Is(err, identity.ErrAuthenticationRequired):
 		status, code = http.StatusUnauthorized, authenticationCode
 	case errors.Is(err, identity.ErrCSRF):

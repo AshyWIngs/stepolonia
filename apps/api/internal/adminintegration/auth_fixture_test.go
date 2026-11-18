@@ -26,6 +26,8 @@ import (
 	"stepolonia/apps/api/internal/testpostgres"
 )
 
+const previousTOTPCounterSQL = `UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`
+
 const currentDatabaseSQL = "SELECT current_database()"
 const publisherTestRole = "sp_publisher"
 const languageImporterTestRole = "sp_language_importer"
@@ -55,7 +57,7 @@ func authFixtureFromBootstrap(t *testing.T, db *sql.DB, bootstrap *identity.Boot
 	requireNoError(t, err)
 	// Use a previous accepted step so login tests never wait for a wall clock tick.
 	requireNoError(t, identity.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`, enrollment.UserID)
+		_, err := tx.ExecContext(ctx, previousTOTPCounterSQL, enrollment.UserID)
 		return err
 	}))
 	service, err := identity.NewAuthService(db, config)

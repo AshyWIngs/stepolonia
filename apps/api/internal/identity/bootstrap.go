@@ -279,7 +279,7 @@ func (s *BootstrapService) restartTx(ctx context.Context, tx *sql.Tx, pending st
 	if _, err := tx.ExecContext(ctx, `UPDATE public.mfa_totp SET ciphertext=$2,key_version=$3,last_counter=-1 WHERE user_id=$1 AND confirmed_at IS NULL`, snap.id, ciphertext, s.config.KeyVersion); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE public.users SET credential_version=credential_version+1,version=version+1 WHERE id=$1`, snap.id); err != nil {
+	if err := advanceCredentialVersion(ctx, tx, snap.id); err != nil {
 		return err
 	}
 	return bootstrapAudit(ctx, tx, "bootstrap.restarted", snap.id)

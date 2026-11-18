@@ -1,8 +1,4 @@
-export class AdminContentError extends Error {
-  constructor(readonly status: number, readonly code?: string) {
-    super('Administration content request failed')
-  }
-}
+import { administrationRequest } from './admin-request'
 
 export interface CollectionChoice {
   type_id: string
@@ -87,29 +83,6 @@ function collectionPath(type: string) {
 
 function draftPath(type: string, itemID: string) {
   return `${collectionPath(type)}/${encodeURIComponent(itemID)}`
-}
-
-async function administrationRequest<T>(path: string, csrf?: string, method = 'GET', data?: object): Promise<T> {
-  const options: RequestInit = {
-    method,
-    credentials: 'same-origin',
-    cache: 'no-store',
-    redirect: 'error',
-    referrerPolicy: 'same-origin',
-    signal: AbortSignal.timeout(12000),
-  }
-  if (data !== undefined) {
-    options.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf ?? '' }
-    options.body = JSON.stringify(data)
-  }
-  const response = await fetch(path, options)
-  const result: unknown = await response.json().catch(() => null)
-  if (!response.ok || result === null) {
-    const code = typeof result === 'object' && result !== null && 'code' in result && typeof result.code === 'string'
-      ? result.code : undefined
-    throw new AdminContentError(response.ok ? 503 : response.status, code)
-  }
-  return result as T
 }
 
 export function listCollections(offset = 0) {

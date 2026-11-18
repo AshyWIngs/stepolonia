@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 )
 
 const (
@@ -34,7 +35,7 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 	schema.Properties[contentFieldsProperty] = registryFieldsSchema()
 	schemas[rendererSchema] = schema
 	options := responseDTOSchema("Renderer choices for the installation's collection registry.", registryRenderersResponse{Items: []registryRenderer{option}})
-	options.Properties["items"] = &huma.Schema{Type: huma.TypeArray, Items: schemaRef(rendererSchema)}
+	options.Properties[privatePageItemsField] = &huma.Schema{Type: huma.TypeArray, Items: schemaRef(rendererSchema)}
 	schemas[registryRenderersSchema] = options
 	managedFields := registryFieldsSchema()
 	managedFields.Items.Properties["field_id"] = uuidSchema(exampleUUID)
@@ -43,6 +44,11 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 	for _, field := range option.Fields {
 		exampleFields = append(exampleFields, managedRegistryField{FieldID: exampleUUID, registryField: field})
 	}
+	grantExample := registryAccessGrant{Operation: string(identity.OpContentRead), Scope: roleAssignedObjects, FieldIDs: []string{exampleUUID}}
+	receipt := responseDTOSchema("Exact non-delegable self-access applied by this committed write. Omitted on reads and writes without opt-in.", registryAccessReceipt{
+		RoleID: exampleUUID, Grants: []registryAccessGrant{grantExample},
+	})
+	receipt.Properties["grants"] = &huma.Schema{Type: huma.TypeArray, Items: responseDTOSchema("The operation, object scope and exact field identifiers applied by this command.", grantExample)}
 	schemas[registryCollectionSchema] = closedObjectSchema("Current schema and optimistic version for a managed collection.",
 		map[string]*huma.Schema{
 			typeIDField: uuidSchema(exampleUUID), typeKeyField: contentTypeParameter("").Schema,
@@ -50,9 +56,7 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 			draftVersionField:         contentVersionSchema("Collection version used for the next revision.", "1"),
 			schemaNoField:             contentVersionSchema("Current sealed semantic schema number.", "1"),
 			contentFieldsProperty:     managedFields,
-			"applied_access": responseDTOSchema("Exact non-delegable self-access applied by this committed write. Omitted on reads and writes without opt-in.", registryAccessReceipt{
-				RoleID: exampleUUID, Grants: []registryAccessGrant{{Operation: "content.items.create"}},
-			}),
+			"applied_access":          receipt,
 		},
 		[]string{typeIDField, typeKeyField, registryNamespaceProperty, draftVersionField, schemaNoField, contentFieldsProperty},
 		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, Version: 1, SchemaNo: 1, Fields: exampleFields},

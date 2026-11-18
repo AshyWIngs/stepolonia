@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
 assert.equal(endpoint.protocol, 'https:')
@@ -147,7 +148,7 @@ async function verifySettingsPublication(page, context) {
   await publishDraft.click()
   const messageAlert = page.getByRole('alert')
   await messageAlert.waitFor()
-  assert.equal(await messageAlert.textContent(), 'Complete each selected translation.')
+  assert.equal(await messageAlert.textContent(), 'Check the portal fields and complete each selected translation.')
   assert.equal(await confirmation.count(), 0)
   assert.deepEqual(await readPublicSite(context), oldSite)
 
@@ -296,17 +297,19 @@ async function assertPublishedLocales(page) {
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
   const language = page.getByRole('combobox', { name: 'Language', exact: true })
-  assert.deepEqual(await language.getByRole('option').allTextContents(), ['English', 'Français (rédaction QA)'])
-  await language.selectOption('fr')
-  await heading(page, 'Connexion à la rédaction').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'fr')
+  assert.deepEqual(await language.getByRole('option').evaluateAll(options => options.map(option => option.value)), ['en', 'kk', 'pl', 'ru'])
+  await eachInOrder([['kk', 'Кіру'], ['ru', 'Вход'], ['pl', 'Zaloguj się']], async ([locale, name]) => {
+    await page.locator('#admin-language').selectOption(locale)
+    await heading(page, name).waitFor()
+    await page.waitForFunction(value => document.documentElement.lang === value, locale)
+  })
   const localized = await page.reload()
   assert.equal(localized.status(), 200)
-  assert.match(await localized.text(), /<html[^>]+lang="fr"/u)
-  await heading(page, 'Connexion à la rédaction').waitFor()
-  const langue = page.getByRole('combobox', { name: 'Langue', exact: true })
-  assert.equal(await langue.inputValue(), 'fr')
-  await langue.selectOption('en')
+  assert.match(await localized.text(), /<html[^>]+lang="pl"/u)
+  await heading(page, 'Zaloguj się').waitFor()
+  const polish = page.getByRole('combobox', { name: 'Język', exact: true })
+  assert.equal(await polish.inputValue(), 'pl')
+  await polish.selectOption('en')
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
 }
@@ -327,6 +330,7 @@ try {
   await verifyTypeBuilder(page)
   await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })
   await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slug: 'community-workshop', title: 'Community workshop' })
+  await verifyAccessAdministration(browser, page, origin, assertTheme, assertFit)
   await signOut(page, context, cookie)
   await assertLayouts(page)
   assert.ok(pageErrors.length === 0, 'The admin page logged browser errors')

@@ -2,7 +2,7 @@
 import { useAsyncData, useCookie, useHeadSafe, useI18n, useResponseHeader } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
-import type { AdminAuthAction, AdminSessionKind } from '~/utils/admin-auth'
+import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
 import { usePublicApi } from '~/composables/usePublicApi'
 import { publicError } from '~/utils/public-content'
 
@@ -60,6 +60,9 @@ const notice = ref('')
 const settingsOpen = ref(false)
 const contentOpen = ref(false)
 const builderOpen = ref(false)
+const accessView = ref<'account' | 'access' | null>(null)
+const restrictedEntry = ref<RestrictedEntryMode | null>(null)
+const accessSection = ref<'users' | 'roles' | 'audit'>('users')
 const confirmingIdentity = ref(false)
 const failure = ref('')
 const limited = ref(false)
@@ -71,15 +74,19 @@ const csrf = ref('')
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let active = true
 
+const activeTool = computed(() => {
+  if (confirmingIdentity.value) return 'fresh_auth'
+  if (settingsOpen.value) return 'settings'
+  if (contentOpen.value) return 'content'
+  if (builderOpen.value) return 'registry'
+  return accessView.value ?? 'signed_in'
+})
 const title = computed(() => {
-  if (phase.value === 'full' && confirmingIdentity.value) return 'fresh_auth'
-  if (phase.value === 'full' && settingsOpen.value) return 'settings'
-  if (phase.value === 'full' && contentOpen.value) return 'content'
-  if (phase.value === 'full' && builderOpen.value) return 'registry'
+  if (restrictedEntry.value) return restrictedEntry.value === 'enrollment' ? 'entry_enrollment' : 'entry_recovery'
   switch (phase.value) {
     case 'preauth': return 'sign_in'
     case 'login': return 'two_step'
-    case 'full': return 'signed_in'
+    case 'full': return activeTool.value
     case null: return pending.value ? 'checking' : 'name'
     default: return 'name'
   }
@@ -136,10 +143,12 @@ async function refresh(moveFocus = false) {
     if (!active) return
     csrf.value = restored.csrf
     phase.value = restored.kind
+    if (restored.kind === 'enrollment' || restored.kind === 'recovery') restrictedEntry.value = restored.kind
     if (restored.kind !== 'full') {
       settingsOpen.value = false
       contentOpen.value = false
       builderOpen.value = false
+      accessView.value = null
       confirmingIdentity.value = false
     }
   }
@@ -188,6 +197,7 @@ async function afterAuthAction(action: AdminAuthAction) {
     settingsOpen.value = false
     contentOpen.value = false
     builderOpen.value = false
+    accessView.value = null
     confirmingIdentity.value = false
     await refresh()
   }
@@ -217,6 +227,36 @@ async function changeBuilderVisibility(open: boolean) {
   confirmingIdentity.value = false
   failure.value = ''
   await focusHeading()
+}
+
+async function changeAccessVisibility(view: typeof accessView.value) {
+  accessView.value = view
+  if (view === 'access') accessSection.value = 'users'
+  confirmingIdentity.value = false
+  failure.value = ''
+  await focusHeading()
+}
+
+async function changeRestrictedEntry(mode: RestrictedEntryMode | null) {
+  if (restrictedEntry.value && phase.value === restrictedEntry.value) {
+    const oldPhase = phase.value
+    await submit('logout')
+    if (phase.value === oldPhase || phase.value === null) return
+  }
+  restrictedEntry.value = mode
+  failure.value = ''
+  if (!phase.value) await refresh(true)
+  else await focusHeading()
+}
+
+function receiveRestrictedCSRF(token: string) {
+  csrf.value = token
+  phase.value = restrictedEntry.value
+}
+
+function completeRestrictedEntry() {
+  csrf.value = ''
+  phase.value = null
 }
 
 async function confirmActionIdentity() {
@@ -275,7 +315,7 @@ onBeforeUnmount(() => {
 
     <section
       class="admin-card"
-      :class="{ 'admin-card--wide': (settingsOpen || builderOpen) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
+      :class="{ 'admin-card--wide': (settingsOpen || builderOpen || accessView) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
       aria-labelledby="admin-heading"
     >
       <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
@@ -284,12 +324,18 @@ onBeforeUnmount(() => {
       <p v-if="catalogFailure" class="admin-error" role="alert">{{ t('admin.unavailable') }}</p>
       <output v-if="pending && phase !== null" class="admin-status">{{ t('admin.working') }}</output>
 
-      <form v-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'admin-auth-error' : undefined" @submit.prevent="submit('login')">
+      <AdminRestrictedEntry
+        v-if="restrictedEntry" :mode="restrictedEntry" :phase="phase" :csrf="csrf" :translate="t"
+        @started="receiveRestrictedCSRF" @finished="completeRestrictedEntry" @restart="changeRestrictedEntry(null)"
+      />
+      <form v-else-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'admin-auth-error' : undefined" @submit.prevent="submit('login')">
         <label for="admin-login">{{ t('admin.login') }}</label>
         <input id="admin-login" v-model="login" type="text" required autocomplete="username" spellcheck="false">
         <label for="admin-password">{{ t('admin.password') }}</label>
         <input id="admin-password" v-model="password" type="password" required autocomplete="current-password">
         <button type="submit" :disabled="blocked">{{ t('admin.continue') }}</button>
+        <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('enrollment')">{{ t('admin.entry_enrollment') }}</button>
+        <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('recovery')">{{ t('admin.entry_recovery') }}</button>
       </form>
 
       <form v-else-if="phase === 'login'" :aria-busy="pending" @submit.prevent="submit('mfa/verify')">
@@ -325,10 +371,27 @@ onBeforeUnmount(() => {
           v-if="builderOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
           @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeBuilderVisibility(false)"
         />
-        <template v-if="!settingsOpen && !contentOpen && !builderOpen">
+        <AdminAccount
+          v-if="accessView === 'account'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeAccessVisibility(null)"
+        />
+        <section v-if="accessView === 'access'" v-show="!confirmingIdentity" class="access-navigation">
+          <nav :aria-label="t('admin.access')" class="access-navigation">
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'users'" @click="accessSection = 'users'">{{ t('admin.users') }}</button>
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'roles'" @click="accessSection = 'roles'">{{ t('admin.roles') }}</button>
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'audit'" @click="accessSection = 'audit'">{{ t('admin.audit') }}</button>
+            <button type="button" class="admin-secondary" @click="changeAccessVisibility(null)">{{ t('admin.close') }}</button>
+          </nav>
+          <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" />
+          <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" />
+          <AdminAudit v-else :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
+        </section>
+        <template v-if="!settingsOpen && !contentOpen && !builderOpen && !accessView && !confirmingIdentity">
           <button type="button" :disabled="blocked" @click="changeContentVisibility(true)">{{ t('admin.content') }}</button>
           <button type="button" :disabled="blocked" @click="changeBuilderVisibility(true)">{{ t('admin.registry') }}</button>
           <button type="button" :disabled="blocked" @click="changeSettingsVisibility(true)">{{ t('admin.settings') }}</button>
+          <button type="button" :disabled="blocked" @click="changeAccessVisibility('account')">{{ t('admin.account') }}</button>
+          <button type="button" :disabled="blocked" @click="changeAccessVisibility('access')">{{ t('admin.access') }}</button>
           <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.sign_out') }}</button>
         </template>
       </template>

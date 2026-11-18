@@ -32,7 +32,7 @@ func lifecycleEnrolled(t *testing.T, f authFixtureState, full identity.SessionTo
 
 func lifecycleLoginFull(t *testing.T, f authFixtureState, account lifecycleAccount) identity.SessionTokens {
 	t.Helper()
-	_, err := f.db.Exec(`UPDATE public.mfa_totp SET last_counter=last_counter-1 WHERE user_id=$1`, account.user.ID)
+	_, err := f.db.Exec(previousTOTPCounterSQL, account.user.ID)
 	requireNoError(t, err)
 	pre, err := f.service.NewPreauth(context.Background())
 	requireNoError(t, err)

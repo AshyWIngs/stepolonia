@@ -41,7 +41,7 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	assertUnpublishedAdminUnavailable(t, f)
 	publishAdminBrowserCatalog(t, f.state.db)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "../../../web/tests/admin-signin.mjs")
 	code := bootstrapCode(t, f.state.db, f.state.secret)
@@ -62,7 +62,7 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	requireNoError(t, f.state.db.QueryRow(`SELECT
  count(*) FILTER (WHERE revoked_at IS NULL), count(*) FILTER (WHERE revoked_at IS NOT NULL)
  FROM public.sessions WHERE kind='full'`).Scan(&active, &revoked))
-	if active != 0 || revoked != 1 {
+	if active != 0 || revoked != 3 {
 		t.Fatalf("logout storage state: active full=%d revoked full=%d", active, revoked)
 	}
 }
@@ -158,60 +158,15 @@ func publishAdminBrowserCatalog(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 	requireNoError(t, database.Seed(ctx, db))
-	languages, err := database.ReadLanguages(strings.NewReader("code,name,native_name,direction\nfr,French,Français (rédaction QA),ltr\n"))
+	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('en','kk','pl','ru')")
 	requireNoError(t, err)
-	requireNoError(t, database.ImportLanguages(ctx, db, languages))
-	_, err = db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('en','fr')")
-	requireNoError(t, err)
-
-	en, fr := adminBrowserCatalogs(t, db)
+	site := apiexamples.DemoSite()
+	site.Settings.Title = "Editorial workspace"
+	site.Settings.DefaultLanguage = "en"
+	site.Settings.FallbackLanguage = "en"
 	service := siteconfig.NewService(db)
-	version, err := service.SaveDraft(ctx, 1, siteconfig.Draft{
-		Settings: siteconfig.Settings{Title: "Editorial workspace", Accent: "#205746", DefaultLanguage: "en", FallbackLanguage: "en"},
-		Catalogs: map[string]map[string]string{"en": en, "fr": fr},
-	})
+	version, err := service.SaveDraft(ctx, 1, site)
 	requireNoError(t, err)
 	_, _, err = service.Publish(ctx, version)
 	requireNoError(t, err)
-}
-
-func adminBrowserCatalogs(t *testing.T, db *sql.DB) (map[string]string, map[string]string) {
-	t.Helper()
-	enLabels := map[string]string{
-		"admin.language": "Language", "admin.theme": "Theme", "admin.sign_in": "Sign in", "admin.login": "Login",
-		"admin.password": "Password", "admin.continue": "Continue", "admin.two_step": "Two-step verification",
-		"admin.code": "Verification code", "admin.signed_in": "Signed in", "admin.sign_out": "Sign out",
-		"admin.settings": "Portal settings", "admin.portal_name": "Portal name", "admin.save_draft": "Save draft",
-		"admin.publish_draft": "Publish draft", "admin.confirm_publish": "Publish the saved settings and interface texts?",
-		"admin.settings_invalid": "Complete each selected translation.",
-		"admin.draft_saved":      "Draft saved.", "admin.published": "Settings published.", "admin.close": "Close",
-	}
-	frLabels := map[string]string{"admin.language": "Langue", "admin.sign_in": "Connexion à la rédaction"}
-	en, fr := map[string]string{}, map[string]string{}
-	contentLabels := apiexamples.DemoSite().Catalogs["en"]
-	rows, err := db.Query(`SELECT message_key, array_to_string(placeholders, '} {') FROM public.ui_message_keys`)
-	requireNoError(t, err)
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var key string
-		var placeholders sql.NullString
-		requireNoError(t, rows.Scan(&key, &placeholders))
-		en[key] = catalogFixtureValue(enLabels[key], key, placeholders.String)
-		if strings.HasPrefix(key, "admin.content") || strings.HasPrefix(key, "admin.registry") {
-			en[key] = contentLabels[key]
-		}
-		fr[key] = catalogFixtureValue(frLabels[key], key, placeholders.String)
-	}
-	requireNoError(t, rows.Err())
-	return en, fr
-}
-
-func catalogFixtureValue(label, key, placeholders string) string {
-	if label == "" {
-		label = "QA " + key
-	}
-	if placeholders != "" {
-		label += " {" + placeholders + "}"
-	}
-	return label
 }

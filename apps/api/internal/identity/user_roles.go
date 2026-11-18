@@ -94,12 +94,9 @@ func validateExistingBoundMemberships(ctx context.Context, tx *sql.Tx, userID st
 }
 
 func roleAssignmentTarget(ctx context.Context, tx *sql.Tx, userID string, version int64, before accessSnapshot, actor []accessGrant) (User, error) {
-	user, err := findUser(ctx, tx, userID)
+	user, err := visibleRoleAssignmentTarget(ctx, tx, userID, before, actor)
 	if err != nil {
 		return User{}, err
-	}
-	if !withinEnvelope(actor, before[user.ID].latent) {
-		return User{}, ErrNotFound
 	}
 	if version < 1 {
 		return User{}, ErrValidation
@@ -108,6 +105,14 @@ func roleAssignmentTarget(ctx context.Context, tx *sql.Tx, userID string, versio
 		return User{}, ErrVersionConflict
 	}
 	return user, nil
+}
+
+func visibleRoleAssignmentTarget(ctx context.Context, tx *sql.Tx, userID string, before accessSnapshot, actor []accessGrant) (User, error) {
+	user, err := findUser(ctx, tx, userID)
+	if err == nil && !withinEnvelope(actor, before[user.ID].latent) {
+		return User{}, ErrNotFound
+	}
+	return user, err
 }
 
 func validateUserRoleIDs(input []string, policies map[string][]accessGrant, actor []accessGrant) ([]string, error) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { AdminContentError } from '~/utils/admin-request'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { AdminContentError, createCollection, listCollections, listRegistryRenderers, readManagedCollection, reviseCollection } from '~/utils/admin-content'
+import { createCollection, listCollections, listRegistryRenderers, readManagedCollection, reviseCollection } from '~/utils/admin-content'
 import type { CollectionChoice, FieldKind, ManagedCollection, RegistryField, RegistryRenderer } from '~/utils/admin-content'
 
 const props = defineProps<{

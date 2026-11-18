@@ -43,7 +43,7 @@ func (o Operation) Scope() (OperationScope, error) {
 	case OpContentTypesManage, opContentInitializeAccess, opContentDelegate,
 		"users.create", "users.read", "users.activate", "users.disable",
 		"roles.create", "roles.read", "roles.edit", opRolesAssign, opRolesDisable, opRolesEnable,
-		opRolesArchive, opRolesRestore, "roles.delete", "sessions.revoke_any", "audit.read", opSettingsManage:
+		opRolesArchive, opRolesRestore, "roles.delete", opSessionsRevokeAny, opAuditRead, opSettingsManage:
 		return InstallationScope, nil
 	default:
 		return 0, fmt.Errorf("unregistered operation %q", o)

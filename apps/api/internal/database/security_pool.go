@@ -113,7 +113,8 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
  OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')
  OR e.relname='content_items' AND col.attname IN ('id','type_id','version')
- OR e.relname='content_fields' AND col.attname IN ('type_id','field_id'))))
+ OR e.relname='content_fields' AND col.attname IN ('type_id','field_id','key')
+ OR e.relname='security_audit' AND col.attname IN ('id','occurred_at','operation','result','reason','actor_id','target_id','request_id'))))
  FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, login, contentEditor).Scan(&safe)
 	if err != nil {
 		return fmt.Errorf("check authentication pool privileges: %w", err)

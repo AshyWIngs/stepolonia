@@ -63,6 +63,8 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		target := "account"
 		if authTag(rt) == rolesTag {
 			target = "role"
+		} else if rt.operationID == revokeSessionOperation {
+			target = "session"
 		}
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
@@ -72,12 +74,14 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 	case listDraftsOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection whose accessible drafts to list."))
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
+	case listSessionsOperation, listTargetSessionsOperation, listAuditOperation:
+		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultAccountPageLimit, identity.MaxAccountPageLimit, identity.MaxAccountPageOffset)...)
 	case listCollectionsOperation:
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
 	case registryReadOperation, registryReviseOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection to manage."))
 	default:
-		if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
+		if rt.operationID == replaceContentAssigneesOperation || rt.operationID == readContentAssigneesOperation || authTag(rt) == contentDraftTag {
 			op.Parameters = append(op.Parameters, contentItemParameters()...)
 		}
 	}
@@ -85,6 +89,9 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 }
 
 func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
+	if rt.operationID == accountFactorOperation {
+		return factorRequestBody(registry)
+	}
 	if isRegistryOperation(rt.operationID) {
 		return registryRequestBody(registry, rt.operationID)
 	}
@@ -177,7 +184,7 @@ func credentialSchema(rt route) (*huma.Schema, map[string]any) {
 	if rt.fields != "" {
 		required = strings.Split(rt.fields, ",")
 	}
-	return closedObjectSchema("Private command input accepted by "+rt.operationID+". All listed fields are necessary for a successful command. expected_version is required for existing-account mutations; empty objects are intentional only for cancellation and logout.", props, required, example), example
+	return closedObjectSchema("Private command input accepted by "+rt.operationID+". All listed fields are necessary for a successful command. expected_version is required for existing-account mutations; operations without input require an empty object.", props, required, example), example
 }
 
 func credentialProperty(rt route, field string) *huma.Schema {
@@ -201,9 +208,9 @@ func credentialProperty(rt route, field string) *huma.Schema {
 		property = stringSchema("Current account password; case-sensitive UTF-8, at most 512 bytes, and never returned. Synthetic example only. Empty or incorrect values do not authenticate.", "Synthetic example password 42!")
 		property.WriteOnly = true
 		property.MinLength = intPointer(1)
-		if rt.operationID == startEnrollmentOperation {
+		if rt.operationID == startEnrollmentOperation || rt.operationID == accountPasswordOperation {
 			property.MinLength, property.MaxLength = intPointer(15), intPointer(128)
-			property.Description = "New password for this invited account; case-sensitive UTF-8, 15 to 128 Unicode code points and at most 512 bytes. Held only as a pending password hash until TOTP confirmation; never returned."
+			property.Description = "New account password. Accepts 15 to 128 Unicode code points and at most 512 UTF-8 bytes. Never returned."
 		}
 	case credentialCodeField:
 		property = stringSchema("Fresh six-digit TOTP from the enrolled factor; leading zeros are significant. Used counters cannot be replayed.", "012345")
@@ -236,12 +243,14 @@ const exampleUUID = "11111111-1111-4111-8111-111111111111"
 
 const syntheticCSRF = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
+const syntheticTOTPSeed = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
 func privateSchemas() map[string]*huma.Schema {
 	const csrfField = "csrf_token"
 	csrf := stringSchema("Current session CSRF token. Send it verbatim as X-CSRF-Token on the next write; successful token responses replace the previous value.", syntheticCSRF)
 	csrf.MinLength, csrf.MaxLength = intPointer(43), intPointer(43)
 	csrf.Pattern = "^[A-Za-z0-9_-]{43}$"
-	secret := stringSchema("Pending base32 TOTP seed for this restricted session only. Enroll in an authenticator, then confirm before expiry. Treat the real response as a secret; this example is synthetic.", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+	secret := stringSchema("Pending base32 TOTP seed for this restricted session only. Enroll in an authenticator, then confirm before expiry. Treat the real response as a secret; this example is synthetic.", syntheticTOTPSeed)
 	codes := make([]string, 10)
 	for i := range codes {
 		codes[i] = strings.Repeat("0", 31) + strconv.Itoa(i)
@@ -279,6 +288,9 @@ func privateSchemas() map[string]*huma.Schema {
 			authProblem{Status: 401, Code: authenticationCode, Title: "Unauthorized"}),
 	}
 
+	addAccountSchemas(schemas)
+	addAccessReadSetSchemas(schemas)
+	addRoleGrantOptionSchemas(schemas)
 	addSettingsSchemas(schemas)
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
@@ -346,11 +358,7 @@ func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
 	tag := authTag(rt)
-	if rt.operationID == csrfOperation {
-		successHeaders[setCookieHeader] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
-	} else if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag && tag != settingsTag && tag != registryTag {
-		successHeaders[setCookieHeader] = sessionCookieHeader()
-	}
+	addAuthCookieHeader(rt, successHeaders)
 	if rt.response == "" {
 		responses["204"] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders}
 	} else {
@@ -375,13 +383,39 @@ func authResponses(rt route) map[string]*huma.Response {
 		}
 		responses[status] = &huma.Response{Description: authSuccessDescription(rt), Headers: successHeaders, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(rt.response), Example: example}}}
 	}
+	if tag == accountTag {
+		success := responses["200"]
+		if success == nil {
+			success = responses["204"]
+		}
+		adjustAccountResponse(rt, success, privateSchemas())
+	}
 	for status, codes := range privateErrorCodes(rt) {
 		responses[strconv.Itoa(status)] = authErrorResponse(rt, status, codes)
 	}
 	return responses
 }
 
+func addAuthCookieHeader(rt route, headers map[string]*huma.Param) {
+	if rt.operationID == csrfOperation {
+		headers[setCookieHeader] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
+		return
+	}
+	switch authTag(rt) {
+	case usersTag, rolesTag, contentAssigneesTag, contentDraftTag, settingsTag, registryTag, accountTag:
+		return
+	default:
+		headers[setCookieHeader] = sessionCookieHeader()
+	}
+}
+
 func privateErrorCodes(rt route) map[int][]string {
+	if rt.operationID == readUserRolesOperation || rt.operationID == readContentAssigneesOperation || rt.operationID == readRoleGrantOptionsOperation {
+		return accessReadSetErrorCodes()
+	}
+	if isAccountOperation(rt.operationID) {
+		return accountErrorCodes(rt)
+	}
 	if isRegistryOperation(rt.operationID) {
 		return registryErrorCodes(rt)
 	}
@@ -401,7 +435,7 @@ func authErrorCodes(rt route) map[int][]string {
 	if authTag(rt) == rolesTag {
 		return roleErrorCodes(rt)
 	}
-	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode, "invalid_credentials"}, 403: {originCode, csrfCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode}}
+	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode, rejectedAuthenticationCode}, 403: {originCode, csrfCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode}}
 	if rt.method == http.MethodGet {
 		codes[401] = []string{authenticationCode}
 		codes[403] = []string{originCode}
@@ -541,7 +575,8 @@ func privateRoutes() map[string][]route {
 	for path, methods := range roleRoutes {
 		all[path] = methods
 	}
-	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
+	all[roleGrantOptionsPath] = []route{readRoleGrantOptionsRoute}
+	all[contentAssigneesPath] = []route{readContentAssigneesRoute, replaceContentAssigneesRoute}
 	all[createDraftPath] = collectionDraftRoutes
 	all[contentDraftPath] = itemDraftRoutes
 	all[contentCollectionsPath] = []route{listCollectionsRoute, registryCreateRoute}
@@ -553,6 +588,9 @@ func privateRoutes() map[string][]route {
 	}
 	for path, methods := range settingsRoutes {
 		all[path] = methods
+	}
+	for path, rt := range accountRoutes {
+		all[path] = []route{rt}
 	}
 	return all
 }
@@ -574,6 +612,7 @@ const usersTag = "users"
 
 func authTags() []*huma.Tag {
 	return []*huma.Tag{
+		{Name: accountTag, Description: "Account profile, credentials, session management and audit."},
 		{Name: "authentication-sessions", Description: "Session initiation, password and TOTP verification, CSRF rotation, strong authentication and logout."},
 		{Name: "account-recovery", Description: "Restricted recovery with an unused recovery code and confirmation of a replacement TOTP factor."},
 		{Name: "account-enrollment", Description: "Restricted invited-user password and TOTP enrollment without administration access."},
@@ -587,6 +626,9 @@ func authTags() []*huma.Tag {
 }
 
 func authTag(rt route) string {
+	if isAccountOperation(rt.operationID) {
+		return accountTag
+	}
 	if isRegistryOperation(rt.operationID) {
 		return registryTag
 	}
@@ -594,11 +636,11 @@ func authTag(rt route) string {
 		return rolesTag
 	}
 	switch rt.operationID {
-	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, copyRoleOperation, deleteRoleOperation:
+	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, copyRoleOperation, deleteRoleOperation, readRoleGrantOptionsOperation:
 		return rolesTag
-	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation, replaceUserRolesOperation:
+	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation, readUserRolesOperation, replaceUserRolesOperation:
 		return usersTag
-	case replaceContentAssigneesOperation:
+	case readContentAssigneesOperation, replaceContentAssigneesOperation:
 		return contentAssigneesTag
 	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return contentDraftTag
@@ -632,6 +674,9 @@ func domainSuccessDescription(rt route) string {
 }
 
 func authSuccessDescription(rt route) string {
+	if isAccountOperation(rt.operationID) || rt.operationID == readUserRolesOperation || rt.operationID == readContentAssigneesOperation || rt.operationID == readRoleGrantOptionsOperation {
+		return rt.description
+	}
 	if description := domainSuccessDescription(rt); description != "" {
 		return description
 	}

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { AdminContentError } from '~/utils/admin-request'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { components } from '@stepolonia/sdk'
-import { AdminContentError, commandDraft, readDraft, saveDraft } from '~/utils/admin-content'
+import { commandDraft, readDraft, saveDraft } from '~/utils/admin-content'
 import type { DraftCommand, EditableDraft, EditorField, EditorMetadata, Scalar } from '~/utils/admin-content'
 import { draftPatch, savedFieldValue } from '~/utils/draft-edit-buffer'
 import type { FieldEdit } from '~/utils/draft-edit-buffer'
@@ -29,6 +30,8 @@ const busy = ref(false)
 const conflict = ref(false)
 const feedback = ref('')
 const failure = ref('')
+const assignmentsOpen = ref(false)
+const assignmentsButton = ref<HTMLElement>()
 let active = true
 
 const sharedFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'shared') ?? [])
@@ -89,6 +92,17 @@ async function run(work: () => Promise<void>) {
   try { await work() }
   catch (error: unknown) { if (active) showError(error) }
   finally { busy.value = false }
+}
+
+async function closeAssignments() {
+  assignmentsOpen.value = false
+  await nextTick()
+  assignmentsButton.value?.focus()
+}
+
+async function assignmentsSaved() {
+  await closeAssignments()
+  await run(refresh)
 }
 
 function description(field: EditorField) {
@@ -228,7 +242,14 @@ onBeforeUnmount(() => { active = false })
       {{ translate('admin.content_reload') }}
     </button>
 
-    <template v-if="draft && metadata">
+    <AdminAssignees
+      v-if="assignmentsOpen" :csrf="csrf" :type-key="typeKey" :item-id="itemId" :translate="translate"
+      @step-up="emit('step-up')" @session-changed="emit('session-changed')" @saved="assignmentsSaved" @close="closeAssignments"
+    />
+    <template v-else-if="draft && metadata">
+      <button ref="assignmentsButton" type="button" class="admin-secondary" :disabled="locked || confirmation !== null" @click="assignmentsOpen = true">
+        {{ translate('admin.assignees') }}
+      </button>
       <section aria-labelledby="draft-published-heading">
         <h3 id="draft-published-heading">{{ translate('admin.content_public_links') }}</h3>
         <p v-if="publicLinks.length === 0">{{ translate('admin.content_not_published') }}</p>

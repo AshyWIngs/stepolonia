@@ -102,7 +102,11 @@ func allowsPageQuery(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
-	if r.URL.Path == usersPath || r.URL.Path == rolesPath || r.URL.Path == contentCollectionsPath {
+	switch r.URL.Path {
+	case usersPath, rolesPath, contentCollectionsPath, accountSessionsPath, auditPath:
+		return true
+	}
+	if path, _ := userRoutePath(r.URL.Path); path == targetSessionsPath {
 		return true
 	}
 	_, collection := createDraftTarget(r.URL.Path)
@@ -139,26 +143,7 @@ func (b boundary) validRequestOrigin(r *http.Request, origins []string) bool {
 	return err == nil && ref.Scheme == httpsScheme && ref.Host == b.authority && ref.User == nil && ref.Opaque == "" && ref.Fragment == ""
 }
 
-func safeReadPath(raw string) bool {
-	if raw == authPrefix+"/csrf" || raw == settingsPath {
-		return true
-	}
-	user, _ := userRoutePath(raw)
-	if user == usersPath || user == userPath {
-		return true
-	}
-	if _, ok := contentDraftTarget(raw); ok {
-		return true
-	}
-	if _, ok := createDraftTarget(raw); ok {
-		return true
-	}
-	if _, _, ok := contentMetadataTarget(raw); ok {
-		return true
-	}
-	if _, _, ok := registryTarget(raw, http.MethodGet); ok {
-		return true
-	}
-	role, _ := roleRoutePath(raw)
-	return role == rolesPath || role == rolePath
+func safeReadPath(path string) bool {
+	rt, _, ok := resolveRoute(path, http.MethodGet, true)
+	return ok && rt.method == http.MethodGet
 }

@@ -8,6 +8,8 @@ import (
 	"stepolonia/apps/api/internal/identity"
 )
 
+const privatePageItemsField = "items"
+
 func isUserRead(rt route) bool {
 	return authTag(rt) == usersTag && rt.method == http.MethodGet
 }
@@ -28,9 +30,9 @@ func userPageParameters() []*huma.Param {
 
 func privatePageSchema(description, itemRef string, maxLimit, maxOffset int, example any) *huma.Schema {
 	return closedObjectSchema(description, map[string]*huma.Schema{
-		"items":       {Type: huma.TypeArray, Items: schemaRef(itemRef), MaxItems: intPointer(maxLimit)},
-		"next_offset": {Type: huma.TypeInteger, Nullable: true, Minimum: floatPointer(0), Maximum: floatPointer(float64(maxOffset))},
-	}, []string{"items", "next_offset"}, example)
+		privatePageItemsField: {Type: huma.TypeArray, Items: schemaRef(itemRef), MaxItems: intPointer(maxLimit)},
+		"next_offset":         {Type: huma.TypeInteger, Nullable: true, Minimum: floatPointer(0), Maximum: floatPointer(float64(maxOffset))},
+	}, []string{privatePageItemsField, "next_offset"}, example)
 }
 
 func privatePageParameters(defaultLimit, maxLimit, maxOffset int) []*huma.Param {
