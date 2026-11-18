@@ -1,145 +1,63 @@
 # Stepolonia
 
-Платформа порталов на Go и Nuxt. Общий код, отдельные установки сайтов со
-своими PostgreSQL, настройками и данными.
+Stepolonia is a Go and Nuxt portal platform. Installations share code and have separate PostgreSQL databases, settings, and content.
 
-Реализованы инфраструктура, healthchecks, стартовая SSR-страница, доменная логика
-публикаций, публичный read-only API, генерируемые типы SDK и страницы статей Nuxt SSR.
-Авторизация и редактор пока не реализованы.
-Проект находится в дорелизной разработке; релизов и развёртываний пока не было.
-Исходная схема меняется напрямую в `00001`, без переходов между черновыми версиями.
+The project is in pre-release development. Public content and site settings are available through a read-only API and Nuxt SSR. Private CMS authentication and the scalar draft-save endpoint are available with explicit configuration. The editorial UI is planned.
 
-## Структура
+## Repository layout
 
-```text
-apps/api/                 Go API
-apps/web/                 Nuxt frontend
-packages/sdk/             OpenAPI, TypeScript-типы и Fetch-клиент
-infrastructure/           Docker Compose, Caddy, PostgreSQL
-scripts/                  настройка и проверки установок
-sites/example.test/       пример конфигурации сайта
-```
+| Path | Contents |
+|---|---|
+| `apps/api/` | Go API and database tools |
+| `apps/web/` | Nuxt frontend |
+| `packages/sdk/` | OpenAPI, generated TypeScript types, and Fetch client |
+| `infrastructure/` | Docker Compose, Caddy, and PostgreSQL |
+| `scripts/` | Installation and verification tools |
+| `sites/example.test/` | Example installation configuration |
 
-## Публичные статьи
+## Local development
 
-`/{lang}/articles` показывает список опубликованных материалов, `/{lang}/articles/{slug}` открывает статью. Доступные языки берутся из API выбранной установки. На главной язык выбирается по сохранённому явному выбору, затем по `Accept-Language`, затем по опубликованному default из PostgreSQL установки. Прямой URL определяет язык содержимого. Переключатель статьи ведёт на существующие опубликованные переводы.
+Run `make swagger` from the repository root to serve the public API and Swagger UI at [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs). The OpenAPI document is at `/openapi.json`. The launcher requires Docker, Go from `apps/api/go.mod`, and Python from `.python-version`. It creates a loopback-only disposable database, loads synthetic data, and removes the database on Ctrl-C. To select a different port, run `python3 scripts/dev-swagger.py --port 8081`.
 
-Публичные настройки сайта и UI-тексты читаются из одной опубликованной версии PostgreSQL через `GET /api/v1/site`. Если у языка контента нет опубликованного UI-каталога, используется опубликованный fallback установки. Языки и тексты меняются без пересборки frontend. ENV задаёт инфраструктуру, а не изменяемое содержимое сайта. Отсутствующая публикация и ошибочная языковая конфигурация дают безопасный 503. Публичный API предоставляет только чтение, административного HTTP-интерфейса пока нет.
+The Swagger demo includes published Article and Event items in Polish (`pl`). Use `welcome-to-stepolonia` and `community-meetup` for detail reads, `limit=1` for pagination, and `welcome-old` for an HTTP 301 redirect. `/api/v1/site?lang=kk` falls back to the published Polish UI catalog. The site catalog uses `lang`. Content endpoints use `language`. The API connects with a restricted runtime login, and the fixture writer uses an owner connection before the API starts. Private CMS routes are disabled in this demo.
 
-Compose задаёт приватный `NUXT_API_ORIGIN` для серверного SDK. Для запуска Nuxt отдельно задайте этот origin явно. Браузер использует API текущего сайта. Опциональный `NUXT_PUBLIC_SITE_ORIGIN` задаёт доверенный публичный HTTPS origin для canonical. При пустом значении canonical отсутствует. Индексация ограничена `noindex, nofollow`.
+### Full installation
 
-Markdown преобразуется в разрешённые Vue-узлы. Изображения пока отображаются альтернативным текстом. `make publishing-test` устанавливает закреплённый Chromium для Playwright и проверяет реальные SSR/browser-сценарии на одноразовой установке.
-
-## Локальный запуск
-
-Для публичного API и Swagger UI выполните `make swagger` из корня `code/`.
-Нужны Docker, Go из `apps/api/go.mod` и Python из `.python-version`.
-Команда создаёт собственную одноразовую PostgreSQL и запускает API на
-[http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs). Спецификация доступна
-по `/openapi.json`. `Ctrl-C` останавливает API и удаляет созданную БД.
-Для другого HTTP-порта используйте `python3 scripts/dev-swagger.py --port 8081`.
-
-Fixture содержит опубликованные `article` и `event` на языке `pl`. В Swagger
-используйте `welcome-to-stepolonia` и `community-meetup` для чтения по slug,
-`limit=1` для pagination, `welcome-old` для 301 с `Location`, `/api/v1/site?lang=fr`
-для fallback на полный польский UI-каталог. `lang` и `language` принадлежат разным
-контрактам. Runtime-подключение имеет только чтение публичных представлений.
-Private auth-маршруты в этом запуске выключены. Подготовка fixture выполняется
-отдельным owner-подключением до запуска HTTP. Данные синтетические и исчезают
-при остановке. Основной запуск установки описан далее.
-
-
-Нужны Docker с Compose/BuildKit, CPython из `.python-version` и Make. Go и Node.js на хосте
-не требуются. Первые сборки требуют доступа к интернету.
-
-На macOS можно выбрать локальный интерпретатор через pyenv (после установки
-pyenv и активации его shims в shell). Версия берётся из `.python-version`.
+Install Docker with Compose and BuildKit, Make, and the CPython version in `.python-version`. The initial build needs network access. Go and Node.js are installed in the builder containers. If you use pyenv, run `pyenv install -s "$(cat .python-version)"` to install the pinned Python version.
 
 ```sh
-pyenv install -s "$(cat .python-version)"
 make python-version-check
 make up
 ```
 
-`pyenv` выбирает версию для каталога проекта.
-
-Адрес: <http://127.0.0.1:8080>. По умолчанию используется `example.test`.
-Это локальная HTTP-конфигурация, публичный deployment требует настройки HTTPS.
-До применения publishing-миграции и публикации настроек с полным UI-каталогом главная возвращает 503. Seed создаёт справочник языков, но не публикует настройки и тексты. `make smoke` проверяет сайт с опубликованной конфигурацией.
-
-Другой сайт:
+The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until its schema is applied and someone publishes site settings with a complete UI catalog. The database seed creates language metadata. Run `make smoke` once the site configuration is published. The example installation serves local HTTP. For a different installation:
 
 ```sh
 python3 scripts/setup-local.py --site another.test --port 8081
 make SITE=another.test up
 ```
 
-Настройки создаются в `sites/<SITE>/.env`, пароли в `sites/<SITE>/.secrets/`.
-Повторная настройка сохраняет существующие значения. Эти файлы исключены из Git.
-Для существующих secret-файлов проверяются владелец, тип и отсутствие ссылок;
-права меняются через проверенные файловые дескрипторы.
-Не меняйте credentials и имя volume существующей БД без отдельной процедуры.
+Local configuration is stored in `sites/<SITE>/.env`, and passwords in `sites/<SITE>/.secrets/`. Git ignores these files. Setup preserves existing values and verifies ownership, file type, and the absence of links before changing secret permissions through open file descriptors. An existing database's credentials and volume require their own change procedure.
 
-Для локального сайта по умолчанию можно создать игнорируемый файл `.site.mk`:
+To set a local default installation, use the ignored `.site.mk`:
 
 ```make
 SITE ?= another.test
 ```
 
-## Команды
+### Public content
 
-| Команда | Назначение |
-|---|---|
-| `make setup` | Создать локальные настройки |
-| `make config` | Проверить конфигурацию Compose |
-| `make lint` | Go, Ruff, Nuxt ESLint и проверка дублирования без запуска БД |
-| `make duplicates` | Проверить copy-paste через jscpd, включая тесты |
-| `make sdk` | Обновить OpenAPI и типы SDK из зарегистрированных Huma-операций |
-| `make sdk-check` | Проверить актуальность SDK, ESLint и TypeScript |
-| `make verify` | Lint, config, test, build, PostgreSQL/Publishing integration и High/Critical CVE gate |
-| `make image-audit` | Проверить собранные образы: Grype, включая уязвимости без исправлений |
-| `make test` | Проверить Dockerfile, Go и TypeScript |
-| `make build` | Собрать образы |
-| `make up` | Собрать и запустить установку |
-| `make down` | Удалить контейнеры и сети, сохранить данные |
-| `make smoke` | Проверить запущенную установку |
-| `make lifecycle` | Проверить остановку и восстановление локального стека |
-| `make isolation` | Проверить отдельную временную установку и PostgreSQL dump/restore |
-| `make db-test` | Создать временную PostgreSQL, проверить схему и инструменты, удалить тестовые ресурсы |
-| `make resource-test` | Проверить одну одноразовую установку на общем CPU с суммой RAM-лимитов 1216 MiB без swap; Linux-хост целиком не моделируется |
-| `make publishing-test` | Проверить SDK/SSR, браузерную навигацию и восстановление после остановки одноразовых API и БД |
+`/{lang}/articles` lists published articles, and `/{lang}/articles/{slug}` opens a published article. The homepage chooses the language from the visitor's saved choice, `Accept-Language`, or the published content default, in that order. A localized URL selects content directly. Article language switches link to published translations.
 
-Все команды принимают `SITE=...`. `lifecycle` временно останавливает выбранный
-стек; `isolation` удаляет только созданные им тестовые ресурсы. Логи проверок
-попадают в игнорируемый каталог `reports/`. `down --volumes` удаляет управляемые
-volumes с данными.
+`GET /api/v1/site` returns settings and UI text from the same published PostgreSQL revision. If the requested catalog is missing, the API uses the installation's published fallback. Missing publication or invalid language configuration returns 503. Compose sets `NUXT_API_ORIGIN` for SSR. Set it explicitly when starting Nuxt separately. Browser requests use the current site's origin. Set `NUXT_PUBLIC_SITE_ORIGIN` to a trusted public HTTPS origin to enable canonical links. Responses carry `noindex, nofollow`. The published revision controls settings and UI text without a frontend rebuild.
 
-PostgreSQL 18.7 работает в минимальном runtime без shell; bootstrap
-выполняет одноразовый `postgres-init`. API, web и Caddy также запускаются
-non-root без shell. API, frontend и PostgreSQL не публикуют порты хоста;
-HTTP обслуживает Caddy. Для генерации и проверки SDK нужны Go из `apps/api/go.mod`,
-Node.js 26.13.1 и npm 11.21.2 на хосте. Эти же инструменты нужны для `make lint`,
-`make verify` и `make check-db`. Команды и ограничения Fetch-клиента описаны
-в [packages/sdk/README.md](packages/sdk/README.md).
+Markdown renders through the allowed Vue nodes. Images currently render as alternative text.
 
-Образы PostgreSQL используют Alpine/musl и предназначены для новых кластеров.
-Сохраняются UID/GID 999 и путь `/var/lib/postgresql/18/docker`. Готовый кластер
-Debian/glibc нельзя автоматически подключать к новой сборке: сначала нужна
-отдельно согласованная проверка locale/collation и перенос через dump/restore.
-Исходные SQL-миграции и схема от этого изменения не меняются.
+The PostgreSQL, API, Nuxt, and Caddy runtime images use non-root users and omit a shell. Caddy publishes the only host port in the standard Compose installation.
 
-PostgreSQL поставляется пакетами Alpine 18.7-r0: vendor advisory feed
-проверяет версию сервера и его библиотек. Сохранены PL/pgSQL, ICU, XML, LDAP,
-LLVM JIT и contrib; для аутентификации используется SCRAM-SHA-256. Kerberos/GSS
-в выбранную сборку не входит.
-Опциональные PL/Perl, PL/Python и PL/Tcl с их transform-расширениями в runtime
-не входят. Для их добавления нужны явное требование и проверка зависимостей.
+## Database and languages
 
-## Схема БД и языки
-
-Миграции запускаются отдельно от API. Для обслуживания БД `SITE` нужно передать
-явно в командной строке; локальный сайт из `.site.mk` автоматически не выбирается.
-Используйте команды только для новой или явно разрешённой установки.
+Run migrations separately from the API and pass the target `SITE` explicitly. Use a new installation or one approved for database maintenance.
 
 ```sh
 python3 scripts/setup-local.py --site sandbox.test
@@ -149,97 +67,62 @@ make SITE=sandbox.test seed
 make SITE=sandbox.test migrate ACTION=status
 ```
 
-Одноразовый контейнер `db-tools` собирается из исходников и получает owner-secret
-выбранной установки. Обычный запуск API не выполняет миграции. Runtime API
-не получает DDL-права. Исходная миграция `00001` создаёт таблицы, описания
-в каталоге PostgreSQL и публичные представления.
-Перед созданием схемы и при повторном `up` проверяются
-ограничения и защитные триггеры. Неожиданная структура приводит к отказу;
-инструмент не исправляет её автоматически.
-Определения publishing сравниваются с контрактом PostgreSQL 18, включая
-публичные фильтры, CHECK/FK и тела guard-функций. Другой major отклоняется.
+The one-shot `db-tools` container uses the target database's owner secret. The runtime login can read approved public views. It has no DDL access. The domain Goose migrations define the PostgreSQL 18 schema. Before schema creation and on repeated `up`, the tooling rejects inconsistent runtime privileges and schema drift, including public-view filters, constraints, and guard function bodies. Inspect `ACTION=status`, fix the cause, and retry `migrate up` after a failure. Before MVP, edit the domain migration that owns the definition.
 
-`ACTION=down` удаляет прикладную схему, включая таблицы и данные.
-Команда допускается только с `DISPOSABLE=1` и маркером одноразовой установки,
-который создаёт тестовый harness. Проверяются совпадение проекта, БД и volume,
-префикс БД `stage12_` и токен в метаданных PostgreSQL. Для обычной установки
-откат отклоняется. Ручное создание маркера не является процедурой отката данных.
+`ACTION=down` removes the application schema and its data. It requires `DISPOSABLE=1` and the test harness's ownership marker. The project, database, volume, `stage12_` database prefix, and database metadata token must agree. Recover persistent data from a separately managed backup.
 
-Seed идемпотентно добавляет `ru`, `pl`, `kk`, `en`. Все четыре языка изначально
-**отключены**; seed и импорт сохраняют доступность уже существующих языков.
-Включение языка является отдельным административным действием.
+Seed adds `en`, `ru`, `pl`, and `kk` as initially disabled language entries. Seed and import preserve the enabled state of existing languages. Enabling a language is a separate administrative action.
 
-Импорт принимает UTF-8 CSV с точным заголовком, без столбца доступности:
+The importer accepts UTF-8 CSV up to 8 MiB with this exact header:
 
 ```csv
 code,name,native_name,direction
-fr,Французский,français,ltr
+pl,Polish,Polski,ltr
 ```
 
 ```sh
 make SITE=sandbox.test import-languages FILE=/absolute/path/languages.csv
 ```
 
-Коды BCP 47 нормализуются и хранятся в нижнем регистре. Размер файла ограничен
-8 MiB, длина нормализованного кода составляет от 2 до 63 байт.
-Неправильный файл отклоняется целиком; повторный
-импорт не создаёт дубликатов, не включает языки и не удаляет переводы.
+Normalized BCP 47 codes are stored in lowercase and have a length of 2–63 bytes. Invalid files are rejected atomically. Repeated import updates metadata while preserving availability and translations.
 
-На уровне схемы slug имеет формат `a-z`, `0-9` с разделителем `-`, до 200
-символов. Прикладная публикация и HTTP-контракт ещё не реализованы.
+The bootstrap container initializes the Alpine/musl PostgreSQL 18.7 cluster. The runtime uses UID/GID 999 and `/var/lib/postgresql/18/docker`. Validate locale and collation and use dump/restore before moving a cluster from Debian/glibc. The image includes PL/pgSQL, ICU, XML, LDAP, LLVM JIT and contrib, and uses SCRAM-SHA-256 for authentication. Kerberos/GSS, PL/Perl, PL/Python and PL/Tcl are excluded.
 
-Инструменты создают две ограниченные NOLOGIN-роли: `sp_publisher` для будущих
-команд публикации и `sp_language_importer` для метаданных языков. Эти роли
-сохраняются после `down`: удаление общих для кластера ролей не является частью
-отката прикладной схемы. До DDL проверяются runtime-identity и схема;
-публичные SELECT выдаются после миграции. При ошибке проверьте `ACTION=status`,
-устраните причину и повторите `migrate up`.
+## Checks
 
-Runtime читает только `public_languages`, `public_article_translations` и
-`public_article_routes`. Доступны текущие опубликованные переводы включённых
-языков; старый адрес разрешается к текущему переводу того же владельца и языка.
-После снятия публикации или отключения языка соответствующие строки скрыты.
-Прямое чтение таблиц с черновиками, историей и резервированиями запрещено.
+| Command | Checks |
+|---|---|
+| `make setup` / `make config` | Local configuration / Compose validation |
+| `make up` / `make down` | Start / stop the installation and preserve its volume |
+| `make build` | Build images |
+| `make lint` / `make duplicates` | Static checks / duplication scan |
+| `make sdk` / `make sdk-check` | Regenerate / verify OpenAPI and TypeScript |
+| `make test` | Source, Dockerfile, and unit checks |
+| `make db-test` | Disposable PostgreSQL schema, roles, and CLI |
+| `make publishing-test` | Live publishing, API, SSR, and Chromium |
+| `make auth-test` | PostgreSQL identity, HTTPS, and browser security |
+| `make smoke` / `make lifecycle` | Live installation / controlled stop and recovery |
+| `make isolation` | Separate installation and PostgreSQL dump/restore |
+| `make resource-test` | Single-installation resource measurements |
+| `make image-audit` | Scan built images with Grype |
+| `make verify` | Full local verification |
 
-Для `make db-test` дополнительно нужен Go 1.27 и C compiler для race detector.
-Проверка создаёт только собственную временную установку, публикует её PostgreSQL
-на случайном loopback-порту и удаляет свои контейнеры, сеть и volume после теста.
-Пароли читаются из файлов; отчёты сохраняются в игнорируемом `reports/`.
-Проверяются создание схемы, повторный `up`, отказ при дрейфе, каталог
-описаний, публичные права и защищённый откат. Локальные файловые ограничения
-дополнительно проверяются командой `python3 -m unittest discover -s scripts/tests -v`.
-GitHub Actions запускает `make SITE=ci.test verify` для PR в `main`.
+Pass `SITE=...` to select an installation. `make lifecycle` temporarily stops the selected stack. `make isolation` cleans up the resources it creates. Docker Compose `down --volumes` deletes managed volumes and their data.
 
-Для `make resource-test` нужны Docker с доступным CPU 0, Go, Node.js и установленные зависимости `apps/web` с Chromium (`npm ci --ignore-scripts`, затем `node node_modules/playwright/cli.js install chromium` из `apps/web`). Проверка использует небольшой синтетический набор данных и постоянные HTTP-соединения; параметры отдельного запуска: `python3 scripts/test-resources.py --seconds 60 --concurrency 4`. JSON и логи сохраняются в `reports/`; замеры `docker stats` являются дискретными наблюдениями, а не пиком всей памяти Linux-хоста. Сборка и генератор нагрузки работают вне проверяемого контейнерного бюджета.
+The database tests require host Go and a C compiler for race detection. They create their own installation, expose PostgreSQL on a random loopback port, and clean up their resources afterward. Their passwords are read from files. SDK generation and checks require Go from `apps/api/go.mod`, Node.js 26.13.1, and npm 11.21.2 on the host.
 
-Монитор [PR CI Watch](.github/workflows/ci-watch.yml) проверяет четыре
-обязательных GitHub Gate примерно раз в 10 минут и оставляет комментарий при
-сбое или длительном ожидании. GitHub может задерживать либо пропускать
-запуски по расписанию. При запрете публикации комментария (HTTP 403)
-монитор выводит предупреждение и запись в GitHub Actions Job Summary, не
-запрашивая дополнительных прав. [PR Merge Notice](.github/workflows/ci-merge-notice.yml)
-после squash merge пытается оставить комментарий в PR из доверенного
-`pull_request_target`, не исполняя код PR и не используя дополнительные секреты.
-При отказе GitHub (HTTP 403) результат остаётся в Actions Job Summary,
-но доставка комментария не гарантирована. **Ни один workflow не
-вызывает Codex, OpenAI API или платную модель; дополнительные ключи не нужны.**
+`make resource-test` requires Docker with CPU 0, Go, Node.js and Chromium. Run `npm ci --ignore-scripts` and `node node_modules/playwright/cli.js install chromium` in `apps/web` first. The harness exercises a synthetic installation with keep-alive connections, a shared CPU, and a combined 1216 MiB container memory limit without swap. To set the duration and concurrency, run `python3 scripts/test-resources.py --seconds 60 --concurrency 4`. Build and load generation run outside the measured containers. The `docker stats` samples describe container usage at sampling times.
 
-При работе Codex в интерактивной сессии проверки можно ждать **одним**
-вызовом GitHub CLI (если позволяет ограничение времени инструментов):
+Install SQLFluff 4.5.0 into a separate environment before running `make lint-sql` or the local lint and Verify targets.
 
 ```sh
-gh pr checks 16 --repo AshyWIngs/stepolonia --required --watch --interval 300
+make python-version-check
+python3 -m venv /tmp/stepolonia-sqlfluff
+. /tmp/stepolonia-sqlfluff/bin/activate
+python3 -m pip install -r infrastructure/quality/sql-requirements.txt
+make lint-sql
 ```
 
-Здесь 16 - пример номера PR. Во время ожидания запросы выполняет GitHub CLI,
-а не языковая модель. После завершения Codex должен проверить актуальный SHA:
-при FAIL прочитать только нужные ошибки и адресно исправить код; при PASS
-проверить, завершился ли squash auto-merge. Если активная сессия или вызов
-инструмента завершились раньше, watcher в GitHub продолжит уведомлять, но
-**не сможет сам возобновить закрытую сессию Codex или исправить код**.
+The [PR CI Watch workflow](.github/workflows/ci-watch.yml) watches the configured checks on its GitHub schedule and reports failures and long waits. [PR Merge Notice](.github/workflows/ci-merge-notice.yml) posts the result of a squash merge. If GitHub denies comment access, the workflow writes the result to its job summary. Both workflows run on GitHub Actions without external model credentials.
 
-Для полного `verify`, как и для `db-test`, нужен Go на хосте и C compiler.
-Остальные анализаторы выполняются в контейнерах с фиксированными версиями.
-Правила, baseline и точечные исключения описаны в [quality pipeline](infrastructure/quality/README.md).
-
-Для SQL-миграций нужен SQLFluff 4.5.0. Проверьте интерпретатор командой `make python-version-check`, создайте отдельное окружение через `python3 -m venv /tmp/stepolonia-sqlfluff`, активируйте его и выполните `python3 -m pip install -r infrastructure/quality/sql-requirements.txt`, затем `make lint-sql`. Этот Gate также входит в `make lint` и `make verify`, проверяет только Goose-миграции и завершается ошибкой при пропуске файла.
+Logs go to the ignored `reports/` directory. See the [quality pipeline](infrastructure/quality/README.md) for tool versions, scan scope, and CI behavior. See the [SDK guide](packages/sdk/README.md) for code generation and client behavior.

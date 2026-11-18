@@ -33,13 +33,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil {
-		// Ошибки соединения и запросов могут содержать SQL и параметры подключения.
-		// Для диагностики выводим SQLSTATE, сохраняя остальные подробности закрытыми.
+		// Connection and query errors can include SQL and connection parameters.
+		// Print only the SQLSTATE for PostgreSQL errors.
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) {
-			fmt.Fprintln(os.Stderr, "Операция БД отклонена; SQLSTATE="+pgerr.Code)
+			fmt.Fprintln(os.Stderr, "Database operation rejected. SQLSTATE="+pgerr.Code)
 		} else {
-			fmt.Fprintln(os.Stderr, "Операция не выполнена:", safeError(err))
+			fmt.Fprintln(os.Stderr, "Operation failed:", safeError(err))
 		}
 		os.Exit(1)
 	}
@@ -53,7 +53,7 @@ func safeError(err error) string {
 	if errors.As(err, &input) {
 		return input.message
 	}
-	return "проверьте параметры и доступность выбранной БД"
+	return "check the selected database settings and availability"
 }
 
 func run(ctx context.Context, args []string) error {
@@ -65,7 +65,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	var rows []database.Language
 	if args[0] == commandImportLanguages {
-		// Проверяем весь CSV до подключения к БД и любых изменений данных.
+		// Validate the entire CSV before opening a database connection.
 		var err error
 		rows, err = readLanguageFile(args[1])
 		if err != nil {
@@ -96,7 +96,7 @@ func run(ctx context.Context, args []string) error {
 
 func validateCommand(args []string) error {
 	if len(args) == 0 {
-		return inputError{"команды: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin"}
+		return inputError{"commands: prepare-roles | migrate up|down|status | seed | import-languages FILE | bootstrap-admin"}
 	}
 	switch args[0] {
 	case "prepare-roles", "seed", commandBootstrapAdmin:
@@ -116,13 +116,13 @@ func validateCommand(args []string) error {
 			return nil
 		}
 	}
-	return inputError{"неверная команда db"}
+	return inputError{"invalid db command"}
 }
 
 func readLanguageFile(path string) ([]database.Language, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, inputError{"не удалось открыть CSV"}
+		return nil, inputError{"could not open CSV"}
 	}
 	defer f.Close()
 	rows, err := database.ReadLanguages(f)
@@ -139,7 +139,7 @@ func runMigration(ctx context.Context, db *sql.DB, action string) error {
 	case "down":
 		token := os.Getenv("DB_DISPOSABLE_TOKEN")
 		if token == "" {
-			return inputError{"для down требуется DB_DISPOSABLE_TOKEN одноразовой БД"}
+			return inputError{"down requires DB_DISPOSABLE_TOKEN for the disposable database"}
 		}
 		return database.Down(ctx, db, token)
 	case "status":
@@ -174,7 +174,7 @@ func toolConfig() (*pgx.ConnConfig, error) {
 	if port := os.Getenv("DB_PORT"); port != "" {
 		p, err := strconv.ParseUint(port, 10, 16)
 		if err != nil || p == 0 {
-			return nil, inputError{"некорректный DB_PORT"}
+			return nil, inputError{"invalid DB_PORT"}
 		}
 		cfg.ConnConfig.Port = uint16(p)
 	}

@@ -46,7 +46,7 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	// Явная схема в каноническом SQL не зависит от search_path оператора.
+	// Use a fixed search_path for catalog serialization.
 	if _, err := tx.ExecContext(ctx, "SET LOCAL search_path=pg_catalog"); err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 		return err
 	}
 	if major != contract.PostgresMajor {
-		return fmt.Errorf("контракт publishing требует PostgreSQL %d", contract.PostgresMajor)
+		return fmt.Errorf("the publishing contract requires PostgreSQL %d", contract.PostgresMajor)
 	}
 	if !installed {
 		return nil
@@ -86,7 +86,7 @@ func checkSchemaMetadata(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	if !safe {
-		return fmt.Errorf("несовместимые метаданные publishing; запуск остановлен до DDL")
+		return fmt.Errorf("incompatible publishing metadata; stopping before DDL")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func checkSchemaDefinitions(ctx context.Context, tx *sql.Tx, expected map[string
 		}
 		want, found := expected[category][name]
 		if !found || strings.TrimSpace(definition) != strings.TrimSpace(want) {
-			return fmt.Errorf("дрейф publishing %s %s; запуск остановлен до DDL", category, name)
+			return fmt.Errorf("publishing schema drift in %s %s; stopping before DDL", category, name)
 		}
 		delete(expected[category], name)
 	}
@@ -113,7 +113,7 @@ func checkSchemaDefinitions(ctx context.Context, tx *sql.Tx, expected map[string
 	}
 	for category, definitions := range expected {
 		for name := range definitions {
-			return fmt.Errorf("отсутствует publishing %s %s; запуск остановлен до DDL", category, name)
+			return fmt.Errorf("missing publishing %s %s; stopping before DDL", category, name)
 		}
 	}
 	return nil

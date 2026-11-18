@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/siteconfig"
 )
 
@@ -37,7 +38,7 @@ func registerSite(api huma.API, reader *siteconfig.Reader, logger *slog.Logger) 
 func siteQuery(api huma.API) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		u := ctx.URL()
-		// Общий query middleware требует lang для статей; здесь параметр намеренно необязателен.
+		// The site endpoint accepts an omitted lang and uses the published fallback.
 		if !validPublicQuery(u.RawQuery, []string{"version"}) && !validPublicQuery(u.RawQuery, []string{"lang", "version"}) {
 			ctx.SetHeader(contentTypeHeader, problemJSONMediaType)
 			ctx.SetStatus(400)
@@ -74,22 +75,14 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 	responses["503"].Description = "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
 	responses["503"].Content[problemJSONMediaType].Example = newProblem(503, siteUnavailableCode)
 	language := siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: leftToRightDirection}
+	demo := apiexamples.DemoSite()
 	value := siteconfig.Publication{
-		Version: "33333333-3333-4333-8333-333333333333",
-		Settings: siteconfig.Settings{
-			Title: "Stepolonia", Description: "Discover community stories and events.",
-			DefaultLanguage: "pl", FallbackLanguage: "pl",
-			Tagline: "Stories from our community", Notice: "", Accent: "#2563eb",
-		},
-		RequestedLanguage: "fr",
+		Version:           "33333333-3333-4333-8333-333333333333",
+		Settings:          demo.Settings,
+		RequestedLanguage: "kk",
 		Language:          language,
 		Languages:         []siteconfig.Language{language},
-		Messages: map[string]string{
-			"articles": "Artykuły", "events": "Wydarzenia", "empty": "Brak wyników", "pagination": "Strony",
-			"previous": "Poprzednia", "next": "Następna", "navigation": "Nawigacja", "all": "Wszystkie", "languages": "Języki",
-			"errors.400": "Nieprawidłowe żądanie", "errors.404": "Nie znaleziono", "errors.503": "Usługa niedostępna",
-			"errors.other": "Wystąpił błąd", "errors.retry": "Spróbuj ponownie", "errors.home": "Strona główna",
-		},
+		Messages:          demo.Catalogs[language.Code],
 	}
 	omitted := value
 	omitted.RequestedLanguage = ""
@@ -99,7 +92,7 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 			jsonMediaType: {
 				Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[siteconfig.Publication](), true, "Publication"),
 				Examples: map[string]*huma.Example{
-					"fallback": {Summary: "French requested, Polish complete catalog selected by fallback", Value: value},
+					"fallback": {Summary: "Kazakh requested, Polish catalog selected as fallback", Value: value},
 					"omitted":  {Summary: "lang omitted, requested_language empty and fallback catalog selected", Value: omitted},
 				},
 			},

@@ -1,7 +1,7 @@
 name: PR CI Watch
 
 on:
-  # GitHub сам проверяет открытые PR. Codex и OpenAI API не запускаются.
+  # GitHub Actions monitors open pull requests.
   schedule:
     - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/github-script@v8
         with:
           script: |
-            // Читаем только статусы текущего SHA; не запускаем код PR, тесты и модель.
+            // Read status checks for the current head SHA.
             const { owner, repo } = context.repo
             const required = new Map([
               ['verify', 15368],
@@ -74,24 +74,24 @@ jobs:
               if (comments.some(comment => comment.body?.includes(marker))) continue
 
               const explanation = failed.length
-                ? 'Обязательные проверки не пройдены: ' + failed.map(name =>
+                ? 'Required checks failed: ' + failed.map(name =>
                     name + ' (' + latest.get(name).conclusion + ')').join(', ')
-                : stale ? 'Более часа не завершены проверки: ' + missing.join(', ')
-                  : 'Все четыре Gate завершились успешно, но включённый auto-merge не слил PR более часа.'
+                : stale ? 'Checks pending for over an hour: ' + missing.join(', ')
+                  : 'All monitored checks passed, but the enabled auto-merge has been pending for over an hour.'
               try {
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: pr.number,
                   body: marker + '\n' + explanation + '\nSHA: `' + sha +
-                    '`. Проверьте результаты в GitHub; автоматический запуск Codex отключён.',
+                    '`. Review the checks in GitHub.',
                 })
               } catch (error) {
                 if (error.status !== 403 || !String(error.message).includes('Resource not accessible by integration')) throw error
-                // GitHub может запрещать запись комментариев даже при issues:write.
-                // Не скрываем сбой доставки и не запрашиваем дополнительные токены.
+                // GitHub may deny comments even with issues:write.
+                // Record failed delivery with the existing token.
                 const url = 'https://github.com/' + owner + '/' + repo + '/pull/' + pr.number
-                core.warning('Недостаточно прав для комментария к ' + url +
-                  '; причина: ' + explanation)
-                await core.summary.addRaw('Уведомление не опубликовано: ' + url +
+                core.warning('Insufficient permission to comment on ' + url +
+                  '. Reason: ' + explanation)
+                await core.summary.addRaw('Notification could not be posted: ' + url +
                   ' — ' + explanation + '\n').write()
               }
             }

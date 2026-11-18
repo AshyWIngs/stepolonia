@@ -22,20 +22,20 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
-      # Аргументы transport-вызовов также содержат MIME, query/header и error codes.
+      # Transport call arguments include MIME types, query keys, headers, and error codes.
       ignore-calls: false
       ignore-tests: false
   exclusions:
     presets: []
     rules:
-      # G704 не распознаёт loopback-only URL: env host отбрасывается после проверки
-      # порта, клиент запрещает redirects. Пересмотреть при изменении guard/callers/transport.
+      # G704 misses the loopback URL boundary. The URL is rebuilt from a validated
+      # port and the client rejects redirects. Revisit if the guard, callers, or transport change.
       - path: ^apps/api/internal/database/publishing_http_test\.go$
         linters: [gosec]
         text: G704
         source: '^\s*(request, err := http\.NewRequestWithContext\(ctx, http\.MethodGet, target, nil\)|response, err := client\.Do\(request\))$'
-      # Проверенные cleanup: результат чтения/Commit/rows.Err проверяется отдельно.
-      # Пересматривать при изменении файловой операции или границы транзакции.
+      # These cleanup paths separately check the read, commit, or rows.Err result.
+      # Revisit if the file or transaction boundary changes.
       - path: ^apps/api/cmd/db/main\.go$
         linters: [errcheck]
         source: '^\s*defer (f|db)\.Close\(\)'
@@ -48,10 +48,10 @@ linters:
       - path: ^apps/api/internal/database/schema_contract\.go$
         linters: [errcheck]
         source: '^\s*defer rows\.Close\(\)'
-      # Все security-исключения пересматриваются при изменении source, sink, caller
-      # или границы доверия. Новое внешнее управление входом требует нового triage.
-      # FP: явный файл локального оператора, read-only import mount; не HTTP input.
-      # Пересматривать при добавлении внешнего источника пути.
+      # Revisit security exemptions if the source, sink, caller, or trust
+      # boundary changes. Reassess whenever an input becomes externally controlled.
+      # False positive: the operator selects a file on a read-only import mount.
+      # Revisit if another source can supply the path.
       - path: ^apps/api/cmd/db/main\.go$
         linters: [gosec]
         text: '^G(304|703):'
@@ -84,23 +84,23 @@ linters:
         linters: [gosec]
         text: '^G202:'
         source: '_, err = tx\.ExecContext\(ctx, "SELECT \* FROM "\+pgx\.Identifier\{"public", table\}\.Sanitize\(\)\)'
-      # FP: путь secret задаётся Compose, файл читается non-root процессом.
+      # False positive: Compose supplies the secret path, and a non-root process reads it.
       - path: ^apps/api/internal/config/config\.go$
         linters: [gosec]
         text: '^G(304|703):'
         source: 'password, err := os\.ReadFile\(path\)'
-      # FP: тестовый путь задаёт собственный disposable harness.
+      # False positive: the disposable test harness owns the path.
       - path: ^apps/api/internal/database/integration_test\.go$
         linters: [gosec]
         text: '^G(304|703):'
         source: 'raw, err := os\.ReadFile\(path\)'
-      # FP: current_user экранирован pgx.Identifier.Sanitize перед GRANT.
+      # False positive: pgx.Identifier.Sanitize quotes current_user before GRANT.
       - path: ^apps/api/internal/database/integration_test\.go$
         linters: [gosec]
         text: '^G202:'
         source: 'grant := "GRANT " \+ pgx\.Identifier\{owner\}\.Sanitize\(\)'
-      # FP: абсолютный psql, фиксированный SQL и argv; env принадлежит оператору.
-      # libpq conninfo в DB name допустим только в доверенной конфигурации.
+      # False positive: an absolute psql path, fixed SQL and arguments, and operator-owned environment.
+      # Only trusted configuration may supply libpq conninfo through the database name.
       - path: ^infrastructure/postgres/healthcheck/main\.go$
         linters: [gosec]
         text: '^G(204|702):'

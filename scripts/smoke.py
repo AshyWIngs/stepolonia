@@ -39,8 +39,8 @@ def request(url, *, method="GET"):
     target = urlsplit(url)
     if (target.scheme != "http" or target.hostname != "127.0.0.1" or target.username is not None
             or target.port is None or not 1 <= target.port <= 65535):
-        raise ValueError("Smoke разрешает только HTTP loopback с явным TCP-портом")
-    # Прямое соединение исключает file/custom schemes, proxy и следование redirects.
+        raise ValueError("Smoke checks require loopback HTTP with an explicit TCP port")
+    # Connect directly to avoid proxy lookup and automatic redirects.
     connection = HTTPConnection("127.0.0.1", target.port, timeout=5)
     try:
         path = target.path or "/"
@@ -62,7 +62,7 @@ def private_api(path):
 
 
 def public_entry(base):
-    """Проверяем временный выбор языка перед чтением итоговой SSR-страницы."""
+    """Select the language before inspecting the server-rendered page."""
     status, headers, body = request(base + "/")
     if status in (302, 307):
         location = headers.get("Location", "")
@@ -73,7 +73,7 @@ def public_entry(base):
 
 
 def check_site_branding(base):
-    """Брендинг сверяем с публикацией API; пустая установка не получает ENV-подмену."""
+    """Compare branding with the published settings returned by the API."""
     publication_status, _, publication_body = request(base + "/api/v1/site")
     status, headers, body = public_entry(base)
     if publication_status == 200:
@@ -100,25 +100,25 @@ def wait_ready():
 
 
 def publishing_sdk(base, *, mode="--published"):
-    """Проверяем SDK и SSR на статье существующего Go runtime fixture."""
+    """Check SDK and SSR against the Go runtime article fixture."""
     if mode not in ("--published", "--unavailable", "--api-unavailable", "--restored"):
-        raise ValueError("Неизвестный режим Publishing-проверки")
+        raise ValueError("Unknown Publishing check mode")
     environment = {**os.environ, "STAGE14_API_URL": base, "STAGE14_ARTICLE_LANG": "fr",
                    "STAGE14_ARTICLE_SLUG": "stage15-fr-current", "STAGE14_REDIRECT_SLUG": "stage15-fr-first"}
-    # B603 требует аудита даже фиксированного argv. Программа и script постоянны,
-    # режим ограничен проверенным набором, env принадлежит disposable harness.
-    # Пересмотреть при изменении executable/script/mode или источника окружения.
-    result = subprocess.run(  # nosec B603 - фиксированный SDK argv, доверенное test env
+    # B603 applies to fixed argument vectors as well.
+    # The executable, script and mode are fixed. The disposable harness owns the environment.
+    # Recheck when the executable, script, mode or environment source changes.
+    result = subprocess.run(  # nosec B603 - fixed SDK arguments, trusted test environment
         ["node", "apps/web/tests/live.mjs", mode],
         cwd=ROOT, check=False, capture_output=True, text=True, env=environment)
     print(result.stdout, end="", flush=True)
-    # Сохраняем причину сбоя до исключения: runtime harness перенаправляет вывод в свой журнал.
+    # Print the failure before raising so the runtime harness captures it.
     print(result.stderr, end="", flush=True)
     result.check_returncode()
 
 
 def check_publishing(base):
-    """Проверяем Publishing через Caddy на подготовленной одноразовой установке."""
+    """Check Publishing through Caddy on the prepared disposable installation."""
     verify("entry serves the configured content language", public_entry(base)[0] == 200)
     publishing_sdk(base)
     status, _, body = request(base + "/api/v1/content/article?language=en")
@@ -134,7 +134,7 @@ def check_publishing(base):
 
 
 def check_publishing_recovery(base):
-    """Остановка разрешена вызывающим harness только после проверки ownership-маркеров."""
+    """The caller must verify ownership markers before stopping a service."""
     target = base + "/api/v1/content/article/stage15-fr-current?language=fr"
     before = request(target)
     verify("Caddy: imported fifth language is published", before[0] == 200)
@@ -159,7 +159,7 @@ def check_publishing_recovery(base):
 
 
 def check_ssr_api_recovery(base):
-    """SSR должен различать отсутствие материала и недоступность контейнера API."""
+    """SSR must distinguish missing content from an unavailable API."""
     target = base + "/api/v1/content/article/stage15-fr-current?language=fr"
     snapshot = request(target)[2]
     try:
@@ -169,7 +169,7 @@ def check_ssr_api_recovery(base):
         compose("start", "api")
         wait_ready()
     publishing_sdk(base, mode="--restored")
-    verify("Публикация сохранена после восстановления API", request(target)[2] == snapshot)
+    verify("Publication survived API recovery", request(target)[2] == snapshot)
 
 
 def main(site, lifecycle):
@@ -225,7 +225,7 @@ def main(site, lifecycle):
 
 
 def check_lifecycle(config, base, containers):
-    """Проверяем восстановление и сохранность БД только по явному --lifecycle."""
+    """Check database recovery and persistence when --lifecycle is set."""
     # No application data is modified by fault or restart checks.
     identifier_cmd = postgres_sql_args(config, "SELECT system_identifier FROM pg_control_system()")
     identifier = compose(*identifier_cmd).stdout.strip()

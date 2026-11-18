@@ -1,5 +1,5 @@
 FROM golang:1.27.4-alpine3.24 AS esbuild-tool
-# Commit соответствует esbuild v0.28.2; сохраняем build metadata исправленного Go.
+# The esbuild v0.28.2 commit preserves build metadata from the patched Go release.
 RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     github.com/evanw/esbuild/cmd/esbuild@609683d892977362a0f99026cb74b96263d728a9 \
     && go version -m /out/esbuild
@@ -12,7 +12,7 @@ COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
 COPY packages/sdk /workspace/packages/sdk
 RUN npm ci --ignore-scripts
 COPY --from=esbuild-tool /out/esbuild /tmp/esbuild
-# Заменяем upstream-бинарник, сохраняя штатное разрешение платформенного npm-пакета.
+# Replace the binary while preserving npm's platform package resolution.
 RUN node --input-type=commonjs <<'JS'
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
@@ -31,10 +31,10 @@ RUN test -x node_modules/.bin/esbuild && test -s node_modules/nuxt/package.json
 
 FROM dependencies AS source
 COPY apps/web .
-# Только штатная подготовка Nuxt, без lifecycle scripts зависимостей.
+# Run Nuxt preparation with dependency lifecycle scripts disabled.
 RUN node node_modules/nuxt/bin/nuxt.mjs prepare
 
-# Проверки запускаются явно: make lint / make test.
+# Run checks explicitly with make lint or make test.
 FROM source AS lint
 RUN npm run lint
 
@@ -53,6 +53,6 @@ ENV NODE_ENV=production \
     PORT=3000 \
     NITRO_SHUTDOWN_TIMEOUT=8000
 EXPOSE 3000
-# Runtime не содержит shell/npm; Node запускается напрямую.
+# Run Node directly in the shell-free runtime.
 ENTRYPOINT ["/usr/bin/node"]
 CMD ["/app/.output/server/index.mjs"]

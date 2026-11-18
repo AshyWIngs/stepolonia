@@ -142,21 +142,12 @@ func scalarJSON(values map[string]content.PublicFieldValue) ([]byte, error) {
 
 func seedSite(ctx context.Context, db *sql.DB) error {
 	// The site service enforces the actual atomic publication and complete catalog rules.
-	messages := map[string]string{
-		"articles": "Artykuły", "events": "Wydarzenia", "empty": "Brak wyników", "pagination": "Strony",
-		"previous": "Poprzednia", "next": "Następna", "navigation": "Nawigacja", "all": "Wszystkie", "languages": "Języki",
-		"errors.400": "Nieprawidłowe żądanie", "errors.404": "Nie znaleziono", "errors.503": "Usługa niedostępna",
-		"errors.other": "Wystąpił błąd", "errors.retry": "Spróbuj ponownie", "errors.home": "Strona główna",
-	}
 	var version int64
 	if err := db.QueryRowContext(ctx, `SELECT version FROM public.site_state WHERE singleton`).Scan(&version); err != nil {
 		return err
 	}
 	service := siteconfig.NewService(db)
-	version, err := service.SaveDraft(ctx, version, siteconfig.Draft{
-		Settings: siteconfig.Settings{Title: "Stepolonia", Description: "Discover community stories and events.", DefaultLanguage: "pl", FallbackLanguage: "pl", Tagline: "Stories from our community", Notice: "", Accent: "#2563eb"},
-		Catalogs: map[string]map[string]string{"pl": messages},
-	})
+	version, err := service.SaveDraft(ctx, version, apiexamples.DemoSite())
 	if err != nil {
 		return err
 	}

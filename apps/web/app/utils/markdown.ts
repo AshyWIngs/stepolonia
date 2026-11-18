@@ -57,6 +57,6 @@ function leafNodes(token: Token): VNodeChild[] {
   if (token.type === 'hardbreak') return [h('br')]
   if (token.type === 'softbreak') return ['\n']
   if (token.type === 'hr') return [h('hr')]
-  // Изображения пока показывают только альтернативный текст, без загрузки внешних медиа.
+  // Render images as alternative text without fetching external media.
   return [token.content]
 }

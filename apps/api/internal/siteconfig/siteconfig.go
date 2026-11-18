@@ -1,4 +1,4 @@
-// Package siteconfig хранит настройки и UI как единую атомарную публикацию установки.
+// Package siteconfig manages atomic publications of site settings and UI catalogs.
 package siteconfig
 
 import (
@@ -15,11 +15,11 @@ import (
 )
 
 type Settings struct {
-	Tagline          string `json:"tagline" maxLength:"300" doc:"Short site tagline. An empty string means no tagline." example:"Stories and events from our community"`
+	Tagline          string `json:"tagline" maxLength:"300" doc:"Short site tagline. An empty string means no tagline." example:"Historie naszej społeczności"`
 	Notice           string `json:"notice" maxLength:"2000" doc:"Optional site notice as plain text. An empty string means no notice." example:""`
 	Accent           string `json:"accent" pattern:"^#[0-9a-fA-F]{6}$" doc:"Six-digit hexadecimal accent color, including the leading #." example:"#2563eb"`
 	Title            string `json:"title" maxLength:"200" doc:"Human-readable title of this installation." example:"Stepolonia"`
-	Description      string `json:"description" maxLength:"2000" doc:"Published site description as plain text." example:"Discover community stories and events."`
+	Description      string `json:"description" maxLength:"2000" doc:"Published site description as plain text." example:"Poznaj historie i wydarzenia naszej społeczności."`
 	DefaultLanguage  string `json:"default_language" doc:"Configured default content language. This does not select the UI catalog." example:"pl"`
 	FallbackLanguage string `json:"fallback_language" doc:"UI catalog used when lang is omitted or its complete published catalog is unavailable." example:"pl"`
 }
@@ -132,7 +132,7 @@ func (s *Service) begin(ctx context.Context, expected int64) (*sql.Tx, sql.NullS
 	return tx, draft, nil
 }
 
-// SaveDraft заменяет весь черновик; общий singleton lock исключает потерянные изменения.
+// SaveDraft replaces the draft under the singleton lock to prevent lost updates.
 func (s *Service) SaveDraft(ctx context.Context, expected int64, input Draft) (int64, error) {
 	input, err := normalizeDraft(input)
 	if err != nil {
@@ -260,7 +260,7 @@ func storeDraft(ctx context.Context, tx *sql.Tx, id string, input Draft) error {
 	if err != nil {
 		return dbError(err)
 	}
-	// Дефиниции копируются в снимок, чтобы последующая смена приложения не меняла публикацию.
+	// Copy definitions into the snapshot so later application changes leave it stable.
 	_, err = tx.ExecContext(ctx, `INSERT INTO public.site_revision_keys SELECT $1,message_key,placeholders FROM public.ui_message_keys`, id)
 	if err != nil {
 		return dbError(err)
@@ -307,7 +307,7 @@ func deleteDraft(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 func checkPublicRole(ctx context.Context, tx *sql.Tx) error {
-	// Только отдельное непривилегированное runtime-подключение может обслуживать публичный контракт.
+	// Serve the public contract through a separate unprivileged runtime connection.
 	var allowed bool
 	err := tx.QueryRowContext(ctx, `SELECT current_user=session_user AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
  AND NOT pg_catalog.has_schema_privilege(oid,'public','CREATE')

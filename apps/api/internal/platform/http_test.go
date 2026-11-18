@@ -50,8 +50,8 @@ func TestHealthAndPrivateContracts(t *testing.T) {
 	}
 }
 
-// Проверяем сгенерированный контракт отдельно от HTTP: служебные маршруты
-// выключены, а nullable-массивы и внутренние DTO не должны попасть в SDK.
+// Check the generated contract separately from HTTP routing. The SDK
+// excludes operational routes, nullable arrays, and internal DTOs.
 func TestPublishingOpenAPI(t *testing.T) {
 	_, api := newAPI(failingDatabase{}, nil, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	spec := api.OpenAPI()
@@ -88,7 +88,7 @@ func TestPublishingOpenAPI(t *testing.T) {
 
 }
 
-// Экспорт не должен создавать независимый контракт или зависеть от окружения.
+// Export must use the same contract independently of the environment.
 func assertOfflineOpenAPI(t *testing.T, spec *huma.OpenAPI) {
 	t.Helper()
 	expected, err := json.MarshalIndent(spec, "", "  ")

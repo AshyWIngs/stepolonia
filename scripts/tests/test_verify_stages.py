@@ -1,4 +1,4 @@
-"""Проверки эквивалентности поэтапного GitHub Verify локальному Make-графу."""
+"""Check parity between GitHub Verify and local Make targets."""
 
 from pathlib import Path
 from fnmatch import fnmatch
@@ -60,7 +60,7 @@ class VerifyStagesTest(unittest.TestCase):
         self.assertNotIn("continue-on-error:", self.workflow)
 
     def test_failure_diagnostics_are_uploaded_even_after_a_failed_gate(self):
-        upload = self.workflow.split('      - name: "Артефакты:', 1)[1]
+        upload = self.workflow.split('      - name: "Artifacts:', 1)[1]
         self.assertIn("if: ${{ always() && steps.scope.outputs.full == 'true' }}", upload)
         paths = re.findall(r"^            (reports/\S+)$", upload, flags=re.MULTILINE)
         expected = (

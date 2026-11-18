@@ -15,8 +15,8 @@ const (
 	runtimeDraft   = "draft"
 )
 
-// TestSiteRuntimeFixture публикует только синтетические тексты в помеченной БД
-// runtime harness; это не seed и не операторский интерфейс установки.
+// TestSiteRuntimeFixture publishes synthetic text only in a marked disposable
+// database owned by the runtime test harness.
 func TestSiteRuntimeFixture(t *testing.T) {
 	mode := os.Getenv("STAGE22_SITE_FIXTURE")
 	if mode == "" {

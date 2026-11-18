@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Сводка npm advisories и предупреждений в GitHub Actions."""
+"""Summarize npm advisories and warnings in GitHub Actions."""
 
 import argparse
 import json
@@ -18,17 +18,17 @@ def group(message):
 
 def audit_data():
     if not NPM_AUDIT_REPORT_PATH.is_file():
-        return NOT_RUN, {}, [], "Отчёт npm audit отсутствует"
+        return NOT_RUN, {}, [], "npm audit report is missing"
     try:
         payload = json.loads(NPM_AUDIT_REPORT_PATH.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        return NOT_RUN, {}, [], "npm audit вернул невалидный JSON"
+        return NOT_RUN, {}, [], "npm audit returned invalid JSON"
     if not isinstance(payload, dict) or payload.get("error"):
         code = (payload.get("error") or {}).get("code", "unknown") if isinstance(payload, dict) else "unknown"
-        return NOT_RUN, {}, [], f"npm audit завершился с ошибкой: {code}"
+        return NOT_RUN, {}, [], f"npm audit returned an error: {code}"
     vulnerabilities = payload.get("vulnerabilities")
     if not isinstance(vulnerabilities, dict) or not isinstance(payload.get("metadata", {}).get("vulnerabilities"), dict):
-        return NOT_RUN, {}, [], "В JSON нет обязательной структуры npm audit"
+        return NOT_RUN, {}, [], "npm audit JSON is missing required fields"
     counts = payload["metadata"]["vulnerabilities"]
     items = []
     for pkg, detail in sorted(vulnerabilities.items()):
@@ -40,43 +40,43 @@ def audit_data():
                       "advisory_ids": advisory_ids})
     exit_status = NPM_AUDIT_EXIT_PATH.read_text(encoding="utf-8").strip() if NPM_AUDIT_EXIT_PATH.is_file() else "unknown"
     if exit_status not in ("0", "1"):
-        return NOT_RUN, {}, [], f"npm audit вернул неожиданный код завершения: {exit_status}"
+        return NOT_RUN, {}, [], f"npm audit returned an unexpected exit code: {exit_status}"
     return "REVIEW", counts, items, None
 
 
 def append_audit_findings(lines, counts, findings):
-    """Показать находки npm без автоматического принятия или исправления риска."""
+    """Summarize npm findings for review."""
     levels = ("critical", "high", "moderate", "low", "info")
-    lines.append("Найдено пакетов с advisory по уровням: " + ", ".join(
+    lines.append("Packages with advisories by severity: " + ", ".join(
         f"{key}={counts.get(key, 0)}" for key in levels) + ".")
     if not findings:
-        lines.append("Advisories не найдены в текущем lockfile.")
+        lines.append("No advisories found in the current lockfile.")
         return
-    lines.extend(["", "| Пакет | Серьёзность | Advisory ID | Статус |", "|---|---|---|---|"])
+    lines.extend(["", "| Package | Severity | Advisory ID | Status |", "|---|---|---|---|"])
     for item in findings[:30]:
-        ids = ", ".join(item["advisory_ids"]) or "косвенная зависимость"
-        lines.append(f"| {item['name']} | {item['severity']} | {ids} | OPEN: требует разбора |")
+        ids = ", ".join(item["advisory_ids"]) or "transitive dependency"
+        lines.append(f"| {item['name']} | {item['severity']} | {ids} | OPEN: review required |")
     if len(findings) > 30:
-        lines.append(f"\nЕщё {len(findings) - 30} пакетов: см. приложенный JSON.")
-    group(f"::warning::npm audit: {len(findings)} пакетов с открытыми advisory; см. итог проверки и npm-audit.json")
+        lines.append(f"\nSee the attached JSON for {len(findings) - 30} more packages.")
+    group(f"::warning::npm audit: {len(findings)} packages with open advisories. See the job summary and npm-audit.json.")
 
 
 def append_audit_summary(lines):
-    """Учитывать информационные npm advisory отдельно от Docker/Grype Gate."""
+    """Report npm advisories alongside the image scan results."""
     _state, counts, findings, error = audit_data()
-    lines.extend(["", "### npm audit: зависимости Nuxt (отчёт по lockfile)", ""])
+    lines.extend(["", "### npm audit: Nuxt dependencies (lockfile report)", ""])
     if error:
-        lines.append(f"**{NOT_RUN}:** {error}. Это не результат проверки уязвимостей.")
+        lines.append(f"**{NOT_RUN}:** {error}. The advisory inventory could not be evaluated.")
         group(f"::warning::{error}")
     else:
         append_audit_findings(lines, counts, findings)
-    lines.extend(["", "**Важно:** npm audit здесь инвентаризирует advisory и не меняет существующий порог "
-                  "обязательного Docker/Grype Gate. LOW/MODERATE не считаются автоматически принятым риском; "
-                  "HIGH/CRITICAL требуют отдельного разбора. Автоматическое исправление зависимостей не запускается."])
+    lines.extend(["", "**Review:** The npm inventory does not change the Docker/Grype threshold. "
+                  "LOW/MODERATE findings remain open for review. "
+                  "Review HIGH/CRITICAL findings individually."])
 
 
 def summarize():
-    lines = ["## Проверка проекта: npm advisories", ""]
+    lines = ["## Project checks: npm advisories", ""]
     append_audit_summary(lines)
     summary = "\n".join(lines) + "\n"
     dest = os.getenv("GITHUB_STEP_SUMMARY")
@@ -91,7 +91,7 @@ def summarize():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
-    sub.add_parser("summary", help="Записать итоги в GitHub Actions Job Summary")
+    sub.add_parser("summary", help="Write the GitHub Actions job summary")
     parser.parse_args()
     return summarize()
 

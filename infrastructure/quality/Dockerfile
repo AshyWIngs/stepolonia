@@ -1,11 +1,11 @@
 FROM golang:1.27.4-alpine3.24 AS go-base
-# Те же исправления builder, что и при сборке API.
+# Apply the same builder updates as the API image.
 RUN apk upgrade --no-cache musl zlib
 
 FROM go-base AS go-tool
-# Upstream binary 2.15.0 собран старым Go: пересобираем ту же версию с security fixes.
-# Commit соответствует v2.15.0; зависимости берутся из upstream go.mod/go.sum.
-# Go checksum DB проверяет содержимое модулей; обновление toolchain запрещено.
+# Rebuild 2.15.0 with the patched Go toolchain.
+# Use the v2.15.0 commit and its upstream module declarations.
+# The Go checksum database verifies modules. Keep the local toolchain pinned.
 RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     github.com/golangci/golangci-lint/v2/cmd/golangci-lint@25c5369a93aacb8cccea0d46e1569ca4a194564d
 
@@ -50,7 +50,7 @@ RUN npm ci --ignore-scripts --no-fund --no-audit
 FROM duplicates-build AS npm-cache-ready
 RUN test -s node_modules/jscpd/package.json
 
-# CPD исполняется в non-root distroless, npm остаётся в builder.
+# Run CPD as non-root in distroless and keep npm in the builder.
 FROM dhi.io/node:26.13.1-alpine3.24 AS duplicates
 WORKDIR /tools
 COPY --from=duplicates-build --chown=1000:1000 /home/node/node_modules ./node_modules

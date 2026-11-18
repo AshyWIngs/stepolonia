@@ -15,7 +15,7 @@ DISPOSABLE_MARKER = ".disposable.json"
 
 
 def disposable_marker(site):
-    """До обращения к Docker требуем приватный маркер выбранной тестовой установки."""
+    """Require an owner-only marker before contacting Docker."""
     directory_fd = os.open(site_directory(site), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         fd = os.open(DISPOSABLE_MARKER, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
@@ -26,15 +26,15 @@ def disposable_marker(site):
         metadata = os.fstat(source.fileno())
         if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
                 or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_nlink != 1):
-            raise ValueError("Down запрещён: маркер должен быть файлом владельца с правами 0600")
+            raise ValueError("Down refused: marker must be an owner-only file with mode 0600")
         if metadata.st_size > 4096:
-            raise ValueError("Down запрещён: слишком большой маркер тестовой установки")
+            raise ValueError("Down refused: disposable installation marker is too large")
         marker = json.loads(source.read(4097))
     if (not isinstance(marker, dict)
             or any(not isinstance(marker.get(key), str) for key in ("token", "database", "project", "volume"))
             or not re.fullmatch(r"[0-9a-f]{12,64}", marker["token"])
             or not marker["database"].startswith("stage12_")):
-        raise ValueError("Down запрещён: некорректный маркер тестовой установки")
+        raise ValueError("Down refused: invalid disposable installation marker")
     return marker
 
 
@@ -43,9 +43,9 @@ def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow
     marker = None
     if list(arguments) == ["migrate", "down"]:
         if not allow_disposable_down:
-            raise ValueError("Down разрешён только для временной БД с явным --disposable")
+            raise ValueError("Down requires an explicit --disposable option and a disposable database")
         marker = disposable_marker(site)
-    # Профиль нужен только для чтения конфигурации: сам сервис запускается явно через run.
+    # Include the tools profile when reading config. The run command selects the service.
     config = load_config(site, override=override, profile="tools")
     environment = None
     if marker is not None:
@@ -55,7 +55,7 @@ def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow
                 or config["services"]["db-tools"]["environment"]["DB_NAME"] != database
                 or marker["project"] != config["name"]
                 or marker["volume"] != volume["name"] or volume.get("external", False)):
-            raise ValueError("Down запрещён: маркер не соответствует БД, проекту или тому установки")
+            raise ValueError("Down refused: marker does not match the database, project or volume")
         environment = dict(os.environ, DB_DISPOSABLE_TOKEN=marker["token"])
     command = compose_command(site)
     if override is not None:
@@ -68,7 +68,7 @@ def run_tool(site, arguments, *, input_file=None, override=None, log=None, allow
     if input_file is not None:
         path = Path(input_file).resolve(strict=True)
         if not path.is_file():
-            raise ValueError("Файл импорта должен быть обычным файлом")
+            raise ValueError("The import source must be a regular file")
         command += ["--volume", f"{path}:/input/languages.csv:ro"]
     command += ["db-tools", *arguments]
     subprocess.run(command, cwd=ROOT, check=True, stdout=log, stderr=log, env=environment)
@@ -81,7 +81,7 @@ def main():
     migrate = commands.add_parser("migrate")
     migrate.add_argument("action", choices=("up", "down", "status"))
     migrate.add_argument("--disposable", action="store_true",
-                         help="разрешить Down только для установки с тестовым маркером")
+                         help="allow Down for a marked disposable installation")
     commands.add_parser("seed")
     commands.add_parser("prepare-roles")
     importer = commands.add_parser("import-languages")

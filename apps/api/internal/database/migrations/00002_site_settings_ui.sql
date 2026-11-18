@@ -137,11 +137,11 @@ DECLARE closed boolean; owner_id uuid;
 BEGIN
  owner_id := CASE WHEN TG_OP='DELETE' THEN OLD.revision_id ELSE NEW.revision_id END;
  IF TG_OP='UPDATE' AND NEW.revision_id<>OLD.revision_id THEN
-  RAISE EXCEPTION 'владелец снимка неизменяем' USING ERRCODE='23514';
+  RAISE EXCEPTION 'snapshot owner is immutable' USING ERRCODE='23514';
  END IF;
  SELECT sealed INTO closed FROM public.site_revisions WHERE id=owner_id FOR UPDATE;
  IF closed IS DISTINCT FROM false THEN
-  RAISE EXCEPTION 'опубликованный снимок неизменяем' USING ERRCODE='23514';
+  RAISE EXCEPTION 'published snapshot is immutable' USING ERRCODE='23514';
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  RETURN NEW;
@@ -154,11 +154,11 @@ CREATE FUNCTION public.guard_site_revision() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
  IF TG_OP='INSERT' THEN
-  IF NEW.sealed THEN RAISE EXCEPTION 'новый снимок обязан быть черновиком' USING ERRCODE='23514'; END IF;
+  IF NEW.sealed THEN RAISE EXCEPTION 'new snapshot must be a draft' USING ERRCODE='23514'; END IF;
   RETURN NEW;
  END IF;
  IF OLD.sealed OR (TG_OP='UPDATE' AND NEW.id<>OLD.id) THEN
-  RAISE EXCEPTION 'опубликованный снимок неизменяем' USING ERRCODE='23514';
+  RAISE EXCEPTION 'published snapshot is immutable' USING ERRCODE='23514';
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  IF NEW.sealed THEN
@@ -178,7 +178,7 @@ BEGIN
     WHERE c.revision_id=NEW.id AND k.revision_id=NEW.id AND (m.message_key IS NULL
      OR public.ui_placeholders(m.message_value)<>k.placeholders
      OR regexp_replace(m.message_value,'\{[a-z][a-z0-9_]*\}','','g') ~ '[{}]')) THEN
-   RAISE EXCEPTION 'неполная или некорректная публикация UI' USING ERRCODE='23514';
+   RAISE EXCEPTION 'incomplete or invalid UI publication' USING ERRCODE='23514';
   END IF;
  END IF;
  RETURN NEW;
@@ -190,14 +190,14 @@ $$;
 CREATE FUNCTION public.guard_site_state() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
- IF TG_OP='DELETE' THEN RAISE EXCEPTION 'состояние установки обязательно' USING ERRCODE='23514'; END IF;
- IF NEW.version<>OLD.version+1 THEN RAISE EXCEPTION 'неверная версия установки' USING ERRCODE='23514'; END IF;
+ IF TG_OP='DELETE' THEN RAISE EXCEPTION 'installation state is required' USING ERRCODE='23514'; END IF;
+ IF NEW.version<>OLD.version+1 THEN RAISE EXCEPTION 'invalid installation version' USING ERRCODE='23514'; END IF;
  IF NEW.published_id IS NOT NULL THEN
   PERFORM 1 FROM public.site_revisions WHERE id=NEW.published_id AND sealed FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'публикация не закрыта' USING ERRCODE='23514'; END IF;
+  IF NOT FOUND THEN RAISE EXCEPTION 'publication is not sealed' USING ERRCODE='23514'; END IF;
  END IF;
  IF NEW.draft_id IS NOT NULL AND EXISTS(SELECT 1 FROM public.site_revisions WHERE id=NEW.draft_id AND sealed) THEN
-  RAISE EXCEPTION 'черновик уже закрыт' USING ERRCODE='23514';
+  RAISE EXCEPTION 'draft is already sealed' USING ERRCODE='23514';
  END IF;
  RETURN NEW;
 END;

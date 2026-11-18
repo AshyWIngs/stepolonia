@@ -45,7 +45,7 @@ export function canonicalUrl(origin: string, path: string): string | undefined {
   try {
     const url = new URL(origin)
     const hostname = url.hostname.toLowerCase().replace(/\.$/u, '')
-    // Canonical использует явно заданный публичный HTTPS origin установки.
+    // Canonical URLs use the installation's configured public HTTPS origin.
     if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/'
       || url.search || url.hash || hostname.startsWith('[') || !hostname.includes('.') || /^[\d.]+$/u.test(hostname)
       || /(?:^|\.)(?:localhost|local|internal|test|invalid|example)$/u.test(hostname)) return undefined
@@ -81,8 +81,8 @@ function hreflangParts(code: string) {
 }
 
 function supportedHreflang(code: string): boolean {
-  // Google принимает ISO 639-1 с необязательными ISO 15924 и ISO 3166-1.
-  // ICU знает также служебные территории: они не являются странами ISO 3166-1.
+  // Google accepts ISO 639-1 with optional ISO 15924 and ISO 3166-1 subtags.
+  // ICU also includes territories outside ISO 3166-1.
   const parts = hreflangParts(code)
   if (!parts) return false
   const { language, script, region } = parts
@@ -102,7 +102,7 @@ export function contentSeoLinks(origin: string, path: string, namespace: Content
   const links = [{ rel: 'canonical' as const, href: canonical }]
   const unsupported = translations.filter(item => !supportedHreflang(item.language)).map(item => item.language)
   if (unsupported.length) {
-    console.warn('Набор hreflang пропущен: неподдерживаемые коды языков', unsupported)
+    console.warn('Skipped hreflang set: unsupported language codes', unsupported)
     return links
   }
   return [...links, ...translations.map(item => ({

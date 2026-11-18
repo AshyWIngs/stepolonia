@@ -3,9 +3,9 @@ export default defineI18nConfig(() => ({
   fallbackLocale: false,
   flatJson: true,
   messages: {},
-  // Контракт БД допускает только именованные {placeholders}; @, | и HTML остаются обычным текстом.
+  // Expand only named {placeholders}. The catalog treats @, |, and HTML as text.
   messageCompiler: message => {
-    if (typeof message !== 'string') throw new Error('Ожидался строковый UI-каталог')
+    if (typeof message !== 'string') throw new Error('Expected a string UI catalog entry')
     return (context: { named: (name: string) => unknown }) => message.replace(/\{([a-z][a-z0-9_]*)\}/gu, (_match, name: string) => String(context.named(name)))
   },
 }))

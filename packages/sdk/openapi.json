@@ -213,7 +213,7 @@
             "localized": {
               "body": {
                 "kind": "markdown",
-                "value": "Community stories and **events**."
+                "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
               },
               "slug": {
                 "kind": "string",
@@ -221,7 +221,7 @@
               },
               "title": {
                 "kind": "string",
-                "value": "Welcome to Stepolonia"
+                "value": "Witaj w Stepolonii"
               }
             },
             "relations": []
@@ -747,7 +747,7 @@
                 "localized": {
                   "body": {
                     "kind": "markdown",
-                    "value": "Community stories and **events**."
+                    "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
                   },
                   "slug": {
                     "kind": "string",
@@ -755,7 +755,7 @@
                   },
                   "title": {
                     "kind": "string",
-                    "value": "Welcome to Stepolonia"
+                    "value": "Witaj w Stepolonii"
                   }
                 },
                 "relations": []
@@ -1006,7 +1006,7 @@
           "description": {
             "description": "Published site description as plain text.",
             "examples": [
-              "Discover community stories and events."
+              "Poznaj historie i wydarzenia naszej społeczności."
             ],
             "maxLength": 2000,
             "type": "string"
@@ -1029,7 +1029,7 @@
           "tagline": {
             "description": "Short site tagline. An empty string means no tagline.",
             "examples": [
-              "Stories and events from our community"
+              "Historie naszej społeczności"
             ],
             "maxLength": 300,
             "type": "string"
@@ -1173,7 +1173,7 @@
                           "localized": {
                             "body": {
                               "kind": "markdown",
-                              "value": "Meet the **Stepolonia** community."
+                              "value": "Poznaj społeczność **Stepolonii**."
                             },
                             "slug": {
                               "kind": "string",
@@ -1181,7 +1181,7 @@
                             },
                             "title": {
                               "kind": "string",
-                              "value": "Community meetup"
+                              "value": "Spotkanie społeczności"
                             }
                           },
                           "relations": [
@@ -1223,7 +1223,7 @@
                           "localized": {
                             "body": {
                               "kind": "markdown",
-                              "value": "Community stories and **events**."
+                              "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
                             },
                             "slug": {
                               "kind": "string",
@@ -1231,7 +1231,7 @@
                             },
                             "title": {
                               "kind": "string",
-                              "value": "Welcome to Stepolonia"
+                              "value": "Witaj w Stepolonii"
                             }
                           },
                           "relations": []
@@ -1263,7 +1263,7 @@
                           "localized": {
                             "body": {
                               "kind": "markdown",
-                              "value": "Read the latest community news."
+                              "value": "Przeczytaj najnowsze wiadomości z naszej społeczności."
                             },
                             "slug": {
                               "kind": "string",
@@ -1271,7 +1271,7 @@
                             },
                             "title": {
                               "kind": "string",
-                              "value": "Community news"
+                              "value": "Aktualności społeczności"
                             }
                           },
                           "relations": []
@@ -1435,7 +1435,7 @@
                       "localized": {
                         "body": {
                           "kind": "markdown",
-                          "value": "Community stories and **events**."
+                          "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
                         },
                         "slug": {
                           "kind": "string",
@@ -1443,7 +1443,7 @@
                         },
                         "title": {
                           "kind": "string",
-                          "value": "Welcome to Stepolonia"
+                          "value": "Witaj w Stepolonii"
                         }
                       },
                       "relations": []
@@ -1479,7 +1479,7 @@
                       "localized": {
                         "body": {
                           "kind": "markdown",
-                          "value": "Meet the **Stepolonia** community."
+                          "value": "Poznaj społeczność **Stepolonii**."
                         },
                         "slug": {
                           "kind": "string",
@@ -1487,7 +1487,7 @@
                         },
                         "title": {
                           "kind": "string",
-                          "value": "Community meetup"
+                          "value": "Spotkanie społeczności"
                         }
                       },
                       "relations": [
@@ -1742,19 +1742,19 @@
               "application/json": {
                 "examples": {
                   "fallback": {
-                    "summary": "French requested, Polish complete catalog selected by fallback",
+                    "summary": "Kazakh requested, Polish catalog selected as fallback",
                     "value": {
                       "version": "33333333-3333-4333-8333-333333333333",
                       "settings": {
-                        "tagline": "Stories from our community",
+                        "tagline": "Historie naszej społeczności",
                         "notice": "",
                         "accent": "#2563eb",
                         "title": "Stepolonia",
-                        "description": "Discover community stories and events.",
+                        "description": "Poznaj historie i wydarzenia naszej społeczności.",
                         "default_language": "pl",
                         "fallback_language": "pl"
                       },
-                      "requested_language": "fr",
+                      "requested_language": "kk",
                       "language": {
                         "code": "pl",
                         "name": "Polish",
@@ -1793,11 +1793,11 @@
                     "value": {
                       "version": "33333333-3333-4333-8333-333333333333",
                       "settings": {
-                        "tagline": "Stories from our community",
+                        "tagline": "Historie naszej społeczności",
                         "notice": "",
                         "accent": "#2563eb",
                         "title": "Stepolonia",
-                        "description": "Discover community stories and events.",
+                        "description": "Poznaj historie i wydarzenia naszej społeczności.",
                         "default_language": "pl",
                         "fallback_language": "pl"
                       },

@@ -1,5 +1,5 @@
 FROM postgres:18.7-alpine3.24 AS bootstrap-scripts
-# Из официального образа берём только init-скрипты и проверенную лицензию исходников.
+# Copy the official initialization scripts and verify the source license.
 ADD --checksum=sha256:${PG_SHA256} \
     https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.bz2 \
     /tmp/postgresql.tar.bz2
@@ -9,7 +9,7 @@ RUN mkdir -p /usr/share/licenses/postgresql \
     && rm /tmp/postgresql.tar.bz2
 
 FROM alpine:3.24 AS distribution
-# Реальные APK-пакеты связывают PostgreSQL с исправлениями в базе уязвимостей Alpine.
+# Keep Alpine package metadata for vulnerability matching.
 RUN apk upgrade --no-cache \
     && apk add --no-cache \
         bash \
@@ -40,7 +40,7 @@ ENV PATH=/usr/libexec/postgresql18:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin 
 FROM distribution AS cache-ready
 RUN test -x /usr/libexec/postgresql18/postgres && test -x /usr/local/bin/docker-ensure-initdb.sh
 
-# Штатный initdb использует shell, поэтому bootstrap выполняется отдельно.
+# initdb requires a shell, so it runs in the bootstrap image.
 FROM distribution AS bootstrap
 COPY --chmod=0644 init-app.sh /docker-entrypoint-initdb.d/01-app.sh
 USER 999:999
@@ -66,7 +66,7 @@ FROM healthcheck-source AS healthcheck-build
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o /out/pg-healthcheck .
 
 FROM scratch AS runtime
-# PostgreSQL, ICU и все ELF-библиотеки берутся из того же Alpine, что и bootstrap.
+# Use the same Alpine release for PostgreSQL, ICU, and all ELF libraries.
 COPY --from=runtime-files /runtime/ /
 COPY --from=healthcheck-build /out/pg-healthcheck /usr/local/bin/pg-healthcheck
 ENV PATH=/usr/libexec/postgresql18:/usr/local/bin \
@@ -79,5 +79,5 @@ USER 999:999
 EXPOSE 5432
 STOPSIGNAL SIGINT
 ENTRYPOINT ["/usr/libexec/postgresql18/postgres"]
-# Пакет Alpine по умолчанию слушает localhost; сервис доступен в приватной Docker-сети.
+# Allow connections on the private Docker network.
 CMD ["-c", "listen_addresses=*"]

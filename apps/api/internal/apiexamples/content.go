@@ -16,7 +16,7 @@ func Article() content.PublicItem {
 		PublicationID: "22222222-2222-4222-8222-222222222222",
 		Language:      "pl", Slug: "welcome-to-stepolonia",
 		Shared: map[string]content.PublicFieldValue{}, Relations: []content.PublicRelation{},
-	}, "articles", "Welcome to Stepolonia", "Community stories and **events**.")
+	}, "articles", "Witaj w Stepolonii", "Historie naszej społeczności i zapowiedzi **wydarzeń**.")
 }
 
 // SecondArticle provides a second published item for offset pagination examples.
@@ -28,7 +28,7 @@ func SecondArticle() content.PublicItem {
 		PublicationID: "99999999-9999-4999-8999-999999999999",
 		Language:      article.Language, Slug: "community-news",
 		Shared: map[string]content.PublicFieldValue{}, Relations: []content.PublicRelation{},
-	}, "articles", "Community news", "Read the latest community news.")
+	}, "articles", "Aktualności społeczności", "Przeczytaj najnowsze wiadomości z naszej społeczności.")
 }
 
 // Event returns the published Event with exact scalar codecs and an Article relation.
@@ -48,7 +48,7 @@ func Event() content.PublicItem {
 				{ItemID: article.ItemID, CanonicalURL: article.CanonicalURL},
 			}},
 		},
-	}, "events", "Community meetup", "Meet the **Stepolonia** community.")
+	}, "events", "Spotkanie społeczności", "Poznaj społeczność **Stepolonii**.")
 }
 
 // EventSchema defines the pinned Registry schema used by the synthetic Event.

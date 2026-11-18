@@ -7,7 +7,7 @@ import { usePublicUi } from '~/composables/usePublicUi'
 const { publication, load } = usePublicSite()
 await load(useRoute().fullPath)
 const site = computed(() => publication.value?.settings)
-// Сохраняем header и на прямом контентном URL для последующего перехода на главную без перезагрузки.
+// Preserve the request header on direct content visits for later client navigation to the homepage.
 useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 const { uiLanguage } = usePublicUi()
 useHead(() => ({
