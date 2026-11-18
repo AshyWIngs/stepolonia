@@ -3,23 +3,27 @@ import { useHead, useRequestHeader, useResponseHeader, useRoute, useState } from
 import { computed } from 'vue'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
+import { isAdminPath } from '~/utils/admin-path'
 
+const route = useRoute()
+const admin = computed(() => isAdminPath(route.path))
 const { publication, load } = usePublicSite()
-await load(useRoute().fullPath)
+if (!admin.value) await load(route.fullPath)
 const site = computed(() => publication.value?.settings)
 // Preserve the request header on direct content visits for later client navigation to the homepage.
 useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
 const { uiLanguage } = usePublicUi()
 useHead(() => ({
   title: site.value?.title,
-  htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction },
+  htmlAttrs: admin.value ? {} : { lang: uiLanguage.value, dir: publication.value?.language.direction },
   meta: [{ name: 'description', content: site.value?.description }],
 }))
 useResponseHeader('Cache-Control').value = 'no-store'
 </script>
 
 <template>
-  <main :style="{ '--site-accent': site?.accent }">
+  <NuxtPage v-if="admin" />
+  <main v-else class="public-site" :style="{ '--site-accent': site?.accent }">
     <header :lang="site?.default_language" class="site-header">
       <p v-if="site?.tagline" class="eyebrow">{{ site?.tagline }}</p>
       <NuxtLink to="/" class="site-name">{{ site?.title }}</NuxtLink>
@@ -33,7 +37,7 @@ useResponseHeader('Cache-Control').value = 'no-store'
 <style>
 html { color-scheme: light; background: #f7f5f0; color: #242923; font-family: system-ui, sans-serif; }
 body { margin: 0; }
-main { box-sizing: border-box; max-width: 52rem; margin: 6vh auto; padding: 2rem; border-top: 0.35rem solid var(--site-accent); }
+.public-site { box-sizing: border-box; max-width: 52rem; margin: 6vh auto; padding: 2rem; border-top: 0.35rem solid var(--site-accent); }
 .eyebrow { font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: #6b5348; }
 .site-name { color: inherit; font-family: Georgia, serif; font-size: 1.6rem; text-decoration: none; }
 .site-header { margin-bottom: 2.5rem; }
@@ -55,5 +59,5 @@ a:focus-visible { outline: 0.15rem solid var(--site-accent); outline-offset: 0.2
 .article-body blockquote { margin-inline: 0; padding-inline-start: 1rem; border-inline-start: 0.2rem solid var(--site-accent); }
 .article-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .article-body th, .article-body td { padding: 0.5rem; border: 1px solid #d5d7cf; }
-@media (max-width: 40rem) { main { margin: 0; padding: 1.25rem; } }
+@media (max-width: 40rem) { .public-site { margin: 0; padding: 1.25rem; } }
 </style>

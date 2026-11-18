@@ -204,11 +204,12 @@ func credentialProperty(rt route, field string) *huma.Schema {
 }
 
 const (
-	csrfResponseSchema  = "CSRFResponse"
-	pendingUserSchema   = "PendingUser"
-	recoveryCodesSchema = "RecoveryCodes"
-	safeUserSchema      = "SafeUser"
-	userListSchema      = "UserList"
+	csrfResponseSchema        = "CSRFResponse"
+	csrfSessionResponseSchema = "CSRFSessionResponse"
+	pendingUserSchema         = "PendingUser"
+	recoveryCodesSchema       = "RecoveryCodes"
+	safeUserSchema            = "SafeUser"
+	userListSchema            = "UserList"
 )
 
 const syntheticOnboardingToken = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"
@@ -244,8 +245,12 @@ func privateSchemas() map[string]*huma.Schema {
 		"OnboardingToken": tokenSchema,
 		"Enrollment":      enrollmentSchema,
 		csrfResponseSchema: closedObjectSchema(
-			"Successful session transition or CSRF rotation. The opaque session bearer stays in a Secure HttpOnly cookie and is never returned in JSON.",
+			"Successful session transition. The opaque session bearer stays in a Secure HttpOnly cookie and is never returned in JSON.",
 			map[string]*huma.Schema{csrfField: csrf}, []string{csrfField}, csrfResponse{CSRFToken: syntheticCSRF}),
+		csrfSessionResponseSchema: closedObjectSchema(
+			"CSRF token and verified session kind. Only a full session can access the CMS. The session bearer stays in the browser-managed cookie.",
+			map[string]*huma.Schema{csrfField: csrf, "session_kind": {Type: huma.TypeString, Description: "The session kind confirmed by the server.", Enum: []any{preauthKind, loginKind, fullKind, recoveryKind, enrollmentKind}, Examples: []any{preauthKind}}},
+			[]string{csrfField, "session_kind"}, csrfSessionResponse{CSRFToken: syntheticCSRF, SessionKind: preauthKind}),
 		"RecoveryEnrollment": &recoverySchema,
 		recoveryCodesSchema: closedObjectSchema(
 			"One-time disclosure of ten recovery codes after successful factor confirmation. All browser session cookies are cleared.",
@@ -315,7 +320,9 @@ func authResponses(rt route) map[string]*huma.Response {
 	responses := map[string]*huma.Response{}
 	successHeaders := authResponseHeaders()
 	tag := authTag(rt)
-	if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag {
+	if rt.operationID == csrfOperation {
+		successHeaders["Set-Cookie"] = &huma.Param{Description: "Emitted only when starting preauthentication. The Secure HttpOnly cookie is retained during CSRF rotation.", Schema: stringSchema("Browser-managed preauthentication session cookie.")}
+	} else if tag != usersTag && tag != rolesTag && tag != contentAssigneesTag && tag != contentDraftTag {
 		successHeaders["Set-Cookie"] = sessionCookieHeader()
 	}
 	if rt.response == "" {
@@ -408,6 +415,10 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 		if rt.operationID == logoutOperation {
 			headers["Set-Cookie"] = sessionCookieHeader()
 			description += " Expired credentials clear cookies only after the request boundary succeeds."
+		}
+		if rt.operationID == csrfOperation {
+			headers["Set-Cookie"] = &huma.Param{Description: "Expires the single rejected session cookie.", Schema: stringSchema("Browser-managed session cookie expiration.")}
+			description += " If one session cookie was present and rejected by the session store, it is cleared."
 		}
 	}
 	schema := &huma.Schema{AllOf: []*huma.Schema{schemaRef("AuthProblem"), {

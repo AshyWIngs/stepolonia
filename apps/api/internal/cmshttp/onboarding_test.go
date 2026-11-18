@@ -255,18 +255,10 @@ func TestEnrollmentCSRFAndLogoutRetainKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertCSRFSessionResponse(t, res, enrollmentKind)
 	_ = res.Body.Close()
-	set := 0
-	for _, cookie := range res.Cookies() {
-		if cookie.MaxAge != -1 {
-			set++
-			if cookie.Name != enrollmentCookieOracle {
-				t.Fatal("CSRF rotation elevated enrollment")
-			}
-		}
-	}
-	if res.StatusCode != 200 || set != 1 {
-		t.Fatal("CSRF did not retain restricted enrollment cookie")
+	if len(res.Cookies()) != 0 {
+		t.Fatal("CSRF rotation replaced the restricted enrollment cookie")
 	}
 	res = onboardingRequest(t, server, authPrefix+logoutPath, `{}`, enrollmentKind)
 	if res.StatusCode != 204 {

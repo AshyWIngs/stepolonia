@@ -20,7 +20,7 @@ useHead(() => ({ title: title.value, htmlAttrs: { lang: uiLanguage.value, dir: p
 </script>
 
 <template>
-  <main :lang="uiLanguage" :style="{ '--site-accent': publication?.settings.accent }">
+  <main class="public-site" :lang="uiLanguage" :style="{ '--site-accent': publication?.settings.accent }">
     <p v-if="publication" :lang="publication.settings.default_language">{{ publication.settings.title }}</p>
     <h1>{{ title }}</h1>
     <p v-if="publication && status === 503">{{ t('errors.retry') }}</p>
