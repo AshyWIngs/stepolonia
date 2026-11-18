@@ -235,6 +235,10 @@ func draftReadSchema() *huma.Schema {
 
 func draftSuccessDescription(operationID string) string {
 	switch operationID {
+	case listCollectionsOperation:
+		return "Returns a bounded page of collections within the actor's read grants."
+	case readDraftMetadataOperation:
+		return "Returns only the actor-readable field definitions for the current draft."
 	case listDraftsOperation:
 		return "Returns a bounded page of draft identities and versions authorized by collection and item scope."
 	case createDraftOperation:

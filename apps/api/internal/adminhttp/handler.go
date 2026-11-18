@@ -163,6 +163,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
 	path := target.path
+	if path == contentCollectionsPath || path == draftMetadataPath {
+		h.serveContentMetadata(w, r, target, ip)
+		return
+	}
 	if settingsRoutes[path] != nil {
 		h.serveSettings(w, r, rt, ip)
 		return

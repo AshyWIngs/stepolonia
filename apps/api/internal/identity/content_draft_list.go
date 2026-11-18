@@ -27,7 +27,7 @@ type DraftPage struct {
 // ReadDraftPage loads only draft identity and versions, after applying the
 // actor's current item scope and before pagination.
 func (s *AuthService) ReadDraftPage(ctx context.Context, req AuthRequest, typeKey string, limit, offset int) (DraftPage, error) {
-	if limit < 1 || limit > MaxDraftPageLimit || offset < 0 || offset > MaxDraftPageOffset {
+	if !validDraftPage(limit, offset) {
 		return DraftPage{}, ErrValidation
 	}
 	var page DraftPage
@@ -43,6 +43,18 @@ func (s *AuthService) ReadDraftPage(ctx context.Context, req AuthRequest, typeKe
 		return DraftPage{}, err
 	}
 	return page, nil
+}
+
+func validDraftPage(limit, offset int) bool {
+	return limit >= 1 && limit <= MaxDraftPageLimit && offset >= 0 && offset <= MaxDraftPageOffset
+}
+
+func nextDraftPageOffset(limit, offset int) *int {
+	next := offset + limit
+	if next > MaxDraftPageOffset {
+		return nil
+	}
+	return &next
 }
 
 func draftListScope(ctx context.Context, tx *sql.Tx, userID, typeKey string) (string, bool, error) {
@@ -75,17 +87,14 @@ func readDraftPage(ctx context.Context, tx *sql.Tx, userID, typeID string, anyIt
 	defer func() { _ = rows.Close() }()
 	page := DraftPage{Items: make([]DraftSummary, 0, limit)}
 	for rows.Next() {
+		if len(page.Items) == limit {
+			page.NextOffset = nextDraftPageOffset(limit, offset)
+			break
+		}
 		var item DraftSummary
 		item.TypeID = typeID
 		if err := rows.Scan(&item.ItemID, &item.SchemaNo, &item.Version); err != nil {
 			return DraftPage{}, err
-		}
-		if len(page.Items) == limit {
-			next := offset + limit
-			if next <= MaxDraftPageOffset {
-				page.NextOffset = &next
-			}
-			break
 		}
 		page.Items = append(page.Items, item)
 	}

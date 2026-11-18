@@ -102,7 +102,7 @@ func allowsPageQuery(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
-	if r.URL.Path == usersPath || r.URL.Path == rolesPath {
+	if r.URL.Path == usersPath || r.URL.Path == rolesPath || r.URL.Path == contentCollectionsPath {
 		return true
 	}
 	_, collection := createDraftTarget(r.URL.Path)

@@ -66,13 +66,18 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		}
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
-	if rt.operationID == createDraftOperation {
+	switch rt.operationID {
+	case createDraftOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection in which to create the draft."))
-	} else if rt.operationID == listDraftsOperation {
+	case listDraftsOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection whose accessible drafts to list."))
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
-	} else if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
-		op.Parameters = append(op.Parameters, contentItemParameters()...)
+	case listCollectionsOperation:
+		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
+	default:
+		if rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag {
+			op.Parameters = append(op.Parameters, contentItemParameters()...)
+		}
 	}
 	return op
 }
@@ -142,7 +147,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users, GET /api/v1/admin/roles and GET /api/v1/admin/content/{type_key} accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users, GET /api/v1/admin/roles, GET /api/v1/admin/content-types and GET /api/v1/admin/content/{type_key} accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -272,6 +277,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addSettingsSchemas(schemas)
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
+	addContentMetadataSchemas(schemas)
 	schemas[contentAssigneesSchema] = contentAssigneesResultSchema()
 	schemas[createdDraftSchema] = createdDraftResultSchema()
 	for name, schema := range draftListSchemas() {
@@ -465,7 +471,7 @@ func authNotFoundDescription(operationID string) string {
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized command scope. A draft locale may also be absent."
 	case saveDraftOperation:
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized update scope."
-	case readDraftOperation:
+	case readDraftOperation, readDraftMetadataOperation:
 		return " Item is missing, belongs to a different collection or is outside the actor's authorized read scope."
 	case replaceContentAssigneesOperation:
 		return " Item is missing, belongs to a different type or is outside authorized assignment scope, or a recipient is missing or outside the delegation envelope."
@@ -526,6 +532,8 @@ func privateRoutes() map[string][]route {
 	all[contentAssigneesPath] = []route{replaceContentAssigneesRoute}
 	all[createDraftPath] = collectionDraftRoutes
 	all[contentDraftPath] = itemDraftRoutes
+	all[contentCollectionsPath] = []route{listCollectionsRoute}
+	all[draftMetadataPath] = []route{readDraftMetadataRoute}
 	for path, rt := range draftCandidateRoutes {
 		all[path] = []route{rt}
 	}
@@ -574,7 +582,7 @@ func authTag(rt route) string {
 		return usersTag
 	case replaceContentAssigneesOperation:
 		return contentAssigneesTag
-	case createDraftOperation, listDraftsOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation:
+	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation:
 		return contentDraftTag
 	case readSettingsOperation, saveSettingsOperation, publishSettingsOperation:
 		return settingsTag

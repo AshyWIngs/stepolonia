@@ -295,7 +295,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
 		"portal-settings":         {"settingsReadEditable", "settingsSaveDraft", "settingsPublish"},
 		"content-assignments":     {"contentReplaceAssignees"},
-		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish"},
+		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)

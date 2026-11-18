@@ -54,6 +54,14 @@ func (f *fakeDraftEditor) ListDraftsForType(_ context.Context, req identity.Auth
 	return identity.DraftPage{Items: []identity.DraftSummary{}}, f.err
 }
 
+func (f *fakeDraftEditor) ListReadableCollections(_ context.Context, _ identity.AuthRequest, _, _ int) (identity.ReadableCollectionPage, error) {
+	return identity.ReadableCollectionPage{}, f.err
+}
+
+func (f *fakeDraftEditor) ReadDraftMetadata(_ context.Context, _ identity.AuthRequest, _, _ string) (content.DraftMetadata, error) {
+	return content.DraftMetadata{}, f.err
+}
+
 func newDraftTLSServer(t *testing.T, editor DraftEditor) *httptest.Server {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)

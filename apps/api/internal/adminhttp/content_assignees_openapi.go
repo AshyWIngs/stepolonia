@@ -17,10 +17,12 @@ type contentAssigneesResponse struct {
 	AssigneeIDs []string `json:"assignee_ids"`
 }
 
+const typeKeyField = "type_key"
+
 func contentTypeParameter(description string) *huma.Param {
 	typeKey := stringSchema("Stable Registry collection key.", "article")
 	typeKey.Pattern = `^[a-z][a-z0-9_]{0,63}$`
-	return &huma.Param{Name: "type_key", In: openAPIPathParameter, Required: true, Description: description, Schema: typeKey}
+	return &huma.Param{Name: typeKeyField, In: openAPIPathParameter, Required: true, Description: description, Schema: typeKey}
 }
 
 func contentItemParameters() []*huma.Param {

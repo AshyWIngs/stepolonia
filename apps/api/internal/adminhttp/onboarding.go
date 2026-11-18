@@ -63,6 +63,9 @@ func resolveRoute(path, method string, draftEditorEnabled bool) (route, routeTar
 	if target, rt, ok := draftCandidateTarget(path); ok && draftEditorEnabled {
 		return rt, target, true
 	}
+	if target, rt, ok := contentMetadataTarget(path); ok && draftEditorEnabled {
+		return rt, target, true
+	}
 	key, id, candidates := staticAdminRoutes(path)
 	ok := len(candidates) > 0
 	if !ok {
@@ -209,6 +212,9 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
+	if path == contentCollectionsPath || path == draftMetadataPath {
+		return http.MethodGet
+	}
 	if rt, ok := draftCandidateRoutes[path]; ok {
 		return rt.method
 	}

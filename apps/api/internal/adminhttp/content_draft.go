@@ -26,6 +26,8 @@ const (
 type DraftEditor interface {
 	CreateDraftForType(context.Context, identity.AuthRequest, string, int64) (content.DraftState, error)
 	ListDraftsForType(context.Context, identity.AuthRequest, string, int, int) (identity.DraftPage, error)
+	ListReadableCollections(context.Context, identity.AuthRequest, int, int) (identity.ReadableCollectionPage, error)
+	ReadDraftMetadata(context.Context, identity.AuthRequest, string, string) (content.DraftMetadata, error)
 	ReadDraftForType(context.Context, identity.AuthRequest, string, string) (content.DraftState, error)
 	SaveDraftForType(context.Context, identity.AuthRequest, string, string, int64, content.DraftPatch) (content.DraftState, error)
 	MarkSharedReadyForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error)

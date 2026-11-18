@@ -123,8 +123,12 @@ func openDraftEditorLogin(t *testing.T, owner *sql.DB) *sql.DB {
 
 func editDraftField(key, value string) content.DraftPatch {
 	return content.DraftPatch{SchemaNo: 1, Shared: map[string]content.FieldValue{
-		key: {Kind: "string", Value: json.RawMessage(value)},
+		key: draftStringValue(value),
 	}}
+}
+
+func draftStringValue(value string) content.FieldValue {
+	return content.FieldValue{Kind: "string", Value: json.RawMessage(value)}
 }
 
 func TestAdminDraftEditorFieldAuthorizationIntegration(t *testing.T) {
@@ -147,7 +151,7 @@ func TestAdminDraftEditorFieldAuthorizationIntegration(t *testing.T) {
 	_, err = f.editor.SaveDraft(ctx, f.actor, draftEditItem, 1, editDraftField("unknown", `"Unknown field"`))
 	onboardingError(t, err, identity.ErrPermissionDenied)
 	patch := editDraftField(draftHeadlineKey, `"After"`)
-	patch.Shared[draftNoteKey] = content.FieldValue{Kind: "string", Value: json.RawMessage(`"Stored but hidden"`)}
+	patch.Shared[draftNoteKey] = draftStringValue(`"Stored but hidden"`)
 	out, err = f.editor.SaveDraft(ctx, f.actor, draftEditItem, 1, patch)
 	requireNoError(t, err)
 	if out.Version != 2 || len(out.Shared) != 1 || string(out.Shared[draftHeadlineKey]) != `"After"` {
