@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/siteconfig"
 )
@@ -31,28 +33,20 @@ func siteError(t *testing.T, err error, status int) {
 	}
 }
 func siteFixture() siteconfig.Draft {
-	keys := []string{siteArticlesKey, "events", siteEmptyKey, "pagination", "previous", "next", "navigation", "all", "languages", "errors.400", "errors.404", "errors.503", "errors.other", "errors.retry", "errors.home",
-		"admin.name", "admin.language", "admin.theme", "admin.system", "admin.light",
-		"admin.dark", "admin.sign_in", "admin.login", "admin.password", "admin.continue",
-		"admin.two_step", "admin.code_help", "admin.code", "admin.verify", "admin.restart",
-		"admin.signed_in", "admin.sign_out", "admin.checking", "admin.working", "admin.retry",
-		"admin.invalid_credentials", "admin.invalid_code", "admin.unavailable", "admin.limited", "admin.changed",
-		"admin.restricted", "admin.signed_out",
-		"admin.settings", "admin.portal_name", "admin.tagline", "admin.description", "admin.notice",
-		"admin.accent", "admin.default_language", "admin.fallback_language", "admin.interface_texts",
-		"admin.save_draft", "admin.publish_draft", "admin.confirm_publish", "admin.draft_saved", "admin.published",
-		"admin.access_denied", "admin.settings_conflict", "admin.settings_invalid", "admin.reload_settings",
-		"admin.cancel", "admin.close", "admin.remove_catalog", "admin.add_catalog",
-		"admin.fresh_auth", "admin.unlock", "admin.step_up_required",
-	}
-	catalogs := map[string]map[string]string{}
+	demo := apiexamples.DemoSite()
+	catalogs := make(map[string]map[string]string, 2)
 	for _, code := range []string{"pl", "en"} {
-		catalogs[code] = map[string]string{}
-		for _, key := range keys {
-			catalogs[code][key] = "Fixture " + code + " " + key
+		messages := make(map[string]string, len(demo.Catalogs[code]))
+		for key := range demo.Catalogs[code] {
+			messages[key] = "Fixture " + code + " " + key
 		}
+		catalogs[code] = messages
 	}
-	return siteconfig.Draft{Settings: siteconfig.Settings{Title: "Fixture title", Tagline: "Fixture tagline", Description: "Fixture description", Notice: "Fixture notice", Accent: "#123aBC", DefaultLanguage: "pl", FallbackLanguage: "en"}, Catalogs: catalogs}
+	return siteconfig.Draft{
+		Settings: siteconfig.Settings{Title: "Fixture title", Tagline: "Fixture tagline", Description: "Fixture description", Notice: "Fixture notice",
+			Accent: "#123aBC", DefaultLanguage: "pl", FallbackLanguage: "en"},
+		Catalogs: catalogs,
+	}
 }
 
 type siteTestFixture struct {
@@ -119,7 +113,7 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	body, _ := publicRequest(t, ctx, f.server.Client(), f.base, 200)
 	var out siteconfig.Publication
 	requireNoError(t, json.Unmarshal(body, &out))
-	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || len(out.Messages) != 67 || out.Settings.Accent != "#123aBC" {
+	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || !maps.Equal(out.Messages, siteFixture().Catalogs["en"]) || out.Settings.Accent != "#123aBC" {
 		t.Fatalf("unexpected site contract: %s", body)
 	}
 	out, err = f.reader.Read(ctx, "PL", f.publication)
