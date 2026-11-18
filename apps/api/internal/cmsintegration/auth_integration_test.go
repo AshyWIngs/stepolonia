@@ -170,7 +170,7 @@ func TestAuthChallengeAndExpiryIntegration(t *testing.T) {
 	authDenied(t, err)
 	// Clear only this fixture's budgets to exercise independently expired full sessions.
 	requireNoError(t, cms.WithWriteMutex(ctx, f.db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempts`)
+		_, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempt_buckets`)
 		return err
 	}))
 	full := authFull(t, f)
@@ -256,7 +256,7 @@ func TestAuthPreauthIssuanceIntegration(t *testing.T) {
 	}
 	// Authentication failure budgets are independent from GET issuance budgets.
 	var count int
-	requireNoError(t, f.db.QueryRow(`SELECT count(*) FROM public.auth_attempts WHERE kind IN ('account','ip','site')`).Scan(&count))
+	requireNoError(t, f.db.QueryRow(`SELECT count(*) FROM public.auth_attempt_buckets WHERE kind IN ('account','ip','site')`).Scan(&count))
 	if count != 0 {
 		t.Fatal("issuance polluted failure counters")
 	}

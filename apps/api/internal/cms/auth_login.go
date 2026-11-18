@@ -40,7 +40,7 @@ func (b *authBudget) reserve(ctx context.Context, tx *sql.Tx) error {
 	}
 	for _, k := range keys {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempts WHERE kind=$1 AND key_digest=$2 AND bucket_start>$3::timestamptz-interval '15 minutes'`, k.kind, digest(k.key), b.at).Scan(&n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind=$1 AND key_digest=$2 AND bucket_start>$3::timestamptz-interval '15 minutes'`, k.kind, digest(k.key), b.at).Scan(&n); err != nil {
 			return err
 		}
 		if n >= k.max {
@@ -48,7 +48,7 @@ func (b *authBudget) reserve(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	for _, k := range keys {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempts(bucket_start,kind,key_digest,count) VALUES($3,$1,$2,1)`, k.kind, digest(k.key), b.at); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempt_buckets(bucket_start,kind,key_digest,count) VALUES($3,$1,$2,1)`, k.kind, digest(k.key), b.at); err != nil {
 			return err
 		}
 	}
@@ -56,7 +56,7 @@ func (b *authBudget) reserve(ctx context.Context, tx *sql.Tx) error {
 }
 func (b authBudget) success(ctx context.Context, tx *sql.Tx) error {
 	for _, k := range []struct{ kind, key string }{{"account", b.account}, {"ip", b.ip}, {"site", b.site}} {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempts WHERE bucket_start=$1 AND kind=$2 AND key_digest=$3`, b.at, k.kind, digest(k.key)); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempt_buckets WHERE bucket_start=$1 AND kind=$2 AND key_digest=$3`, b.at, k.kind, digest(k.key)); err != nil {
 			return err
 		}
 	}
@@ -386,7 +386,7 @@ func (s *AuthService) NewPreauthFor(ctx context.Context, req AuthRequest) (Sessi
 func cleanupAuth(ctx context.Context, tx *sql.Tx) error {
 	// Each maintenance batch is bounded; historical full/recovery sessions and
 	// immutable audit remain under the separately defined retention policy.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempts WHERE (bucket_start,kind,key_digest) IN (SELECT bucket_start,kind,key_digest FROM public.auth_attempts WHERE bucket_start<=clock_timestamp()-interval '15 minutes' ORDER BY bucket_start LIMIT 1000)`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempt_buckets WHERE (bucket_start,kind,key_digest) IN (SELECT bucket_start,kind,key_digest FROM public.auth_attempt_buckets WHERE bucket_start<=clock_timestamp()-interval '15 minutes' ORDER BY bucket_start LIMIT 1000)`); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM public.sessions WHERE id IN (SELECT id FROM public.sessions WHERE kind IN ('preauth','login') AND (expires_at<=clock_timestamp() OR revoked_at IS NOT NULL) ORDER BY expires_at LIMIT 100)`); err != nil {
@@ -402,7 +402,7 @@ func (s *AuthService) preauthTx(ctx context.Context, tx *sql.Tx, req AuthRequest
 	}{{"preauth_ip", req.ClientIP.Unmap().String(), 30}, {"preauth_site", s.config.Site, 100}}
 	for _, k := range keys {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempts WHERE kind=$1 AND key_digest=$2 AND bucket_start>clock_timestamp()-interval '15 minutes'`, k.kind, digest(k.key)).Scan(&n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind=$1 AND key_digest=$2 AND bucket_start>clock_timestamp()-interval '15 minutes'`, k.kind, digest(k.key)).Scan(&n); err != nil {
 			return err
 		}
 		if n >= k.max {
@@ -411,7 +411,7 @@ func (s *AuthService) preauthTx(ctx context.Context, tx *sql.Tx, req AuthRequest
 		}
 	}
 	for _, k := range keys {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempts(bucket_start,kind,key_digest,count) VALUES(clock_timestamp(),$1,$2,1)`, k.kind, digest(k.key)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempt_buckets(bucket_start,kind,key_digest,count) VALUES(clock_timestamp(),$1,$2,1)`, k.kind, digest(k.key)); err != nil {
 			return err
 		}
 	}

@@ -76,7 +76,7 @@ func TestAuthRoleStateMutexIntegration(t *testing.T) {
 				requireNoError(t, <-b)
 			}
 			var committed bool
-			requireNoError(t, x.f.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.roles WHERE name_key='Waiting creator')`).Scan(&committed))
+			requireNoError(t, x.f.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.roles WHERE name='Waiting creator')`).Scan(&committed))
 			if committed != tc.createFirst {
 				t.Fatal("protected write committed outside its authorization window")
 			}

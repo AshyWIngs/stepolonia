@@ -1,11 +1,11 @@
 -- +goose Up
 CREATE TABLE public.roles (
     id uuid CONSTRAINT roles_pkey PRIMARY KEY,
-    name_key text COLLATE "C" NOT NULL CONSTRAINT roles_name_key_key UNIQUE,
+    name text COLLATE "C" NOT NULL CONSTRAINT roles_name_key UNIQUE,
     state text NOT NULL DEFAULT 'disabled',
     version bigint NOT NULL DEFAULT 1,
-    CONSTRAINT roles_name_key_check CHECK (
-        length(name_key) BETWEEN 1 AND 128 AND name_key = btrim(name_key)
+    CONSTRAINT roles_name_check CHECK (
+        length(name) BETWEEN 1 AND 128 AND name = btrim(name)
     ),
     CONSTRAINT roles_state_check CHECK (
         state IN ('disabled', 'active', 'archived')
@@ -260,9 +260,9 @@ public.role_grants,
 public.grant_fields TO sp_security;
 
 -- Role commands manage policy and state with column-level privileges.
-GRANT INSERT (id, name_key) ON public.roles TO sp_security;
+GRANT INSERT (id, name) ON public.roles TO sp_security;
 GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
-GRANT UPDATE (name_key, state, version) ON public.roles TO sp_security;
+GRANT UPDATE (name, state, version) ON public.roles TO sp_security;
 GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
 GRANT INSERT, DELETE ON public.user_roles TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;

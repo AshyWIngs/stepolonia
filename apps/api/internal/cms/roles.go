@@ -93,7 +93,7 @@ func (s *AuthService) ListRoles(ctx context.Context, req AuthRequest, page RoleP
 
 func queryRolePage(ctx context.Context, tx *sql.Tx, page RolePage) (RoleList, error) {
 	out := RoleList{Items: []Role{}}
-	rows, err := tx.QueryContext(ctx, `SELECT id::text,name_key,state,version FROM public.roles ORDER BY name_key,id LIMIT $1 OFFSET $2`, page.Limit+1, page.Offset)
+	rows, err := tx.QueryContext(ctx, `SELECT id::text,name,state,version FROM public.roles ORDER BY name,id LIMIT $1 OFFSET $2`, page.Limit+1, page.Offset)
 	if err != nil {
 		return out, err
 	}
@@ -151,7 +151,7 @@ func findRole(ctx context.Context, tx *sql.Tx, id string) (Role, error) {
 	if !validGrantID(id) {
 		return out, ErrValidation
 	}
-	err := tx.QueryRowContext(ctx, `SELECT id::text,name_key,state,version FROM public.roles WHERE id=$1`, id).Scan(&out.ID, &out.Name, &out.State, &out.Version)
+	err := tx.QueryRowContext(ctx, `SELECT id::text,name,state,version FROM public.roles WHERE id=$1`, id).Scan(&out.ID, &out.Name, &out.State, &out.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, ErrNotFound
 	}
@@ -217,7 +217,7 @@ func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, inp
 	if err != nil {
 		return Role{}, err
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO public.roles(id,name_key) VALUES($1,$2) RETURNING name_key,state,version`, out.ID, input.Name).Scan(&out.Name, &out.State, &out.Version)
+	err = tx.QueryRowContext(ctx, `INSERT INTO public.roles(id,name) VALUES($1,$2) RETURNING name,state,version`, out.ID, input.Name).Scan(&out.Name, &out.State, &out.Version)
 	if err != nil {
 		return Role{}, roleWriteError(err)
 	}
@@ -302,7 +302,7 @@ func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, 
 		return Role{}, ErrPermissionDenied
 	}
 	out := plan.role
-	err = tx.QueryRowContext(ctx, `UPDATE public.roles SET name_key=$2,version=version+1 WHERE id=$1 RETURNING name_key,version`, out.ID, input.Name).Scan(&out.Name, &out.Version)
+	err = tx.QueryRowContext(ctx, `UPDATE public.roles SET name=$2,version=version+1 WHERE id=$1 RETURNING name,version`, out.ID, input.Name).Scan(&out.Name, &out.Version)
 	if err != nil {
 		return Role{}, roleWriteError(err)
 	}

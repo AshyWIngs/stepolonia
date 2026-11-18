@@ -120,7 +120,7 @@ func TestAuthRoleCopyDeleteRevokedPermissionIntegration(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			var target string
-			requireNoError(t, x.f.db.QueryRow(`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'Retiring policy','archived') RETURNING id`).Scan(&target))
+			requireNoError(t, x.f.db.QueryRow(`INSERT INTO public.roles(id,name,state) VALUES(gen_random_uuid(),'Retiring policy','archived') RETURNING id`).Scan(&target))
 			lock := holdInstallationWriteMutex(t, x.f.db)
 			_, err := lock.ExecContext(ctx, `DELETE FROM public.role_grants WHERE role_id=$1 AND operation=$2`, x.managerRole, operation)
 			requireNoError(t, err)
@@ -138,7 +138,7 @@ func TestAuthRoleCopyDeleteRevokedPermissionIntegration(t *testing.T) {
 			onboardingError(t, <-result, cms.ErrPermissionDenied)
 			var unchanged bool
 			requireNoError(t, x.f.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.roles WHERE id=$1)
-				AND NOT EXISTS(SELECT 1 FROM public.roles WHERE name_key='Waiting clone')`, target).Scan(&unchanged))
+				AND NOT EXISTS(SELECT 1 FROM public.roles WHERE name='Waiting clone')`, target).Scan(&unchanged))
 			if !unchanged {
 				t.Fatal("revoked authority committed a role mutation")
 			}
@@ -165,7 +165,7 @@ func TestAuthRoleCopyDeleteAuditRollbackIntegration(t *testing.T) {
 	got, err := f.service.GetRole(ctx, req, archived.ID)
 	requireNoError(t, err)
 	var absent bool
-	requireNoError(t, f.db.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM public.roles WHERE name_key='Uncommitted copy')`).Scan(&absent))
+	requireNoError(t, f.db.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM public.roles WHERE name='Uncommitted copy')`).Scan(&absent))
 	if !absent || !reflect.DeepEqual(got, archived) {
 		t.Fatal("audit failure committed a role mutation")
 	}
@@ -224,7 +224,7 @@ func TestAuthRoleCopyDeleteCompetingCommandsIntegration(t *testing.T) {
 				requireNoError(t, <-b)
 			}
 			var copied, removed bool
-			requireNoError(t, f.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.roles WHERE name_key='Concurrent copy'), NOT EXISTS(SELECT 1 FROM public.roles WHERE id=$1)`, role.ID).Scan(&copied, &removed))
+			requireNoError(t, f.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.roles WHERE name='Concurrent copy'), NOT EXISTS(SELECT 1 FROM public.roles WHERE id=$1)`, role.ID).Scan(&copied, &removed))
 			if copied == deleteFirst || !removed {
 				t.Fatalf("delete first=%t, copy exists=%t, source removed=%t", deleteFirst, copied, removed)
 			}

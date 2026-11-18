@@ -284,7 +284,7 @@ func TestBootstrapExactSeedGrantsIntegration(t *testing.T) {
 	requireNoError(t, err)
 	_, err = svc.Complete(ctx, bootstrapTestLogin, bootstrapTestPassphrase, bootstrapCode(t, db, en.Secret))
 	requireNoError(t, err)
-	rows, err := db.Query(`SELECT r.name_key,g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(g.object_scope,''),g.can_delegate,(SELECT count(*) FROM public.grant_fields f WHERE f.grant_id=g.id) FROM public.roles r JOIN public.role_grants g ON r.id=g.role_id ORDER BY r.name_key,g.operation`)
+	rows, err := db.Query(`SELECT r.name,g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(g.object_scope,''),g.can_delegate,(SELECT count(*) FROM public.grant_fields f WHERE f.grant_id=g.id) FROM public.roles r JOIN public.role_grants g ON r.id=g.role_id ORDER BY r.name,g.operation`)
 	requireNoError(t, err)
 	defer func() { _ = rows.Close() }()
 	expected := expectedBootstrapGrants()

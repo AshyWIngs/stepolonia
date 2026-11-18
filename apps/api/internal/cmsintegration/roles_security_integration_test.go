@@ -18,8 +18,8 @@ func TestAuthRolesRestrictedACLIntegration(t *testing.T) {
 	defer func() { _ = pool.Close() }()
 	requireNoError(t, database.CheckSecurity(context.Background(), pool))
 	for _, query := range []string{
-		`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),'illegal state','active')`,
-		`INSERT INTO public.roles(id,name_key,version) VALUES(gen_random_uuid(),'illegal version',99)`,
+		`INSERT INTO public.roles(id,name,state) VALUES(gen_random_uuid(),'illegal state','active')`,
+		`INSERT INTO public.roles(id,name,version) VALUES(gen_random_uuid(),'illegal version',99)`,
 		`UPDATE public.roles SET id=gen_random_uuid()`,
 		`DELETE FROM public.roles`,
 		`UPDATE public.role_grants SET can_delegate=true`,
@@ -77,7 +77,7 @@ func TestAuthRolesGrantWriteRollbackIntegration(t *testing.T) {
 	_, err = x.f.service.EditRole(context.Background(), authReq(x.actor), x.targetRole, 1, rolesInput("Failed grant write", rolesContentGrant()))
 	onboardingError(t, err, cms.ErrSecurityUnavailable)
 	var intact bool
-	requireNoError(t, x.f.db.QueryRow(`SELECT version=1 AND name_key='Latent content' AND (SELECT count(*) FROM public.role_grants WHERE role_id=$1)=1 AND (SELECT count(*) FROM public.grant_fields f JOIN public.role_grants g ON g.id=f.grant_id WHERE g.role_id=$1)=1 FROM public.roles WHERE id=$1`, x.targetRole).Scan(&intact))
+	requireNoError(t, x.f.db.QueryRow(`SELECT version=1 AND name='Latent content' AND (SELECT count(*) FROM public.role_grants WHERE role_id=$1)=1 AND (SELECT count(*) FROM public.grant_fields f JOIN public.role_grants g ON g.id=f.grant_id WHERE g.role_id=$1)=1 FROM public.roles WHERE id=$1`, x.targetRole).Scan(&intact))
 	if !intact {
 		t.Fatal("failed replacement deleted prior grants or changed version")
 	}
@@ -86,15 +86,15 @@ func TestAuthRolesGrantWriteRollbackIntegration(t *testing.T) {
 func TestAuthRolesCapacityIntegration(t *testing.T) {
 	f := newRestrictedAuthHTTPFixture(t).state
 	full := authFull(t, f)
-	_, err := f.db.Exec(`INSERT INTO public.roles(id,name_key) SELECT gen_random_uuid(),'role-cap-'||i FROM generate_series(1,29) i`)
+	_, err := f.db.Exec(`INSERT INTO public.roles(id,name) SELECT gen_random_uuid(),'role-cap-'||i FROM generate_series(1,29) i`)
 	requireNoError(t, err)
 	_, err = f.service.CreateRole(context.Background(), authReq(full), rolesInput("Over capacity"))
 	onboardingError(t, err, cms.ErrInvalidTransition)
 	var sourceID string
-	requireNoError(t, f.db.QueryRow(`SELECT id FROM public.roles WHERE name_key='role-cap-1'`).Scan(&sourceID))
+	requireNoError(t, f.db.QueryRow(`SELECT id FROM public.roles WHERE name='role-cap-1'`).Scan(&sourceID))
 	_, err = f.service.CopyRole(context.Background(), authReq(full), sourceID, 1, "Copy over capacity")
 	onboardingError(t, err, cms.ErrInvalidTransition)
-	_, err = f.db.Exec(`INSERT INTO public.roles(id,name_key) VALUES(gen_random_uuid(),'drift over capacity')`)
+	_, err = f.db.Exec(`INSERT INTO public.roles(id,name) VALUES(gen_random_uuid(),'drift over capacity')`)
 	requireNoError(t, err)
 	_, err = f.service.ListRoles(context.Background(), authReq(full), cms.RolePage{})
 	onboardingError(t, err, cms.ErrSecurityUnavailable)
@@ -133,7 +133,7 @@ func TestAuthRolesRevokeFirstIntegration(t *testing.T) {
 	requireNoError(t, lock.Commit())
 	onboardingError(t, <-result, cms.ErrPermissionDenied)
 	var unchanged bool
-	requireNoError(t, x.f.db.QueryRow(`SELECT version=1 AND name_key='Latent content' FROM public.roles WHERE id=$1`, x.targetRole).Scan(&unchanged))
+	requireNoError(t, x.f.db.QueryRow(`SELECT version=1 AND name='Latent content' FROM public.roles WHERE id=$1`, x.targetRole).Scan(&unchanged))
 	if !unchanged {
 		t.Fatal("waiting editor retained revoked authority")
 	}
@@ -159,7 +159,7 @@ func TestAuthRolesEditFirstIntegration(t *testing.T) {
 	requireNoError(t, <-edited)
 	requireNoError(t, <-revoked)
 	var committed bool
-	requireNoError(t, x.f.db.QueryRow(`SELECT version=2 AND name_key='Editor committed' FROM public.roles WHERE id=$1`, x.targetRole).Scan(&committed))
+	requireNoError(t, x.f.db.QueryRow(`SELECT version=2 AND name='Editor committed' FROM public.roles WHERE id=$1`, x.targetRole).Scan(&committed))
 	if !committed {
 		t.Fatal("editor preceding revoke did not commit atomically")
 	}

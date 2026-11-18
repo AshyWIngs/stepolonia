@@ -160,7 +160,9 @@ func testDomainAssigneeStep(t *testing.T, ctx context.Context, db *sql.DB) {
 
 func TestDomainMigrationsSQLPreflightIntegration(t *testing.T) {
 	for _, setup := range []string{
+		`CREATE TABLE public.auth_attempt_buckets(foreign_payload text)`,
 		`CREATE TABLE public.auth_attempts(foreign_payload text)`,
+		`CREATE TABLE public.foreign_fixture(id integer); CREATE INDEX roles_name_key ON public.foreign_fixture(id)`,
 		`CREATE TABLE public.foreign_fixture(id integer); CREATE INDEX enrollment_attempts_token_idx ON public.foreign_fixture(id)`,
 		`CREATE TYPE public.onboarding_tokens AS ENUM ('foreign')`,
 		`CREATE FUNCTION public.guard_content_item_identity() RETURNS integer LANGUAGE sql AS 'SELECT 1'`,

@@ -203,7 +203,7 @@ func snapshotUserSecurityState(t *testing.T, db *sql.DB, user string) string {
 func createAssignedTestRole(t *testing.T, f authFixtureState, name, state, userID string) string {
 	t.Helper()
 	var roleID string
-	requireNoError(t, f.db.QueryRow(`INSERT INTO public.roles(id,name_key,state) VALUES(gen_random_uuid(),$1,$2) RETURNING id::text`, name, state).Scan(&roleID))
+	requireNoError(t, f.db.QueryRow(`INSERT INTO public.roles(id,name,state) VALUES(gen_random_uuid(),$1,$2) RETURNING id::text`, name, state).Scan(&roleID))
 	_, err := f.db.Exec(`INSERT INTO public.user_roles(user_id,role_id) VALUES($1,$2)`, userID, roleID)
 	requireNoError(t, err)
 	return roleID
