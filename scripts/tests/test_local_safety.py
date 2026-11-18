@@ -32,7 +32,7 @@ auth = load_script("test-auth")
 
 
 class AuthHarnessTests(unittest.TestCase):
-    def test_auth_suite_keeps_both_packages_and_cleans_up_after_failure(self):
+    def test_auth_suite_keeps_database_checks_serial_and_cleans_up_after_failure(self):
         for failed in (False, True):
             with self.subTest(failed=failed), patch.object(auth, "owned_container", return_value=54321), \
                     patch.object(auth, "wait_ready"), patch("builtins.print"), \
@@ -51,7 +51,7 @@ class AuthHarnessTests(unittest.TestCase):
                 go_calls = [arguments for arguments in calls if arguments[0] == "go"]
                 self.assertEqual(go_calls[0], [
                     "go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-run",
-                    "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration",
+                    "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration", "./cmd/db",
                 ])
                 self.assertEqual(calls[-2][0:3], ["docker", "container", "stop"])
                 self.assertEqual(calls[-1][0:4], ["docker", "container", "rm", "--volumes"])
