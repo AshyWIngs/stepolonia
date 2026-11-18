@@ -20,6 +20,7 @@ import (
 func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	requireAuthBrowser(t)
 	f := newAuthHTTPFixture(t)
+	itemID := seedSwaggerAssignmentItem(t, f.state)
 	cfg := testpostgres.CMSConfig(t)
 	requireNoError(t, f.state.db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = cfg.Database + "_auth"
@@ -33,7 +34,7 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaSwaggerBrowserScript)
-	command.Env = append(os.Environ(), "QA_SWAGGER_ORIGIN="+server.URL, "QA_SWAGGER_LOGIN="+bootstrapTestLogin, "QA_SWAGGER_PASSWORD="+bootstrapTestPassphrase, "QA_SWAGGER_CODE="+bootstrapCode(t, f.state.db, f.state.secret))
+	command.Env = append(os.Environ(), "QA_SWAGGER_ORIGIN="+server.URL, "QA_SWAGGER_LOGIN="+bootstrapTestLogin, "QA_SWAGGER_PASSWORD="+bootstrapTestPassphrase, "QA_SWAGGER_CODE="+bootstrapCode(t, f.state.db, f.state.secret), "QA_SWAGGER_ITEM_ID="+itemID)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Swagger Chromium real-auth scenario: %v: %s", err, output)
@@ -44,6 +45,22 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 		t.Fatalf("Swagger logout storage state: active=%d revoked full=%d", active, revoked)
 	}
 	t.Log(string(output))
+}
+
+func seedSwaggerAssignmentItem(t *testing.T, f authFixtureState) string {
+	t.Helper()
+	var typeID, itemID string
+	requireNoError(t, f.db.QueryRow(`WITH collection AS (
+    INSERT INTO public.content_types(id,key,route_namespace) VALUES(gen_random_uuid(),'article','articles') RETURNING id
+), schema AS (
+    INSERT INTO public.content_schemas(type_id,schema_no,sealed) SELECT id,1,true FROM collection
+)
+INSERT INTO public.content_items(id,type_id) SELECT gen_random_uuid(),id FROM collection
+RETURNING type_id::text,id::text`).Scan(&typeID, &itemID))
+	_, err := f.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate)
+VALUES(gen_random_uuid(),$1,'content.items.assign','content',$2,'any',true)`, bootstrapAdminRoleID(t, f), typeID)
+	requireNoError(t, err)
+	return itemID
 }
 
 const qaSwaggerBrowserScript = `
@@ -70,6 +87,8 @@ const assert = require('node:assert/strict');
   const privateSpec=await (await context.request.get(origin+'/openapi-auth.json')).json();
   assert(Object.keys(privateSpec.paths).length>=8);
   const userRoles='/api/v1/admin/users/{id}/roles';
+  const contentAssignees='/api/v1/admin/content/{type_key}/{item_id}/assignees';
+  assert.deepEqual(Object.keys(privateSpec.paths[contentAssignees]||{}),['put']);
   const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable',userRoles];
   assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
   assert.deepEqual(Object.keys(privateSpec.paths['/api/v1/admin/users']).sort(),['get','post']);
@@ -81,11 +100,11 @@ const assert = require('node:assert/strict');
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[0]]).sort(),['get','post']);
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['delete','get','patch']);
-  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)));
+  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)||p===contentAssignees));
   await page.locator('.topbar select').selectOption({label:'Private CMS API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();
-  async function operation(id,body,csrf,status,targetID) {
+  async function operation(id,body,csrf,status,target) {
    console.log('Swagger operation: '+id+' expected '+status);
    const block=page.locator('[id$="-'+id+'"]');
    if(!await block.locator('.opblock-body').isVisible()) await block.locator('.opblock-summary').click();
@@ -94,9 +113,10 @@ const assert = require('node:assert/strict');
    if(body!==undefined) await block.locator('textarea').fill(JSON.stringify(body));
    let [path,methods]=Object.entries(privateSpec.paths).find(([,v])=>Object.values(v).some(op=>op.operationId===id));
    const method=Object.keys(methods).find(key=>methods[key].operationId===id).toUpperCase();
-   if(targetID) {
-    await block.locator('tr[data-param-name="id"] input').fill(targetID);
-    path=path.replace('{id}',targetID);
+   const params=typeof target==='string'?{id:target}:target||{};
+   for(const [name,value] of Object.entries(params)) {
+    await block.locator('tr[data-param-name="'+name+'"] input').fill(value);
+    path=path.replace('{'+name+'}',value);
    }
    const originInput=block.locator('input[placeholder="Origin"]');
    if(body!==undefined && await originInput.count()) await originInput.fill(origin);
@@ -145,6 +165,12 @@ const assert = require('node:assert/strict');
   assert.deepEqual(afterAssignment,assigned);
   const restored=await operation('usersReplaceRoles',{expected_version:assigned.version,role_ids:[seedRole.id]},full.csrf_token,200,admin.id);
   assert.deepEqual(restored,{...admin,version:assigned.version+1});
+  const item={type_key:'article',item_id:process.env.QA_SWAGGER_ITEM_ID};
+  const clearAssignees={expected_version:'1',assignee_ids:[]};
+  await operation('contentReplaceAssignees',clearAssignees,restricted.csrf_token,403,item);
+  const assignment=await operation('contentReplaceAssignees',clearAssignees,full.csrf_token,200,item);
+  assert.deepEqual(assignment,{item_id:item.item_id,version:'2',assignee_ids:[]});
+  await operation('contentReplaceAssignees',clearAssignees,full.csrf_token,409,item);
   for(const [action,state] of [['Enable','active'],['Disable','disabled'],['Archive','archived'],['Restore','disabled']]){
    const expected=role.version;
    const roleID=role.id;
@@ -162,7 +188,7 @@ const assert = require('node:assert/strict');
   await operation('authLogout',{},full.csrf_token,204);
   assert(!(await context.cookies(origin)).some(c=>c.name.startsWith('__Host-sp_')));
   assert.deepEqual(faults,[]);
-  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, versioned membership replacement, four versioned role state transitions, role copy and deletion, stale-token rejection and logout');
+  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, versioned membership and assignee replacement, four versioned role state transitions, role copy and deletion, stale-token rejection and logout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
 `

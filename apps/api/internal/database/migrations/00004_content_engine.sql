@@ -291,11 +291,19 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'content identities cannot be deleted' USING ERRCODE = '23514';
     END IF;
-    IF (NEW.id,NEW.type_id) IS DISTINCT FROM (OLD.id,OLD.type_id) THEN
-        RAISE EXCEPTION 'item identity is immutable' USING ERRCODE = '23514';
+    IF TG_OP = 'UPDATE' THEN
+        IF (NEW.id,NEW.type_id) IS DISTINCT FROM (OLD.id,OLD.type_id) THEN
+            RAISE EXCEPTION 'item identity is immutable' USING ERRCODE = '23514';
+        END IF;
+        -- Version-only commands have no access to publication data.
+        IF NEW.published_id IS NOT DISTINCT FROM OLD.published_id THEN
+            RETURN NEW;
+        END IF;
     END IF;
-    IF NEW.published_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.content_publications p WHERE p.id=NEW.published_id AND p.item_id=NEW.id AND p.sealed) THEN
-        RAISE EXCEPTION 'publication pointer requires sealed own revision' USING ERRCODE = '23514';
+    IF NEW.published_id IS NOT NULL THEN
+        IF NOT EXISTS (SELECT 1 FROM public.content_publications p WHERE p.id=NEW.published_id AND p.item_id=NEW.id AND p.sealed) THEN
+            RAISE EXCEPTION 'publication pointer requires sealed own revision' USING ERRCODE = '23514';
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -424,7 +432,7 @@ $body$;
 -- +goose StatementEnd
 
 CREATE TRIGGER content_items_identity
-BEFORE UPDATE OR DELETE
+BEFORE INSERT OR UPDATE OR DELETE
 ON public.content_items
 FOR EACH ROW EXECUTE FUNCTION public.guard_content_item_identity();
 

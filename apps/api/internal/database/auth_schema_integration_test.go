@@ -51,6 +51,11 @@ func TestAuthSchemaIntegration(t *testing.T) {
 		`DELETE FROM public.recovery_codes`,
 		`UPDATE public.user_roles SET role_id=gen_random_uuid()`,
 		`TRUNCATE public.user_roles`,
+		`SELECT published_id FROM public.content_items`,
+		`SELECT id FROM public.content_publications`,
+		`UPDATE public.content_items SET published_id=NULL`,
+		`UPDATE public.content_item_assignments SET user_id=gen_random_uuid()`,
+		`TRUNCATE public.content_item_assignments`,
 		`CREATE TABLE public.auth_escape(id integer)`,
 		`CREATE TEMP TABLE auth_escape(id integer)`,
 	} {
@@ -92,6 +97,9 @@ func testMembershipPrivileges(t *testing.T, owner, security *sql.DB, runtime str
 		for _, query := range []string{
 			`INSERT INTO public.user_roles(user_id,role_id) VALUES(gen_random_uuid(),gen_random_uuid())`,
 			`DELETE FROM public.user_roles`,
+			`SELECT item_id FROM public.content_item_assignments`,
+			`INSERT INTO public.content_item_assignments(item_id,user_id) VALUES(gen_random_uuid(),gen_random_uuid())`,
+			`DELETE FROM public.content_item_assignments`,
 		} {
 			rejectSQL(t, context.Background(), owner, role, query, "42501")
 		}

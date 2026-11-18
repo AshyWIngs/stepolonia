@@ -32,15 +32,11 @@ var replaceUserRolesRoute = route{
 }
 
 func (h *handler) serveUserRoles(w http.ResponseWriter, r *http.Request, rt route, id, ip string) {
-	req, _, err := requestSession(r, rt.kind, ip)
-	if err != nil {
-		writeError(w, err)
+	req, ok := replacementRequest(w, r, rt, ip)
+	if !ok {
 		return
 	}
-	if !attachRequestID(w, &req) {
-		return
-	}
-	input, code, status := readUserRolesInput(w, r, rt.fields)
+	input, code, status := readUserRolesInput(w, r, rt)
 	if code != "" {
 		problem(w, status, code)
 		return
@@ -58,16 +54,34 @@ func (h *handler) serveUserRoles(w http.ResponseWriter, r *http.Request, rt rout
 	respond(w, safeUser(user))
 }
 
-func readUserRolesInput(w http.ResponseWriter, r *http.Request, fields string) (replaceUserRolesInput, string, int) {
+func readUserRolesInput(w http.ResponseWriter, r *http.Request, rt route) (replaceUserRolesInput, string, int) {
 	var input replaceUserRolesInput
+	code, status := readReplacementInput(w, r, rt, &input)
+	if code == "" && (input.ExpectedVersion <= 0 || input.RoleIDs == nil || slices.Contains(input.RoleIDs, "")) {
+		code, status = validationCode, http.StatusBadRequest
+	}
+	return input, code, status
+}
+
+func replacementRequest(w http.ResponseWriter, r *http.Request, rt route, ip string) (cms.AuthRequest, bool) {
+	req, _, err := requestSession(r, rt.kind, ip)
+	if err != nil {
+		writeError(w, err)
+		return cms.AuthRequest{}, false
+	}
+	ok := attachRequestID(w, &req)
+	return req, ok
+}
+
+func readReplacementInput(w http.ResponseWriter, r *http.Request, rt route, input any) (string, int) {
 	raw, code, status := readJSONBody(w, r, maxCredentialBodyBytes)
 	if code != "" {
-		return input, code, status
+		return code, status
 	}
-	if !allowedObject(raw, fields) || json.Unmarshal(raw, &input) != nil || input.ExpectedVersion <= 0 || input.RoleIDs == nil || slices.Contains(input.RoleIDs, "") {
-		return input, validationCode, http.StatusBadRequest
+	if !allowedObject(raw, rt.fields, rt.operationID == replaceContentAssigneesOperation) || json.Unmarshal(raw, input) != nil {
+		return validationCode, http.StatusBadRequest
 	}
-	return input, "", 0
+	return "", 0
 }
 
 func userRolesRequestSchema(rt route) (*huma.Schema, any) {

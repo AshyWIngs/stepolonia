@@ -27,6 +27,21 @@ CREATE TABLE public.user_roles (
 
 CREATE INDEX user_roles_role_idx ON public.user_roles (role_id);
 
+CREATE TABLE public.content_item_assignments (
+    item_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    CONSTRAINT content_item_assignments_pkey PRIMARY KEY (item_id, user_id),
+    CONSTRAINT content_item_assignments_item_fkey FOREIGN KEY (
+        item_id
+    ) REFERENCES public.content_items (id) ON DELETE RESTRICT,
+    CONSTRAINT content_item_assignments_user_fkey FOREIGN KEY (
+        user_id
+    ) REFERENCES public.users (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX content_item_assignments_user_idx
+ON public.content_item_assignments (user_id);
+
 CREATE TABLE public.permission_operations (
     key text COLLATE "C" CONSTRAINT permission_operations_pkey PRIMARY KEY,
     scope text NOT NULL,
@@ -155,6 +170,10 @@ COMMENT ON TABLE public.user_roles IS
 'Explicit account-role memberships; inactive accounts and roles '
 'retain memberships.';
 
+COMMENT ON TABLE public.content_item_assignments IS
+'Explicit item assignments for scoped CMS grants; independent of public '
+'byline.';
+
 COMMENT ON TABLE public.permission_operations IS
 'Registered Go operations; migration seeds the exact closed operation '
 'set.';
@@ -207,6 +226,11 @@ CREATE TRIGGER user_roles_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.user_roles
 FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
 
+CREATE TRIGGER content_item_assignments_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
+ON public.content_item_assignments
+FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+
 CREATE TRIGGER permission_operations_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.permission_operations
 FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
@@ -244,6 +268,12 @@ GRANT INSERT, DELETE ON public.user_roles TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;
 GRANT SELECT (type_id, field_id) ON public.content_fields TO sp_security;
 
+REVOKE ALL ON public.content_item_assignments FROM public;
+GRANT SELECT, INSERT, DELETE ON public.content_item_assignments TO sp_security;
+GRANT SELECT (key) ON public.content_types TO sp_security;
+GRANT SELECT (id, type_id, version) ON public.content_items TO sp_security;
+GRANT UPDATE (version) ON public.content_items TO sp_security;
+
 -- Every field dependency belongs to a role grant.
 -- +goose StatementBegin
 CREATE FUNCTION public.delete_archived_role(
@@ -267,8 +297,11 @@ GRANT EXECUTE ON FUNCTION public.delete_archived_role(
 
 -- +goose Down
 DROP FUNCTION public.delete_archived_role(uuid, bigint);
-REVOKE SELECT (id) ON public.content_types FROM sp_security;
+REVOKE SELECT (id, key) ON public.content_types FROM sp_security;
 REVOKE SELECT (type_id, field_id) ON public.content_fields FROM sp_security;
+REVOKE SELECT (id, type_id, version), UPDATE (version)
+ON public.content_items FROM sp_security;
+DROP TABLE public.content_item_assignments;
 DROP TABLE public.grant_fields;
 DROP TABLE public.role_grants;
 DROP TABLE public.permission_operations;

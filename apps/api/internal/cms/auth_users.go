@@ -78,11 +78,7 @@ func (s *AuthService) securityCommand(ctx context.Context, req AuthRequest, oper
 }
 
 func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, permissions []string, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
-	ctx, err := auditRequestContext(ctx, req)
-	if err != nil {
-		return err
-	}
-	err = s.WithSession(ctx, req, true, func(ctx context.Context, tx *sql.Tx, x Session) error {
+	return s.auditedCommand(ctx, req, operation, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		if len(permissions) == 0 {
 			return ErrPermissionDenied
 		}
@@ -96,6 +92,15 @@ func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, pe
 		}
 		return fn(ctx, tx, x)
 	})
+}
+
+// The callback checks command-specific authorization and records success in the transaction.
+func (s *AuthService) auditedCommand(ctx context.Context, req AuthRequest, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
+	ctx, err := auditRequestContext(ctx, req)
+	if err != nil {
+		return err
+	}
+	err = s.WithSession(ctx, req, true, fn)
 	if err == nil || errors.Is(err, ErrSecurityUnavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
