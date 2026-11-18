@@ -256,7 +256,7 @@ CREATE TABLE public.auth_attempt_buckets (
 );
 
 COMMENT ON TABLE public.recovery_attempts IS
-'Recovery reservations ended explicitly under the CMS mutex.';
+'Recovery reservations ended explicitly under the installation write lock.';
 
 COMMENT ON COLUMN public.recovery_attempts.pending_ciphertext IS
 'AEAD-encrypted replacement TOTP seed confirmed only at completion.';
@@ -288,6 +288,8 @@ CREATE TABLE public.security_audit (
             'content.assignees_replaced', 'content.draft_created',
             'content.draft_saved', 'content.draft_ready',
             'content.draft_published',
+            'settings.draft_saved', 'settings.published',
+            'settings.initialized',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
@@ -326,7 +328,7 @@ COMMENT ON TABLE public.security_audit IS
 'Append-only security events with actor and target IDs.';
 
 COMMENT ON TABLE public.users IS
-'CMS account identities; activation requires verified password and MFA '
+'Account identities; activation requires verified password and MFA '
 'enrollment.';
 
 COMMENT ON COLUMN public.users.login_key IS
@@ -342,7 +344,8 @@ COMMENT ON TABLE public.sessions IS
 'Opaque session digests; never exposed through public views.';
 
 COMMENT ON COLUMN public.sessions.kind IS
-'Only full sessions authorize CMS; other kinds have restricted allowlists.';
+'Only full sessions authorize administration; other kinds have restricted '
+'allowlists.';
 
 COMMENT ON COLUMN public.sessions.credential_version IS
 'Credential generation at issuance; NULL only for anonymous preauth.';
@@ -433,49 +436,49 @@ EXECUTE FUNCTION public.guard_user_activation();
 
 CREATE TRIGGER users_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.users
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER sessions_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.sessions
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER security_state_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.security_state
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER mfa_totp_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.mfa_totp
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER recovery_codes_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.recovery_codes
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER recovery_attempts_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.recovery_attempts
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER security_audit_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.security_audit
 FOR EACH STATEMENT
-EXECUTE FUNCTION public.cms_write_mutex();
+EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER onboarding_tokens_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.onboarding_tokens
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER enrollment_attempts_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.enrollment_attempts
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 REVOKE ALL ON public.security_state,
 public.mfa_totp,

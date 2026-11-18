@@ -677,42 +677,42 @@ COMMENT ON VIEW public.public_content_relations IS
 CREATE TRIGGER content_items_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_items
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_drafts_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_drafts
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_draft_locales_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_draft_locales
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_publications_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_publications
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_routes_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_routes
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_publication_locales_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_publication_locales
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_draft_relations_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_draft_relations
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 CREATE TRIGGER content_publication_relations_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
 ON public.content_publication_relations
-FOR EACH STATEMENT EXECUTE FUNCTION public.cms_write_mutex();
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
 REVOKE ALL ON public.content_items,
 public.content_drafts,

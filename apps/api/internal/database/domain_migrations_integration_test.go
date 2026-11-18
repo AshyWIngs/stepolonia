@@ -18,7 +18,7 @@ const domainQAMarker = "domain-qa-disposable"
 
 func domainQAFixture(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	cfg := testpostgres.CMSConfig(t)
+	cfg := testpostgres.AdminConfig(t)
 	admin := Open(cfg)
 	suffix := make([]byte, 8)
 	_, err := rand.Read(suffix)

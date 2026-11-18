@@ -64,7 +64,7 @@ func checkDefinitions(ctx context.Context, db *sql.DB, installed bool) error {
 	if err := checkSchemaMetadata(ctx, tx); err != nil {
 		return err
 	}
-	if err := checkCMSPrivileges(ctx, tx); err != nil {
+	if err := checkAdministrationPrivileges(ctx, tx); err != nil {
 		return err
 	}
 	return checkSchemaDefinitions(ctx, tx, contract.definitions())

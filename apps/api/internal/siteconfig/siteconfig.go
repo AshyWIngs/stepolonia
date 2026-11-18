@@ -18,7 +18,7 @@ type Settings struct {
 	Tagline          string `json:"tagline" maxLength:"300" doc:"Short site tagline. An empty string means no tagline." example:"Historie naszej społeczności"`
 	Notice           string `json:"notice" maxLength:"2000" doc:"Optional site notice as plain text. An empty string means no notice." example:""`
 	Accent           string `json:"accent" pattern:"^#[0-9a-fA-F]{6}$" doc:"Six-digit hexadecimal accent color, including the leading #." example:"#2563eb"`
-	Title            string `json:"title" maxLength:"200" doc:"Human-readable title of this installation." example:"Stepolonia"`
+	Title            string `json:"title" maxLength:"200" doc:"Human-readable title of this installation." example:"Portal"`
 	Description      string `json:"description" maxLength:"2000" doc:"Published site description as plain text." example:"Poznaj historie i wydarzenia naszej społeczności."`
 	DefaultLanguage  string `json:"default_language" doc:"Configured default content language. This does not select the UI catalog." example:"pl"`
 	FallbackLanguage string `json:"fallback_language" doc:"UI catalog used when lang is omitted or its complete published catalog is unavailable." example:"pl"`
@@ -44,6 +44,7 @@ type Draft struct {
 
 const (
 	unavailableCode     = "site_configuration_unavailable"
+	invalidVersionCode  = "invalid_version"
 	versionConflictCode = "site_version_conflict"
 )
 
@@ -99,93 +100,6 @@ func identifier() (string, error) {
 	return (pgtype.UUID{Bytes: b, Valid: true}).String(), nil
 }
 
-type Service struct{ db *sql.DB }
-
-func NewService(db *sql.DB) *Service { return &Service{db: db} }
-func (s *Service) begin(ctx context.Context, expected int64) (*sql.Tx, sql.NullString, error) {
-	if expected < 1 {
-		return nil, sql.NullString{}, failure(400, "invalid_version")
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, sql.NullString{}, dbError(err)
-	}
-	var allowed bool
-	err = tx.QueryRowContext(ctx, "SELECT pg_catalog.pg_has_role(current_user,'sp_publisher','USAGE')").Scan(&allowed)
-	if err != nil || !allowed {
-		_ = tx.Rollback()
-		if err != nil {
-			return nil, sql.NullString{}, dbError(err)
-		}
-		return nil, sql.NullString{}, failure(403, "editorial_access_denied")
-	}
-	var version int64
-	var draft sql.NullString
-	err = tx.QueryRowContext(ctx, "SELECT version,draft_id::text FROM public.site_state WHERE singleton FOR UPDATE").Scan(&version, &draft)
-	if err != nil || version != expected {
-		_ = tx.Rollback()
-		if err != nil {
-			return nil, draft, dbError(err)
-		}
-		return nil, draft, failure(409, versionConflictCode)
-	}
-	return tx, draft, nil
-}
-
-// SaveDraft replaces the draft under the singleton lock to prevent lost updates.
-func (s *Service) SaveDraft(ctx context.Context, expected int64, input Draft) (int64, error) {
-	input, err := normalizeDraft(input)
-	if err != nil {
-		return 0, err
-	}
-	tx, old, err := s.begin(ctx, expected)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	id, err := identifier()
-	if err != nil {
-		return 0, err
-	}
-	if err = storeDraft(ctx, tx, id, input); err != nil {
-		return 0, err
-	}
-	_, err = tx.ExecContext(ctx, `UPDATE public.site_state SET draft_id=$1,version=version+1 WHERE singleton`, id)
-	if err != nil {
-		return 0, dbError(err)
-	}
-	if old.Valid {
-		if err = deleteDraft(ctx, tx, old.String); err != nil {
-			return 0, err
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return 0, dbError(err)
-	}
-	return expected + 1, nil
-}
-
-func (s *Service) Publish(ctx context.Context, expected int64) (string, int64, error) {
-	tx, draft, err := s.begin(ctx, expected)
-	if err != nil {
-		return "", 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if !draft.Valid {
-		return "", 0, failure(409, "site_draft_missing")
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_revisions SET sealed=true WHERE id=$1`, draft.String); err != nil {
-		return "", 0, dbError(err)
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_state SET published_id=$1,draft_id=NULL,version=version+1 WHERE singleton`, draft.String); err != nil {
-		return "", 0, dbError(err)
-	}
-	if err = tx.Commit(); err != nil {
-		return "", 0, dbError(err)
-	}
-	return draft.String, expected + 1, nil
-}
-
 type Reader struct{ db *sql.DB }
 
 func NewReader(db *sql.DB) *Reader { return &Reader{db: db} }
@@ -199,7 +113,7 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 		result.RequestedLanguage = value
 	}
 	if version != "" && !validUUID(version) {
-		return result, failure(400, "invalid_version")
+		return result, failure(400, invalidVersionCode)
 	}
 	if r == nil || r.db == nil {
 		return result, failure(503, unavailableCode)

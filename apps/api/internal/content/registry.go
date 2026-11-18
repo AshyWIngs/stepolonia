@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"reflect"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 func (s *Service) CreateType(ctx context.Context, actor Actor, input TypeInput) (TypeSchema, error) {
 	var out TypeSchema
-	err := s.withTx(ctx, actor, string(cms.OpContentTypesManage), "", "", nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(identity.OpContentTypesManage), "", "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		out, err = createType(ctx, tx, input)
 		return err
@@ -87,7 +87,7 @@ func loadSchema(ctx context.Context, tx *sql.Tx, typeID string, number int64) (T
 }
 func (s *Service) GetSchema(ctx context.Context, actor Actor, typeID string, number int64) (TypeSchema, error) {
 	var out TypeSchema
-	err := s.withTx(ctx, actor, string(cms.OpContentTypesManage), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(identity.OpContentTypesManage), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		out, err = loadSchema(ctx, tx, typeID, number)
 		return err
@@ -96,7 +96,7 @@ func (s *Service) GetSchema(ctx context.Context, actor Actor, typeID string, num
 }
 func (s *Service) ReviseType(ctx context.Context, actor Actor, typeID string, expected int64, input TypeInput) (TypeSchema, error) {
 	var out TypeSchema
-	err := s.withTx(ctx, actor, string(cms.OpContentTypesManage), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.withTx(ctx, actor, string(identity.OpContentTypesManage), typeID, "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		current, err := loadSchema(ctx, tx, typeID, 0)
 		if err != nil {
 			return err

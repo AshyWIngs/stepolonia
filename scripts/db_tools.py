@@ -84,6 +84,9 @@ def main():
                          help="allow Down for a marked disposable installation")
     commands.add_parser("seed")
     commands.add_parser("prepare-roles")
+    initializer = commands.add_parser("initialize-site")
+    initializer.add_argument("title")
+    initializer.add_argument("language")
     importer = commands.add_parser("import-languages")
     importer.add_argument("file")
     args = parser.parse_args()
@@ -93,6 +96,8 @@ def main():
         run_tool(args.site, ["migrate", args.action], allow_disposable_down=args.disposable)
     elif args.command == "import-languages":
         run_tool(args.site, ["import-languages", "/input/languages.csv"], input_file=args.file)
+    elif args.command == "initialize-site":
+        run_tool(args.site, ["initialize-site", args.title, args.language])
     else:
         run_tool(args.site, [args.command])
 

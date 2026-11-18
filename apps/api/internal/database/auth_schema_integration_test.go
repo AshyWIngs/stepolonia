@@ -34,7 +34,7 @@ func TestAuthSchemaIntegration(t *testing.T) {
 	_, err = db.Exec("CREATE ROLE " + quoted + " LOGIN IN ROLE sp_security")
 	requireNoError(t, err)
 	t.Cleanup(func() { _, _ = db.Exec("DROP ROLE " + quoted) })
-	cfg := testpostgres.CMSConfig(t)
+	cfg := testpostgres.AdminConfig(t)
 	requireNoError(t, db.QueryRow(currentDatabaseSQL).Scan(&cfg.Database))
 	cfg.User = login
 	security := Open(cfg)
@@ -148,7 +148,7 @@ func testSecurityLoginIdentity(t *testing.T, safe *pgx.ConnConfig) {
 	t.Helper()
 	for _, option := range []string{"role", "session_authorization", "options"} {
 		t.Run(option, func(t *testing.T) {
-			owner := testpostgres.CMSConfig(t)
+			owner := testpostgres.AdminConfig(t)
 			owner.Database = safe.Database
 			value := safe.User
 			if option == "options" {

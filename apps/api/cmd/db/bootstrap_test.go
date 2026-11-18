@@ -31,7 +31,7 @@ func TestBootstrapKeyFileBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(totpKeyFileEnv, path)
-	t.Setenv("CMS_TOTP_KEY_VERSION", "1")
+	t.Setenv("ADMIN_TOTP_KEY_VERSION", "1")
 	key, version, err := bootstrapKey()
 	if err != nil || len(key) != 32 || version != 1 {
 		t.Fatalf("private key failed: %v", err)
@@ -66,7 +66,7 @@ func TestBootstrapKeyFileBoundary(t *testing.T) {
 	if _, _, err := bootstrapKey(); err == nil {
 		t.Fatal("accepted oversized key")
 	}
-	t.Setenv("CMS_TOTP_KEY_VERSION", "0")
+	t.Setenv("ADMIN_TOTP_KEY_VERSION", "0")
 	if _, _, err := bootstrapKey(); err == nil {
 		t.Fatal("accepted zero version")
 	}

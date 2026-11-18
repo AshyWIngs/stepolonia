@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/text/language"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 const (
@@ -134,7 +134,7 @@ type ValuePatch struct {
 }
 type authorizeFunc func(context.Context, *sql.Tx, Actor, string, string, string, []string) error
 
-// Service has no enabled authorization adapter until authenticated CMS sessions exist.
+// Service has no enabled authorization adapter until authenticated administration sessions exist.
 type Service struct {
 	db        *sql.DB
 	authorize authorizeFunc
@@ -151,7 +151,7 @@ type Registry = Service
 type ContentService = Service
 
 func (s *Service) withTx(ctx context.Context, actor Actor, op, typeID, itemID string, fields []string, fn func(context.Context, *sql.Tx) error) error {
-	return databaseError(cms.WithWriteMutex(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+	return databaseError(identity.WithWriteMutex(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
 		if err := s.authorize(ctx, tx, actor, op, typeID, itemID, fields); err != nil {
 			return err
 		}

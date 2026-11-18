@@ -3,7 +3,7 @@ package content
 import (
 	"context"
 	"database/sql"
-	"stepolonia/apps/api/internal/cms"
+	"stepolonia/apps/api/internal/identity"
 )
 
 const bodyFieldKey = "body"
@@ -11,7 +11,7 @@ const bodyFieldKey = "body"
 // SeedInitialRegistry is a fixed infrastructure seed, never an editorial command.
 // It requires a direct database owner and cannot create arbitrary types or content.
 func SeedInitialRegistry(ctx context.Context, db *sql.DB) error {
-	return cms.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
+	return identity.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
 		var owner bool
 		if err := tx.QueryRowContext(ctx, `SELECT current_user=session_user AND current_user=pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname=current_database()`).Scan(&owner); err != nil {
 			return err
