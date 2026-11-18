@@ -1,6 +1,5 @@
-const { chromium } = require('../../../web/node_modules/playwright');
 const assert = require('node:assert/strict');
-const { browserAdminClient } = require('./browser_admin_client.cjs');
+const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
 
 (async () => {
   const browser = await chromium.launch({ headless: true });

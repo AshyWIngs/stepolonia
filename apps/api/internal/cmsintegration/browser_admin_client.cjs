@@ -1,31 +1,37 @@
 const assert = require('node:assert/strict');
 
+const { createRequire } = require('node:module');
+const { resolve } = require('node:path');
+
+const requireWeb = createRequire(resolve(__dirname, '../../../web/package.json'));
+const { chromium } = requireWeb('playwright');
+
+async function send(page, path, status, { method = 'GET', body, csrf } = {}) {
+  const result = await page.evaluate(async ({ path, method, body, csrf }) => {
+    const response = await fetch(path, {
+      method,
+      headers: body === undefined ? {} : {
+        'Content-Type': 'application/json',
+        ...(csrf ? { 'X-CSRF-Token': csrf, 'X-Request-ID': 'forged-client-id' } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    return {
+      status: response.status, body: await response.json(),
+      cache: response.headers.get('Cache-Control'), requestID: response.headers.get('X-Request-ID'),
+    };
+  }, { path, method, body, csrf });
+  assert.equal(result.status, status, method + ' ' + path + ' ' + result.body.code);
+  assert.equal(result.cache, 'no-store');
+  return result;
+}
+
 function browserAdminClient(browser, origin, variablePrefix) {
   async function open() {
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await context.newPage();
     await page.goto(origin + '/health/live');
     return page;
-  }
-
-  async function send(page, path, status, { method = 'GET', body, csrf } = {}) {
-    const result = await page.evaluate(async ({ path, method, body, csrf }) => {
-      const response = await fetch(path, {
-        method,
-        headers: body === undefined ? {} : {
-          'Content-Type': 'application/json',
-          ...(csrf ? { 'X-CSRF-Token': csrf, 'X-Request-ID': 'forged-client-id' } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      return {
-        status: response.status, body: await response.json(),
-        cache: response.headers.get('Cache-Control'), requestID: response.headers.get('X-Request-ID'),
-      };
-    }, { path, method, body, csrf });
-    assert.equal(result.status, status, method + ' ' + path + ' ' + result.body.code);
-    assert.equal(result.cache, 'no-store');
-    return result;
   }
 
   async function login(page, who, beforeMFA) {
@@ -45,4 +51,4 @@ function browserAdminClient(browser, origin, variablePrefix) {
   return { open, send, login };
 }
 
-module.exports = { browserAdminClient };
+module.exports = { browserAdminClient, chromium };
