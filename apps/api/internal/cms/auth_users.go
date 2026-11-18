@@ -16,6 +16,7 @@ const opUsersCreate = "users.create"
 const (
 	userStateActive   = "active"
 	userStateDisabled = "disabled"
+	userStatePending  = "pending"
 )
 
 type auditRequestKey struct{}

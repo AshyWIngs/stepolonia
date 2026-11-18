@@ -143,12 +143,9 @@ func (h *handler) serveRole(w http.ResponseWriter, r *http.Request, rt route, id
 		writeError(w, err)
 		return
 	}
-	req.RequestID, err = newRequestID()
-	if err != nil {
-		writeError(w, cms.ErrSecurityUnavailable)
+	if !attachRequestID(w, &req) {
 		return
 	}
-	w.Header().Set(requestIDHeader, req.RequestID)
 	service, ok := h.service.(RoleService)
 	if !ok {
 		writeError(w, cms.ErrSecurityUnavailable)

@@ -69,9 +69,11 @@ const assert = require('node:assert/strict');
   assert(!JSON.stringify(publicSpec).includes('__Host-sp_'),'Private credential in public spec');
   const privateSpec=await (await context.request.get(origin+'/openapi-auth.json')).json();
   assert(Object.keys(privateSpec.paths).length>=8);
-  const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable'];
+  const userRoles='/api/v1/admin/users/{id}/roles';
+  const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable',userRoles];
   assert(userPaths.every(p=>privateSpec.paths[p]),'Missing private user operation');
   assert.deepEqual(Object.keys(privateSpec.paths['/api/v1/admin/users']).sort(),['get','post']);
+  assert.deepEqual(Object.keys(privateSpec.paths[userRoles]),['put']);
   const rolePaths=['/api/v1/admin/roles','/api/v1/admin/roles/{id}'];
   const roleCommandPaths=['enable','disable','archive','restore','copy'].map(action=>rolePaths[1]+'/'+action);
   rolePaths.push(...roleCommandPaths);
@@ -90,7 +92,8 @@ const assert = require('node:assert/strict');
    const tryButton=block.getByRole('button',{name:'Try it out',exact:true});
    if(!prepared.has(id)) {await tryButton.click(); prepared.add(id);}
    if(body!==undefined) await block.locator('textarea').fill(JSON.stringify(body));
-   let path=Object.entries(privateSpec.paths).find(([,v])=>Object.values(v).some(op=>op.operationId===id))[0];
+   let [path,methods]=Object.entries(privateSpec.paths).find(([,v])=>Object.values(v).some(op=>op.operationId===id));
+   const method=Object.keys(methods).find(key=>methods[key].operationId===id).toUpperCase();
    if(targetID) {
     await block.locator('tr[data-param-name="id"] input').fill(targetID);
     path=path.replace('{id}',targetID);
@@ -100,7 +103,10 @@ const assert = require('node:assert/strict');
    const token=block.locator('input[placeholder="X-CSRF-Token"]');
    if(await token.count()) await token.fill(csrf||'');
    const [response]=await Promise.all([
-    page.waitForResponse(r=>r.url()===origin+path && r.request().method()!=='OPTIONS',{timeout:10000}).catch(async e=>{throw new Error(e.message+'; errors='+JSON.stringify(faults));}),
+    page.waitForResponse(r=>{
+     const url=new URL(r.url());
+     return url.origin===origin && url.pathname===path && r.request().method()===method;
+    },{timeout:10000}).catch(async e=>{throw new Error(e.message+'; errors='+JSON.stringify(faults));}),
     block.getByRole('button',{name:'Execute',exact:true}).click()
    ]);
    assert.equal(response.status(),status,id+' unexpected HTTP status');
@@ -124,6 +130,21 @@ const assert = require('node:assert/strict');
   assert(!cookies.some(c=>c.name==='__Host-sp_login'));
   let role=await operation('rolesCreate',{name:'browser-role',grants:[]},full.csrf_token,200);
   assert.equal(role.state,'disabled');
+  const accounts=await operation('usersList',undefined,undefined,200);
+  const admin=accounts.items.find(account=>account.login===credentials.login);
+  assert(admin);
+  const policies=await operation('rolesList',undefined,undefined,200);
+  const seedRole=policies.items.find(policy=>policy.name==='Site Admin');
+  assert(seedRole);
+  const replacement={expected_version:admin.version,role_ids:[seedRole.id,role.id]};
+  await operation('usersReplaceRoles',replacement,restricted.csrf_token,403,admin.id);
+  const assigned=await operation('usersReplaceRoles',replacement,full.csrf_token,200,admin.id);
+  assert.deepEqual(assigned,{...admin,version:admin.version+1});
+  await operation('usersReplaceRoles',{expected_version:admin.version,role_ids:[seedRole.id]},full.csrf_token,409,admin.id);
+  const afterAssignment=await operation('usersGet',undefined,undefined,200,admin.id);
+  assert.deepEqual(afterAssignment,assigned);
+  const restored=await operation('usersReplaceRoles',{expected_version:assigned.version,role_ids:[seedRole.id]},full.csrf_token,200,admin.id);
+  assert.deepEqual(restored,{...admin,version:assigned.version+1});
   for(const [action,state] of [['Enable','active'],['Disable','disabled'],['Archive','archived'],['Restore','disabled']]){
    const expected=role.version;
    const roleID=role.id;
@@ -141,7 +162,7 @@ const assert = require('node:assert/strict');
   await operation('authLogout',{},full.csrf_token,204);
   assert(!(await context.cookies(origin)).some(c=>c.name.startsWith('__Host-sp_')));
   assert.deepEqual(faults,[]);
-  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, four versioned role state transitions, role copy and deletion, stale-token rejection and logout');
+  console.log('PASS: local Swagger assets/rendering; live public/private separation; real HTTPS browser CSRF rejection and rotation, restricted login, MFA session rotation, versioned membership replacement, four versioned role state transitions, role copy and deletion, stale-token rejection and logout');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
 `

@@ -45,7 +45,7 @@ type safeUserResponse struct {
 	ID      string `json:"id" format:"uuid" doc:"Stable account UUID."`
 	Login   string `json:"login" doc:"Normalized account login identifier."`
 	State   string `json:"state" enum:"pending,disabled,active" doc:"Current account lifecycle state."`
-	Version int64  `json:"version" minimum:"1" doc:"Current account version, required for lifecycle mutations."`
+	Version int64  `json:"version" minimum:"1" doc:"Current account version, required for versioned account commands."`
 }
 
 type userListResponse struct {
