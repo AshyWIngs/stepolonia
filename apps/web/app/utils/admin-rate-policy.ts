@@ -1,4 +1,5 @@
 import { AdminContentError, administrationRequest } from './admin-request'
+import { ownValue } from './draft-edit-buffer'
 
 const endpoint = '/api/v1/admin/security/rate-policy'
 
@@ -50,21 +51,24 @@ function isBound(value: unknown): value is RateBound {
 }
 
 function isBounds(value: unknown): value is RateBounds {
-  return isRecord(value) && rateFields.every(field => isBound(value[field]))
+  return isRecord(value) && rateFields.every(field => isBound(ownValue(value, field)))
 }
 
 function isScope(value: unknown): value is RateScope {
   return typeof value === 'string' && (rateScopes as readonly string[]).includes(value)
 }
 
-function withinBound(value: unknown, { minimum, maximum }: RateBound) {
-  return positiveInteger(value) && value >= minimum && value <= maximum
+function withinBound(value: unknown, bound: RateBound | undefined) {
+  return bound !== undefined && positiveInteger(value) && value >= bound.minimum && value <= bound.maximum
 }
 
 export function validRateValues(values: unknown, scope: RateScope, bounds: RateBounds): values is RateValues {
   if (!isRecord(values)) return false
   const fields = fieldsForRateScope(scope)
-  return rateFields.every(field => fields.includes(field) ? withinBound(values[field], bounds[field]) : values[field] === undefined)
+  return rateFields.every((field) => {
+    const value = ownValue(values, field)
+    return fields.includes(field) ? withinBound(value, ownValue(bounds, field)) : value === undefined
+  })
 }
 
 function parsePolicy(value: unknown, bounds: RateBounds): RatePolicy {

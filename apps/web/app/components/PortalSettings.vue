@@ -805,7 +805,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   active = false
-  retryTimers.forEach(timer => clearTimeout(timer))
+  for (const timer of retryTimers.values()) clearTimeout(timer)
 })
 </script>
 

@@ -148,12 +148,24 @@ export type ScopedSettingsInput = { expected_version: string } & (
   { language_code: string, messages?: Record<string, string>, remove_catalog?: true }
 )
 
+function postScopedSettings(scope: ScopedSettingsSection, options: RequestInit) {
+  switch (scope) {
+    case 'details': return fetch('/api/v1/admin/settings/details', options)
+    case 'appearance': return fetch('/api/v1/admin/settings/appearance', options)
+    case 'language-flags': return fetch('/api/v1/admin/settings/language-flags', options)
+    case 'locale-defaults': return fetch('/api/v1/admin/settings/locale-defaults', options)
+    case 'slug-rules': return fetch('/api/v1/admin/settings/slug-rules', options)
+    case 'catalogs': return fetch('/api/v1/admin/settings/catalogs', options)
+  }
+  throw new AdminSettingsError(400)
+}
+
 export async function saveScopedPortalSetting(
   scope: ScopedSettingsSection,
   csrf: string,
   input: ScopedSettingsInput,
 ) {
-  const json = await readResponse(fetch(`/api/v1/admin/settings/${scope}`, {
+  const json = await readResponse(postScopedSettings(scope, {
     ...requestOptions(),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },

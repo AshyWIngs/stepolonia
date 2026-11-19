@@ -14,14 +14,14 @@ function parseIcon(source: string) {
 }
 
 async function decodeIconPreview(source: string) {
-  const root = parseIcon(source)
-  if (!root?.hasAttribute('viewBox')) return
-  if (root.namespaceURI === null) root.setAttribute('xmlns', svgNamespace)
-  const serialized = new XMLSerializer().serializeToString(root)
-  const svg = root.namespaceURI === shortSvgNamespace
-    ? serialized.replace(`xmlns="${shortSvgNamespace}"`, `xmlns="${svgNamespace}"`)
-    : serialized
   try {
+    const root = parseIcon(source)
+    if (!root?.hasAttribute('viewBox')) return
+    if (root.namespaceURI === null) root.setAttribute('xmlns', svgNamespace)
+    const serialized = new XMLSerializer().serializeToString(root)
+    const svg = root.namespaceURI === shortSvgNamespace
+      ? serialized.replace(`xmlns="${shortSvgNamespace}"`, `xmlns="${svgNamespace}"`)
+      : serialized
     const image = new Image()
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
     await image.decode()
@@ -40,9 +40,10 @@ export function useSvgImagePreview(source: Readonly<Ref<string>>, saved: Readonl
     decoded.value = undefined
     if (!value.trim() || value === savedValue) return
     let cancelled = false
-    const timer = setTimeout(async () => {
-      const svg = await decodeIconPreview(value)
-      if (!cancelled) decoded.value = { source: value, svg }
+    const timer = setTimeout(() => {
+      void decodeIconPreview(value).then((svg) => {
+        if (!cancelled) decoded.value = { source: value, svg }
+      })
     }, 200)
     onCleanup(() => {
       cancelled = true

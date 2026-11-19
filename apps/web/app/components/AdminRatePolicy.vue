@@ -155,7 +155,9 @@ async function focusOutcome(editor: PolicyEditor) {
 }
 
 onMounted(load)
-onBeforeUnmount(() => timers.forEach(timer => clearTimeout(timer)))
+onBeforeUnmount(() => {
+  for (const timer of timers.values()) clearTimeout(timer)
+})
 </script>
 
 <template>
