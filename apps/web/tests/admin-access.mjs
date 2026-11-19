@@ -191,31 +191,34 @@ async function manageArticleAssignments(page, id) {
   assert.equal(await editor.isChecked(), false)
   await editor.check()
   await button(page, 'Review assignments').click()
-  const path = `**/api/v1/admin/content/article/${id}/assignees`
-  const held = Promise.withResolvers()
-  const pending = Promise.withResolvers()
-  const holdReplacement = async route => {
-    if (route.request().method() === 'PUT') {
-      pending.resolve()
-      await held.promise
-    }
-    await route.continue()
-  }
-  await page.route(path, holdReplacement)
-  try {
-    await button(page, 'Verify').click()
-    await pending.promise
-    assert.ok(await button(page, 'Portal settings').isDisabled())
-    assert.ok(await button(page, 'Back to drafts').isDisabled())
-  } finally {
-    held.resolve()
-    await page.unroute(path, holdReplacement)
-  }
+  await assertEditorMutationBlocksNavigation(page, `**/api/v1/admin/content/article/${id}/assignees`, 'PUT',
+    () => button(page, 'Verify').click(), ['Portal settings', 'Back to drafts'])
   await button(page, 'Assignees').click()
   assert.equal(await author.isChecked(), true)
   assert.equal(await editor.isChecked(), true)
   await button(page, 'Close').click()
   await closeCollection(page)
+}
+
+export async function assertEditorMutationBlocksNavigation(page, path, method, send, labels) {
+  const held = Promise.withResolvers()
+  const pending = Promise.withResolvers()
+  const holdMutation = async route => {
+    if (route.request().method() === method) {
+      pending.resolve()
+      await held.promise
+    }
+    await route.continue()
+  }
+  await page.route(path, holdMutation)
+  try {
+    await send()
+    await pending.promise
+    await eachInOrder(labels, async label => { assert.ok(await button(page, label).isDisabled(), label) })
+  } finally {
+    held.resolve()
+    await page.unroute(path, holdMutation)
+  }
 }
 
 function publicLink(type, slug) {

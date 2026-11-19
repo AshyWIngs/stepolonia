@@ -30,7 +30,7 @@ const edits = ref(new Map<string, FieldEdit>())
 const invalid = ref(new Set<string>())
 const selectedLanguage = ref('')
 const selectedPublications = ref<string[]>([])
-const confirmation = ref<'publish' | 'unpublish' | 'reload' | 'close' | null>(null)
+const confirmation = ref<'publish' | 'unpublish' | 'reload' | 'close' | 'close_assignments' | null>(null)
 const busy = ref(false)
 const conflict = ref(false)
 const feedback = ref('')
@@ -242,6 +242,9 @@ async function ask(question: NonNullable<typeof confirmation.value>) {
 function confirm() {
   switch (confirmation.value) {
     case 'close': emit('close'); return
+    case 'close_assignments':
+      confirmation.value = null
+      return closeAssignments()
     case 'reload':
       return run(async () => {
         await refresh()
@@ -282,7 +285,9 @@ onBeforeUnmount(() => { active = false })
 
     <AdminAssignees
       v-if="assignmentsOpen" :csrf="csrf" :type-key="typeKey" :item-id="itemId" :translate="translate"
-      @step-up="emit('step-up')" @session-changed="emit('session-changed')" @saved="assignmentsSaved" @close="closeAssignments"
+      :inert="confirmation !== null"
+      @step-up="emit('step-up')" @session-changed="emit('session-changed')" @saved="assignmentsSaved"
+      @close="assignmentsState.dirty ? ask('close_assignments') : closeAssignments()"
       @editing-state="assignmentsState = $event"
     />
     <template v-else-if="draft && metadata">
@@ -357,7 +362,9 @@ onBeforeUnmount(() => { active = false })
     </template>
 
     <section v-if="confirmation" aria-labelledby="draft-confirmation-heading">
-      <h3 id="draft-confirmation-heading" ref="confirmationHeading" tabindex="-1">{{ translate(`admin.content_confirm_${confirmation}`) }}</h3>
+      <h3 id="draft-confirmation-heading" ref="confirmationHeading" tabindex="-1">
+        {{ translate(confirmation === 'close_assignments' ? 'admin.leave_unsaved' : `admin.content_confirm_${confirmation}`) }}
+      </h3>
       <fieldset v-if="confirmation === 'publish'" :disabled="busy">
         <legend>{{ translate('admin.content_publish_languages') }}</legend>
         <label v-for="language in readyLanguages" :key="language.code" class="draft-checkbox">

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
+import { assertEditorMutationBlocksNavigation, eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
 assert.equal(endpoint.protocol, 'https:')
@@ -225,7 +225,8 @@ async function verifyContentWorkflow(page, context, { type, namespace, slug, tit
   const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
   await create.waitFor()
   await create.focus()
-  await page.keyboard.press('Enter')
+  await assertEditorMutationBlocksNavigation(page, `**/api/v1/admin/content/${type}`, 'POST',
+    () => page.keyboard.press('Enter'), ['Portal settings', 'Sign out'])
   const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
   await editor.getByLabel(/^Title(?: \(|$)/).waitFor()
   await editor.getByLabel(/^Title(?: \(|$)/).fill(title)

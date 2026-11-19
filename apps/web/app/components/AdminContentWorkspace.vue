@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AdminContentError } from '~/utils/admin-request'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { usePublicApi } from '~/composables/usePublicApi'
 import { createDraft, listCollections, listDrafts } from '~/utils/admin-content'
@@ -30,11 +30,16 @@ const draftOffset = ref<number | null>(null)
 const opener = ref<HTMLElement | null>(null)
 const heading = ref<HTMLElement | null>(null)
 const busy = ref(false)
+const creating = ref(false)
+const editorState = ref({ dirty: false, busy: false })
 const loaded = ref(false)
 const failure = ref('')
 const active = ref(true)
 
 const selectedCollection = computed(() => collections.value.find(item => item.type_key === selectedType.value))
+watch([creating, editorState], ([creatingDraft, state]) => {
+  emit('editing-state', { dirty: state.dirty, busy: creatingDraft || state.busy })
+})
 
 function titleLanguage(item: DraftSummary) {
   const otherLanguages = Object.keys(item.titles ?? {}).sort()
@@ -135,7 +140,7 @@ async function closeDraft() {
   const closedItem = selectedItem.value
   selectedItem.value = ''
   openedType.value = ''
-  emit('editing-state', { dirty: false, busy: false })
+  editorState.value = { dirty: false, busy: false }
   if (draftChanged) await run(async () => {
     const offset = pageOffsets.get(closedItem) ?? 0
     const page = await listDrafts(selectedType.value, offset)
@@ -156,13 +161,18 @@ async function closeDraft() {
 async function create(event: Event) {
   const collection = selectedCollection.value
   const target = event.currentTarget
-  if (!collection?.can_create || selectedItem.value) return
-  await run(async () => {
-    const receipt = await createDraft(collection.type_key, collection.schema_no, props.csrf)
-    if (!active.value) return
-    openDraft(receipt.item_id, target)
-    await loadDraftPage()
-  })
+  if (!collection?.can_create || selectedItem.value || busy.value) return
+  creating.value = true
+  try {
+    await run(async () => {
+      const receipt = await createDraft(collection.type_key, collection.schema_no, props.csrf)
+      if (!active.value) return
+      openDraft(receipt.item_id, target)
+      await loadDraftPage()
+    })
+  } finally {
+    creating.value = false
+  }
 }
 
 onMounted(() => { void loadWorkspace() })
@@ -225,7 +235,7 @@ onBeforeUnmount(() => { active.value = false })
       :translate="translate" :ui-language="uiLanguage" :languages="languages"
       :initial-language="initialLanguage" :default-language="defaultLanguage"
       @language-changed="lastLanguages.set(selectedItem, $event)" @changed="draftChanged = true"
-      @editing-state="emit('editing-state', $event)"
+      @editing-state="editorState = $event"
       @close="closeDraft" @step-up="emit('step-up')" @session-changed="emit('session-changed')"
     />
   </section>
