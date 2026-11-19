@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
 import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
 import { usePublicApi } from '~/composables/usePublicApi'
+import { themeModes, type ThemeMode } from '~/composables/usePublicTheme'
 import { usePortalAcceptLanguage, usePortalLanguagePreference } from '~/composables/usePortalLanguagePreference'
 import { preferredLanguage } from '~/utils/language'
 import { publicError } from '~/utils/public-content'
@@ -68,8 +69,7 @@ async function selectLanguage(language: string) {
   finally { changingLanguage.value = false }
 }
 
-const themes = ['system', 'light', 'dark'] as const
-const theme = ref<typeof themes[number]>('system')
+const theme = ref<ThemeMode>('system')
 const changingLanguage = ref(false)
 const catalogFailure = ref(false)
 const phase = ref<AdminSessionKind | null>(null)
@@ -131,7 +131,7 @@ function savePreference(key: string, value: string) {
 function loadPreferences() {
   try {
     const savedTheme = localStorage.getItem('admin-theme')
-    theme.value = themes.find(value => value === savedTheme) ?? 'system'
+    theme.value = themeModes.find(value => value === savedTheme) ?? 'system'
   }
   catch { /* Preferences are optional when browser storage is unavailable. */ }
 }
@@ -311,22 +311,20 @@ onBeforeUnmount(() => {
 <template>
   <main class="admin-shell">
     <header class="admin-header">
-      <span class="admin-name">{{ catalog.settings.title }} · {{ t('admin.name') }}</span>
+      <div class="admin-brand">
+        <span class="admin-name">{{ catalog.settings.title }}</span>
+        <small>{{ t('admin.name') }}</small>
+      </div>
       <div class="admin-preferences">
         <LanguageSwitcher
           :label="t('admin.language')" :current="catalog.language" :choices="catalog.languages"
           :busy="changingLanguage" @select="selectLanguage"
         />
-        <div>
-          <label for="admin-theme">{{ t('admin.theme') }}</label>
-          <select id="admin-theme" v-model="theme" @change="savePreference('admin-theme', theme)">
-            <option v-for="mode in themes" :key="mode" :value="mode">{{ t(`admin.${mode}`) }}</option>
-          </select>
-        </div>
+        <ThemeSwitcher v-model="theme" :translate="t" @update:model-value="savePreference('admin-theme', $event)" />
       </div>
       <div v-if="workspaceOpen" class="admin-identity-actions">
         <button
-type="button" :aria-current="activeTool === 'account' ? 'page' : undefined" :disabled="blocked || editingState.busy"
+          type="button" :aria-current="activeTool === 'account' ? 'page' : undefined" :disabled="blocked || editingState.busy"
           @click="selectTool('account')">{{ t('admin.account') }}</button>
         <button type="button" :disabled="blocked || editingState.busy" @click="navigate(() => { void submit('logout') })">
           {{ t('admin.sign_out') }}

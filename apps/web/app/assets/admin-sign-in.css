@@ -64,11 +64,10 @@
 }
 
 .admin-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.5rem;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: .5rem 1rem;
   max-width: 78rem;
   margin-inline: auto;
 }
@@ -78,17 +77,18 @@
   font-weight: 700;
 }
 
-.admin-preferences {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+.admin-brand {
+  display: grid;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
-.admin-preferences > div {
+.admin-brand small { color: var(--admin-muted); }
+
+.admin-preferences {
   display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-  color: var(--admin-muted);
+  grid-auto-flow: column;
+  gap: .5rem;
 }
 
 .admin-workspace {
@@ -110,9 +110,12 @@
 }
 
 .admin-identity-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .35rem;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-self: end;
+  inline-size: min(100%, 17rem);
+  gap: .5rem;
 }
 
 .admin-navigation button, .admin-identity-actions button, .admin-leave button {
@@ -131,6 +134,12 @@
 
 .admin-navigation button { text-align: start; }
 
+.admin-identity-actions button {
+  box-sizing: border-box;
+  line-height: 1.2;
+  min-block-size: calc(2lh + 1rem + 2px);
+}
+
 :is(.admin-navigation, .admin-identity-actions) [aria-current="page"] {
   border-color: var(--admin-action);
   background: var(--admin-action);
@@ -145,6 +154,10 @@
 @media (max-width: 48rem) {
   .admin-workspace { grid-template-columns: minmax(0, 1fr); }
   .admin-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 40rem) {
+  .admin-brand small { line-height: 1.2; min-block-size: 2.4em; }
 }
 
 .admin-leave {
@@ -208,8 +221,7 @@
 }
 
 .admin-card input,
-.admin-card button,
-.admin-preferences select {
+.admin-card button {
   box-sizing: border-box;
   min-height: 44px;
   min-width: 0;
@@ -265,9 +277,15 @@
 }
 
 nav.access-navigation {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: .5rem;
+}
+
+nav.access-navigation button { overflow-wrap: anywhere; }
+
+@media (max-width: 38rem) {
+  nav.access-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 nav.access-navigation [aria-pressed="true"] {

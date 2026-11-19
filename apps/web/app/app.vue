@@ -35,6 +35,7 @@ useResponseHeader('Cache-Control').value = 'no-store'
 <style>
 html {
   color-scheme: light dark;
+  scrollbar-gutter: stable;
   --public-background: light-dark(#f7f5f0, #181d19);
   --public-text: light-dark(#242923, #edf2e9);
   --public-muted: light-dark(#62685f, #bbc7ba);
@@ -57,22 +58,19 @@ body { margin: 0; }
 }
 .eyebrow { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--public-muted); }
 .site-name { color: inherit; font-family: Georgia, serif; font-size: 1.6rem; text-decoration: none; }
-.site-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 1rem; margin-bottom: 2rem; }
-.site-identity { flex: 1 1 18rem; min-width: 0; }
-.site-preferences { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; max-inline-size: 100%; }
-.site-theme-control { display: grid; gap: .25rem; color: var(--public-muted); font-size: .875rem; }
-.site-interface-language { flex-basis: 100%; margin: 0; color: var(--public-muted); font-size: .875rem; }
-.site-theme-control select {
-  min-width: 0;
-  min-height: 44px;
-  max-width: 100%;
-  padding: .4rem .6rem;
-  border: 1px solid var(--public-border);
-  border-radius: .35rem;
-  background: var(--public-background);
-  color: inherit;
-  font: inherit;
+.site-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: .65rem 1rem;
+  margin-block-end: 2rem;
 }
+.site-identity { min-inline-size: 0; overflow-wrap: anywhere; }
+.site-preferences { display: grid; grid-auto-flow: column; gap: .5rem; }
+.site-header :is(.site-blurb, .site-interface-language) { grid-column: 1 / -1; }
+.site-blurb p:first-child { margin-block-start: 0; }
+.site-blurb p:last-child { margin-block-end: 0; }
+.site-interface-language { margin: 0; color: var(--public-muted); font-size: .875rem; }
 h1, h2, h3 { font-family: Georgia, serif; font-weight: 400; overflow-wrap: anywhere; }
 h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.15; margin: 1.5rem 0; }
 p, li { line-height: 1.7; }

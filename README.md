@@ -124,6 +124,7 @@ The database tests require host Go and a C compiler for race detection. They cre
 `make resource-test` requires Docker with CPU 0, Go, Node.js and Chromium. Run `npm ci --ignore-scripts` and `node node_modules/playwright/cli.js install chromium` in `apps/web` first. The harness exercises a synthetic installation with keep-alive connections, a shared CPU, and a combined 1216 MiB container memory limit without swap. To set the duration and concurrency, run `python3 scripts/test-resources.py --seconds 60 --concurrency 4`. Build and load generation run outside the measured containers. The `docker stats` samples describe container usage at sampling times.
 
 Install SQLFluff 4.5.0 into a separate environment before running `make lint-sql` or the local lint and Verify targets.
+The SQL check also reports file size and top-level statements and objects for every migration. The portal settings schema and its starter data have separate migrations.
 
 ```sh
 make python-version-check

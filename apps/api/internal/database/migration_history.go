@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const finalMigrationVersion int64 = 6
+const finalMigrationVersion int64 = 7
 
 type migrationEvent struct {
 	version int64

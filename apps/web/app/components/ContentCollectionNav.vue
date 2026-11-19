@@ -33,8 +33,8 @@ const visible = computed(() => namespaces.filter(namespace => namespace === prop
 
 <style scoped>
 .collection-nav {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 13rem));
   gap: .25rem .75rem;
   border-block-end: 1px solid currentColor;
 }
@@ -47,6 +47,7 @@ const visible = computed(() => namespaces.filter(namespace => namespace === prop
   padding: .5rem .75rem;
   border-block-end: .2rem solid transparent;
   color: inherit;
+  overflow-wrap: anywhere;
 }
 
 .collection-nav a[aria-current] {

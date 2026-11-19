@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { assertEditorMutationBlocksNavigation, eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
+import { assertStablePreferences, chooseTheme, headerGeometry } from './header-preferences.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
 assert.equal(endpoint.protocol, 'https:')
@@ -43,11 +44,10 @@ async function assertTheme(page, preference, actual) {
 }
 
 async function assertLayouts(page) {
-  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
   const verifyViewport = async (width, height) => {
     await page.setViewportSize({ width, height })
     const verifyTheme = async value => {
-      await theme.selectOption(value)
+      await chooseTheme(page, value)
       await assertTheme(page, value, value)
       await assertFit(page)
       assert.ok(await page.getByRole('button', { name: 'Continue', exact: true }).isVisible())
@@ -64,7 +64,7 @@ async function assertLayouts(page) {
   await page.reload()
   await heading(page, 'Sign in').waitFor()
   await assertTheme(page, 'dark', 'dark')
-  await theme.selectOption('system')
+  await chooseTheme(page, 'system')
   await page.emulateMedia({ colorScheme: 'dark' })
   await assertTheme(page, 'system', 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
@@ -308,11 +308,10 @@ async function verifyContentWorkflow(page, context, { type, namespace, slug, tit
 }
 
 async function assertEditorLayouts(page, editor) {
-  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
   const verifyViewport = async (width, height) => {
     await page.setViewportSize({ width, height })
     const verifyTheme = async value => {
-      await theme.selectOption(value)
+      await chooseTheme(page, value)
       await assertTheme(page, value, value)
       await assertFit(page)
       assert.ok(await editor.getByRole('button', { name: 'Save draft', exact: true }).isVisible())
@@ -434,6 +433,28 @@ async function assertPublishedLocales(page) {
   await heading(page, 'Sign in').waitFor()
 }
 
+async function verifyWorkspaceGeometry(page) {
+  const breakpoints = [[1440, 900], [768, 1024], [390, 844], [320, 844]]
+  const workspaceTop = () => page.locator('.admin-workspace').evaluate(element =>
+    element.getBoundingClientRect().top + window.scrollY)
+  await eachInOrder(breakpoints, async ([width, height]) => {
+    await page.setViewportSize({ width, height })
+    await eachInOrder(['light', 'dark'], async (theme) => {
+      await chooseTheme(page, theme)
+      const initialHeader = await headerGeometry(page)
+      const initialTop = await workspaceTop()
+      await eachInOrder(['kk', 'pl', 'ru', 'en'], async (locale) => {
+        await selectInterfaceLanguage(page, locale)
+        assertStablePreferences(initialHeader, await headerGeometry(page))
+        assert.ok(Math.abs(await workspaceTop() - initialTop) <= 1, 'A shipped language moved the workspace')
+        await assertFit(page)
+      })
+    })
+  })
+  await chooseTheme(page, 'system')
+  await page.setViewportSize({ width: 768, height: 1024 })
+}
+
 const browser = await chromium.launch()
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } })
@@ -448,6 +469,7 @@ try {
   assert.match(await negotiated.text(), /<html[^>]+lang="kk"/u)
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
+  await verifyWorkspaceGeometry(page)
   await verifySettingsPublication(page, context)
   await verifyTypeBuilder(page)
   await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })

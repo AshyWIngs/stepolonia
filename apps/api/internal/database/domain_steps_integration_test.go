@@ -8,21 +8,65 @@ import (
 
 const securityTestRole = "sp_security"
 
+func TestDomainMigrationsInitialSiteSettingsIntegration(t *testing.T) {
+	db, _ := domainQAFixture(t)
+	ctx := context.Background()
+	provider, err := Provider(db)
+	requireNoError(t, err)
+	_, err = provider.UpTo(ctx, 2)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, false)
+
+	_, err = provider.UpTo(ctx, 3)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, true)
+
+	_, err = provider.DownTo(ctx, 2)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, false)
+
+	_, err = provider.UpTo(ctx, 3)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, true)
+}
+
+func assertInitialSiteSettings(t *testing.T, db *sql.DB, populated bool) {
+	t.Helper()
+	var empty, complete, pristine bool
+	requireNoError(t, db.QueryRow(`SELECT
+ NOT EXISTS (SELECT 1 FROM public.initial_site_defaults)
+  AND NOT EXISTS (SELECT 1 FROM public.ui_message_keys)
+  AND NOT EXISTS (SELECT 1 FROM public.initial_ui_messages),
+ EXISTS (SELECT 1 FROM public.initial_site_defaults WHERE singleton AND accent='#2563eb')
+  AND (SELECT array_agg(language_code ORDER BY language_code)
+         FROM (SELECT language_code FROM public.initial_ui_messages GROUP BY language_code
+          HAVING count(*)=(SELECT count(*) FROM public.ui_message_keys)) AS catalogs)
+      IS NOT DISTINCT FROM ARRAY['en','kk','pl','ru']
+  AND (SELECT count(DISTINCT language_code) FROM public.initial_ui_messages)=4,
+ EXISTS (SELECT 1 FROM public.site_state
+          WHERE singleton AND version=1 AND draft_id IS NULL AND published_id IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM public.languages WHERE is_enabled)`).Scan(&empty, &complete, &pristine))
+	if !pristine || empty == populated || complete != populated {
+		t.Fatalf("initial site settings: empty=%t complete=%t pristine=%t, expected populated=%t",
+			empty, complete, pristine, populated)
+	}
+}
+
 func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	db, _ := domainQAFixture(t)
 	ctx := context.Background()
 	provider, err := Provider(db)
 	requireNoError(t, err)
-	_, err = provider.UpTo(ctx, 3)
+	_, err = provider.UpTo(ctx, 4)
 	requireNoError(t, err)
 
 	testDomainRegistryStep(t, ctx, db)
 
-	_, err = provider.UpTo(ctx, 4)
+	_, err = provider.UpTo(ctx, 5)
 	requireNoError(t, err)
 	testDomainEngineStep(t, ctx, db)
 
-	_, err = provider.UpTo(ctx, 5)
+	_, err = provider.UpTo(ctx, 6)
 	requireNoError(t, err)
 	testDomainIdentityStep(t, ctx, db)
 

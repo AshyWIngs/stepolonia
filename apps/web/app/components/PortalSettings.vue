@@ -364,16 +364,17 @@ onBeforeUnmount(() => { active = false })
   min-inline-size: 0;
 }
 
-.settings-header,
-.settings-actions {
-  display: flex;
-  flex-wrap: wrap;
+.settings-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 7rem);
   gap: 0.75rem;
-  align-items: center;
+  align-items: start;
 }
 
-.settings-header {
-  justify-content: space-between;
+.settings-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 11rem));
+  gap: .5rem;
 }
 
 .portal-settings h2,
@@ -437,9 +438,19 @@ onBeforeUnmount(() => { active = false })
 }
 
 .settings-navigation {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-inline-size: 0;
   gap: .5rem;
+}
+
+.settings-navigation button,
+.settings-actions button { overflow-wrap: anywhere; }
+
+@media (max-width: 40rem) {
+  .settings-header { grid-template-columns: minmax(0, 1fr); }
+  .settings-header > button { justify-self: start; }
+  .settings-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .settings-navigation [aria-current="page"] {

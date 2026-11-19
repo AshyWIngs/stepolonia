@@ -45,6 +45,7 @@ lint-sql:
 	@test "$$(sqlfluff --version)" = "sqlfluff, version 4.5.0"
 	@test -n "$(wildcard apps/api/internal/database/migrations/*.sql)"
 	sqlfluff lint --config .sqlfluff --disregard-sqlfluffignores --disable-noqa $(wildcard apps/api/internal/database/migrations/*.sql)
+	python3 scripts/migration_layout.py
 
 lint-go:
 	mkdir -p reports

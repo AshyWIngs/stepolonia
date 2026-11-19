@@ -17,7 +17,7 @@ func TestAuthRolesMigrationBoundaryIntegration(t *testing.T) {
 	if len(results) != 0 {
 		t.Fatal("repeat Up changed applied history")
 	}
-	_, err = p.DownTo(ctx, 5)
+	_, err = p.DownTo(ctx, 6)
 	requireNoError(t, err)
 	var removed bool
 	requireNoError(t, db.QueryRow(`SELECT to_regclass('public.content_item_assignments') IS NULL

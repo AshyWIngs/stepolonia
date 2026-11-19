@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHmac, randomBytes } from 'node:crypto'
+import { chooseTheme } from './header-preferences.mjs'
 
 const base32Symbols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 const passphrase = randomBytes(24).toString('base64url')
@@ -260,7 +261,7 @@ async function assertAccessLayout(page, theme, fits) {
   await eachInOrder([[1440, 900], [768, 1024], [390, 844], [320, 844]], async ([width, height]) => {
     await page.setViewportSize({ width, height })
     await eachInOrder(['light', 'dark'], async mode => {
-      await page.getByLabel('Theme', { exact: true }).selectOption(mode)
+      await chooseTheme(page, mode)
       await theme(page, mode, mode)
       await fits(page)
       assert.ok(await button(page, 'Create account').isVisible())

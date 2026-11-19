@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { get } from 'node:http'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { assertStablePreferences, chooseTheme, headerGeometry } from './header-preferences.mjs'
 
 const mode = process.argv[2] ?? '--published'
 const endpoint = new URL(process.env.STAGE14_API_URL)
@@ -52,7 +53,7 @@ function publishedHTML(html) {
 async function checkSSR() {
   const event = await documentResponse('/fr/events/stage32-event', 200)
   assert.ok(event.html.includes('Stage 3.2 Event'))
-  assert.match(event.html, /class="language-switcher-current"[^>]+data-current-language="fr"/u)
+  assert.match(event.html, /role="img"[^>]+data-current-language="fr"/u)
   assert.ok(!event.html.includes('data-testid="language-switcher"'))
   assert.ok(event.html.includes('>À la une</dt>'))
   const eventFields = event.html.replaceAll('<!--[-->', '').replaceAll('<!--]-->', '')
@@ -153,11 +154,10 @@ async function checkCollectionNavigation(page) {
   const navigation = page.getByRole('navigation', { name: 'Fixture ru navigation', exact: true })
   const events = navigation.getByRole('link', { name: 'Fixture ru events', exact: true })
   const articles = navigation.getByRole('link', { name: 'Fixture ru articles', exact: true })
-  const theme = page.getByLabel('Fixture ru admin.theme', { exact: true })
   await page.goto(`${base}/`)
   await page.waitForURL(`${base}/fr/articles`)
   assert.equal(await articles.getAttribute('aria-current'), 'page')
-  await checkPublicTheme(page, theme, events)
+  await checkPublicTheme(page, events)
   await events.focus()
   assert.ok(await events.evaluate(link => link === document.activeElement && link.offsetHeight >= 44))
   await events.press('Enter')
@@ -179,7 +179,7 @@ async function checkCollectionNavigation(page) {
   assert.equal(await page.locator('html').getAttribute('data-public-theme'), 'dark')
 }
 
-async function checkPublicTheme(page, theme, events) {
+async function checkPublicTheme(page, events) {
   await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
   const background = () => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
   await page.emulateMedia({ colorScheme: 'light' })
@@ -191,18 +191,19 @@ async function checkPublicTheme(page, theme, events) {
   const checkLayout = () => viewports.reduce(async (previous, [width, height]) => {
     await previous
     await page.setViewportSize({ width, height })
+    await headerGeometry(page)
     assert.ok(await events.isVisible())
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
   }, Promise.resolve())
-  await theme.selectOption('light')
+  await chooseTheme(page, 'light')
   await page.waitForFunction(() => document.documentElement.dataset.publicTheme === 'light')
   assert.equal(await background(), light)
   await checkLayout()
-  await theme.selectOption('dark')
+  await chooseTheme(page, 'dark')
   await page.waitForFunction(() => document.documentElement.dataset.publicTheme === 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
   await page.reload()
-  assert.equal(await theme.inputValue(), 'dark')
+  assert.equal(await page.getByTestId('theme-switcher').locator('summary').getAttribute('data-current-theme'), 'dark')
   assert.equal(await background(), dark)
   await checkLayout()
 }
@@ -316,6 +317,33 @@ async function checkPendingLanguageChange(page) {
     document.querySelector('summary[data-current-language="en"]'))
 }
 
+async function checkTranslatedDetail(page) {
+  await page.goto(`${base}/fr/articles`)
+  await page.waitForLoadState('networkidle')
+  await page.evaluate(() => { window.__stage22Navigation = 'same-document' })
+  await page.locator(`a[href="${currentPath}"]`).first().click()
+  await page.waitForURL(`${base}${currentPath}`)
+  await page.getByRole('heading', { name: articleTitle, level: 1, exact: true }).waitFor()
+  const switcher = page.getByTestId('language-switcher')
+  const summary = switcher.locator('summary')
+  assert.equal(await summary.getAttribute('data-current-language'), 'fr')
+  const detailGeometry = await headerGeometry(page)
+  await summary.press('Enter')
+  const russian = switcher.getByRole('link', { name: 'Русский', exact: true })
+  assert.equal(await russian.getAttribute('href'), '/ru/articles/stage22-ru-current')
+  assert.equal(await russian.getAttribute('hreflang'), 'ru')
+  await russian.press('Escape')
+  assert.equal(await switcher.getAttribute('open'), null)
+  assert.ok(await summary.evaluate(element => element === document.activeElement))
+  await selectContentLanguage(page, 'ru')
+  await page.waitForURL(`${base}/ru/articles/stage22-ru-current`)
+  await page.getByRole('heading', { name: 'Title stage22-ru-current', exact: true }).waitFor()
+  assertStablePreferences(detailGeometry, await headerGeometry(page))
+  assert.equal(await page.evaluate(() => window.__stage22Navigation), 'same-document')
+  assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
+  assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
+}
+
 async function checkLanguageBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
@@ -326,28 +354,7 @@ async function checkLanguageBrowser() {
     page.on('console', message => {
       if (/hydration/i.test(message.text())) errors.push(message.text())
     })
-    await page.goto(`${base}/fr/articles`)
-    await page.waitForLoadState('networkidle')
-    await page.evaluate(() => { window.__stage22Navigation = 'same-document' })
-    await page.locator(`a[href="${currentPath}"]`).first().click()
-    await page.waitForURL(`${base}${currentPath}`)
-    await page.getByRole('heading', { name: articleTitle, level: 1, exact: true }).waitFor()
-    const switcher = page.getByTestId('language-switcher')
-    const summary = switcher.locator('summary')
-    assert.equal(await summary.getAttribute('data-current-language'), 'fr')
-    await summary.press('Enter')
-    const russian = switcher.getByRole('link', { name: 'Русский', exact: true })
-    assert.equal(await russian.getAttribute('href'), '/ru/articles/stage22-ru-current')
-    assert.equal(await russian.getAttribute('hreflang'), 'ru')
-    await russian.press('Escape')
-    assert.equal(await switcher.getAttribute('open'), null)
-    assert.ok(await summary.evaluate(element => element === document.activeElement))
-    await selectContentLanguage(page, 'ru')
-    await page.waitForURL(`${base}/ru/articles/stage22-ru-current`)
-    await page.getByRole('heading', { name: 'Title stage22-ru-current', exact: true }).waitFor()
-    assert.equal(await page.evaluate(() => window.__stage22Navigation), 'same-document')
-    assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
-    assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
+    await checkTranslatedDetail(page)
     await checkPendingLanguageChange(page)
     await selectContentLanguage(page, 'en')
     await page.reload()
