@@ -22,11 +22,13 @@ export interface EditablePortal {
   languages: PortalLanguage[]
   message_keys: string[]
   slug_rules: SlugRule[]
+  language_flags?: Record<string, string>
 }
 
 interface PortalSettingsInput {
   expected_version: string
   slug_rules?: SlugRule[]
+  language_flags?: Record<string, string>
   settings: PortalFields
   catalogs: Record<string, Record<string, string>>
 }
@@ -67,11 +69,16 @@ function hasVersion(value: unknown): value is Record<string, unknown> & { versio
 function isEditablePortal(value: unknown): value is EditablePortal {
   if (!hasVersion(value) || typeof value.has_draft !== 'boolean') return false
   if (!isPortalFields(value.settings) || !isRecord(value.catalogs)) return false
+  if (value.language_flags !== undefined && !isStringRecord(value.language_flags)) return false
   const catalogues = Object.values(value.catalogs)
   return Array.isArray(value.slug_rules) && value.slug_rules.every(isSlugRule) &&
     Array.isArray(value.languages) && value.languages.every(isPortalLanguage) &&
     Array.isArray(value.message_keys) && value.message_keys.every(key => typeof key === 'string') &&
-    catalogues.every(entries => isRecord(entries) && Object.values(entries).every(text => typeof text === 'string'))
+    catalogues.every(isStringRecord)
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every(text => typeof text === 'string')
 }
 
 function isSlugRule(value: unknown): value is SlugRule {
@@ -104,8 +111,14 @@ export async function getPortalSettings(): Promise<EditablePortal> {
   return json
 }
 
-export async function savePortalSettings(csrf: string, input: PortalSettingsInput): Promise<{ version: string, publicationID: string }> {
+export async function savePortalSettings(csrf: string, input: PortalSettingsInput): Promise<{
+  version: string
+  publicationID: string
+  languageFlags?: Record<string, string>
+}> {
   const json = await readResponse(fetch('/api/v1/admin/settings/publication', mutationOptions(csrf, input)))
   if (!hasVersion(json) || typeof json.publication_id !== 'string') throw new AdminSettingsError(503)
-  return { version: json.version, publicationID: json.publication_id }
+  const flags = json.language_flags
+  if (flags !== undefined && !isStringRecord(flags)) throw new AdminSettingsError(503)
+  return { version: json.version, publicationID: json.publication_id, languageFlags: flags }
 }

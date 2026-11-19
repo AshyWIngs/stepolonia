@@ -2,13 +2,16 @@ package adminintegration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
+	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/platform"
 )
 
@@ -20,6 +23,124 @@ const (
 	eventExtraField = `{"key":"subtitle","kind":"string","scope":"localized","visibility":"private","required":false}`
 	eventCreateBody = `{"route_namespace":"events","initial_access":true,"fields":[` + eventBaseFields + `]}`
 )
+
+func TestAdminGenericCollectionAvailabilityHTTPSIntegration(t *testing.T) {
+	const (
+		key          = "meeting_records"
+		namespace    = "collection-meeting-records"
+		name         = "Protokoły spotkań"
+		path         = managedCollectionsPath + "/" + key
+		availability = path + "/availability"
+		disable      = `{"expected_version":"1","enabled":false}`
+		enable       = `{"expected_version":"2","enabled":true}`
+		creation     = `{"type_key":"` + key + `","display_name":"` + name + `","route_namespace":"` + namespace +
+			`","initial_access":true,"fields":[` + eventBaseFields +
+			`,{"key":"body","kind":"markdown","scope":"localized","visibility":"public","required":false}]}`
+	)
+	f := newAuthHTTPFixtureWithEditors(t, func(state authFixtureState, auth http.Handler) http.Handler {
+		reader := content.NewPublicReader(openPublicationRuntimeLogin(t, state.db))
+		return platform.HandlerWithAuth(nil, reader, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	}, true)
+	admin := authFull(t, f.state)
+	actor := authReq(admin)
+	call := func(method, path, payload string, status int) string {
+		t.Helper()
+		return sendDraftRequest(t, f.server, method, actor.Token, draftHTTPRequest{path: path, body: payload, csrf: actor.CSRF, status: status})
+	}
+	catalog := func() string { return call(http.MethodGet, managedCollectionsPath+"/renderers", "", http.StatusOK) }
+	if rows := catalog(); !strings.Contains(rows, `"type_key":"","route_namespace":"collection","available":true`) {
+		t.Fatalf("generic template missing: %s", rows)
+	}
+	call(http.MethodPost, managedCollectionsPath, strings.Replace(creation, namespace, "events", 1), http.StatusBadRequest)
+	var created struct {
+		TypeID      string `json:"type_id"`
+		DisplayName string `json:"display_name"`
+		Enabled     bool   `json:"enabled"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(call(http.MethodPost, managedCollectionsPath, creation, http.StatusCreated)), &created))
+	if created.TypeID == "" || created.DisplayName != name || !created.Enabled {
+		t.Fatal("generic collection was not persisted with its name and availability")
+	}
+
+	enablePolishContentLocale(t, f.state.db)
+	publisher := publicationFixture{owner: f.state.db, server: f.server, typeID: created.TypeID,
+		typeKey: key, namespace: namespace, author: actor, publisher: actor}
+	item, published := publishGenericCollection(t, publisher, call)
+	draftPath := draftHTTPPrefix + key + "/" + item
+
+	sendDraftPatch(t, f.server, actor.Token, draftHTTPRequest{availability, disable, "", http.StatusForbidden})
+	sendDraftPatch(t, f.server, "", draftHTTPRequest{availability, disable, actor.CSRF, http.StatusUnauthorized})
+	authorRole := fixturePublicationRole(t, f.state.db, "Zespół spotkań")
+	grantPublicationFields(t, f.state.db, authorRole, created.TypeID, "content.items.read", bootstrapAny)
+	author := fixturePublicationAccount(t, f.state, admin, "meetings@example.test", authorRole)
+	sendDraftPatch(t, f.server, author.Token, draftHTTPRequest{availability, disable, author.CSRF, http.StatusForbidden})
+	expireSessionStepUp(t, f.state.db, actor.Token)
+	assertPublicationProblem(t, call(http.MethodPatch, availability, disable, http.StatusForbidden), stepUpRequiredProblem)
+	authRefreshStep(t, f.state.db, actor.Token)
+	call(http.MethodPatch, availability, `{"expected_version":"1","enabled":"false"}`, http.StatusBadRequest)
+	_, err := f.state.db.Exec(`ALTER TABLE public.security_audit ADD CONSTRAINT reject_disable_audit
+ CHECK(operation<>'content.collection_disabled' OR result<>'success')`)
+	requireNoError(t, err)
+	call(http.MethodPatch, availability, disable, http.StatusServiceUnavailable)
+	call(http.MethodGet, draftPath, "", http.StatusOK)
+	_, err = f.state.db.Exec(`ALTER TABLE public.security_audit DROP CONSTRAINT reject_disable_audit`)
+	requireNoError(t, err)
+	call(http.MethodPatch, availability, disable, http.StatusOK)
+	call(http.MethodPatch, availability, disable, http.StatusConflict)
+	assertDisabledCollection(t, publisher, draftPath, name, published, call)
+
+	call(http.MethodPatch, availability, enable, http.StatusOK)
+	call(http.MethodGet, draftPath, "", http.StatusOK)
+	if options := call(http.MethodGet, managedCollectionsPath, "", http.StatusOK); !strings.Contains(options, name) {
+		t.Fatalf("restored collection missing from authoring catalog: %s", options)
+	}
+	var audited int
+	requireNoError(t, f.state.db.QueryRow(`SELECT count(*) FROM public.security_audit WHERE target_id=$1
+ AND operation IN ('content.collection_disabled','content.collection_enabled') AND result='success' AND request_id IS NOT NULL`, created.TypeID).Scan(&audited))
+	if audited != 2 {
+		t.Fatalf("availability changes recorded %d success audit events, want 2", audited)
+	}
+}
+
+func publishGenericCollection(t *testing.T, publisher publicationFixture, call func(string, string, string, int) string) (string, string) {
+	t.Helper()
+	item := publisher.prepareDraft(t)
+	if drafts := call(http.MethodGet, draftHTTPPrefix+publisher.typeKey, "", http.StatusOK); !strings.Contains(drafts, editorialTitle) {
+		t.Fatalf("generic collection's draft title missing: %s", drafts)
+	}
+	publisher.command(t, publisher.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
+	publisher.command(t, publisher.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)
+	publisher.command(t, publisher.publisher, item, publishCommand, publishBody, http.StatusOK)
+	published := publisher.public(t, http.StatusOK)
+	if !strings.Contains(published, "/pl/"+publisher.namespace+"/"+editorialSlug) {
+		t.Fatalf("unexpected generic publication: %s", published)
+	}
+	return item, published
+}
+
+func assertDisabledCollection(t *testing.T, publisher publicationFixture, draftPath, name, published string, call func(string, string, string, int) string) {
+	t.Helper()
+	draftList := draftHTTPPrefix + publisher.typeKey
+	call(http.MethodGet, draftList, "", http.StatusNotFound)
+	call(http.MethodGet, draftPath, "", http.StatusNotFound)
+	call(http.MethodPost, draftList, createDraftHTTPSBody, http.StatusNotFound)
+	call(http.MethodPatch, draftPath, `{"expected_version":"5","schema_no":"1","shared":{}}`, http.StatusNotFound)
+	if options := call(http.MethodGet, managedCollectionsPath, "", http.StatusOK); strings.Contains(options, publisher.typeKey) {
+		t.Fatalf("disabled collection visible in authoring catalog: %s", options)
+	}
+	var managed struct {
+		Collections []content.CollectionSummary `json:"collections"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(call(http.MethodGet, managedCollectionsPath+"/renderers", "", http.StatusOK)), &managed))
+	if !slices.ContainsFunc(managed.Collections, func(item content.CollectionSummary) bool {
+		return item.TypeKey == publisher.typeKey && item.DisplayName == name && !item.Enabled
+	}) {
+		t.Fatal("disabled collection missing from registry")
+	}
+	if current := publisher.public(t, http.StatusOK); current != published {
+		t.Fatal("disabling authoring changed the public snapshot")
+	}
+}
 
 func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 	f := newAuthHTTPFixtureWithEditors(t, func(_ authFixtureState, auth http.Handler) http.Handler {
@@ -64,6 +185,91 @@ func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 	expireSessionStepUp(t, f.state.db, actor.Token)
 	assertUninitializedFieldAvailableToManagers(t, f.state, typeID, call)
 	assertBoundRoleGuard(t, f.state, typeID, roleID)
+}
+
+func TestAdminCollectionIconHTTPSIntegration(t *testing.T) {
+	const (
+		firstIcon  = `<svg viewBox="0 0 24 24"><circle r="6"/></svg>`
+		secondIcon = `<svg viewBox="0 0 24 24"><rect width="16" height="16"/></svg>`
+		firstSVG   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle r="6"></circle></svg>`
+		secondSVG  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="16" height="16"></rect></svg>`
+		invalidSVG = `<svg viewBox="0 0 24 24"><text>Event</text></svg>`
+	)
+	f := newAuthHTTPFixtureWithEditors(t, func(_ authFixtureState, auth http.Handler) http.Handler {
+		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	}, true)
+	admin := authFull(t, f.state)
+	actor := authReq(admin)
+	call := func(method, path, payload string, status int) string {
+		t.Helper()
+		return sendDraftRequest(t, f.server, method, actor.Token, draftHTTPRequest{path: path, body: payload, csrf: actor.CSRF, status: status})
+	}
+	creation := func(svg string) string {
+		return fmt.Sprintf(`{%s,"icon_svg":%q}`, strings.Trim(eventCreateBody, "{}"), svg)
+	}
+	revision := func(version string, icon string) string {
+		return fmt.Sprintf(`{"expected_version":%q,"fields":[%s]%s}`, version, eventBaseFields, icon)
+	}
+	withIcon := func(svg string) string { return fmt.Sprintf(`,"icon_svg":%q`, svg) }
+
+	assertPublicationProblem(t, call(http.MethodPost, managedCollectionsPath, creation(invalidSVG), http.StatusBadRequest), "invalid_collection_icon")
+	assertCollectionIcon(t, call(http.MethodPost, managedCollectionsPath, creation(firstIcon), http.StatusCreated), firstSVG, "1")
+	assertCollectionIcon(t, call(http.MethodGet, eventCollectionPath, "", http.StatusOK), firstSVG, "1")
+	assertCollectionIconIndexes(t, call, firstSVG)
+
+	limited := fixturePublicationAccount(t, f.state, admin, "reader@example.test",
+		fixturePublicationRole(t, f.state.db, "Czytelnik wydarzeń"))
+	// Metadata writes reuse the version guard and do not require fresh MFA.
+	expireSessionStepUp(t, f.state.db, actor.Token)
+	change := revision("1", withIcon(secondIcon))
+	sendDraftPatch(t, f.server, actor.Token, draftHTTPRequest{eventCollectionPath, change, "", http.StatusForbidden})
+	sendDraftPatch(t, f.server, limited.Token, draftHTTPRequest{eventCollectionPath, change, limited.CSRF, http.StatusForbidden})
+	assertCollectionIcon(t, call(http.MethodPatch, eventCollectionPath, change, http.StatusOK), secondSVG, "2")
+	call(http.MethodPatch, eventCollectionPath, change, http.StatusConflict)
+	assertPublicationProblem(t, call(http.MethodPatch, eventCollectionPath, revision("2", withIcon(invalidSVG)), http.StatusBadRequest), "invalid_collection_icon")
+	call(http.MethodPatch, eventCollectionPath, revision("2", `,"icon_svg":null`), http.StatusBadRequest)
+	assertCollectionIcon(t, call(http.MethodGet, eventCollectionPath, "", http.StatusOK), secondSVG, "2")
+
+	assertCollectionIcon(t, call(http.MethodPatch, eventCollectionPath, revision("2", ""), http.StatusOK), secondSVG, "3")
+	assertCollectionIcon(t, call(http.MethodPatch, eventCollectionPath, revision("3", withIcon(" \t ")), http.StatusOK), "", "4")
+	assertCollectionIcon(t, call(http.MethodGet, eventCollectionPath, "", http.StatusOK), "", "4")
+	assertCollectionIconIndexes(t, call, "")
+}
+
+func assertCollectionIcon(t *testing.T, body, svg, version string) {
+	t.Helper()
+	var response struct {
+		IconSVG  *string `json:"icon_svg"`
+		Version  string  `json:"version"`
+		SchemaNo string  `json:"schema_no"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(body), &response))
+	if response.IconSVG == nil || *response.IconSVG != svg || response.Version != version || response.SchemaNo != "1" {
+		t.Fatalf("expected collection version %s, schema 1 and icon %q, got %s", version, svg, body)
+	}
+}
+
+func assertCollectionIconIndexes(t *testing.T, call func(string, string, string, int) string, svg string) {
+	t.Helper()
+	type collectionIcon struct {
+		TypeKey string  `json:"type_key"`
+		IconSVG *string `json:"icon_svg"`
+	}
+	var browse struct {
+		Items []collectionIcon `json:"items"`
+	}
+	var manage struct {
+		Collections []collectionIcon `json:"collections"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(call(http.MethodGet, managedCollectionsPath, "", http.StatusOK)), &browse))
+	requireNoError(t, json.Unmarshal([]byte(call(http.MethodGet, managedCollectionsPath+"/renderers", "", http.StatusOK)), &manage))
+	for _, rows := range [][]collectionIcon{browse.Items, manage.Collections} {
+		if !slices.ContainsFunc(rows, func(item collectionIcon) bool {
+			return item.TypeKey == "event" && item.IconSVG != nil && *item.IconSVG == svg
+		}) {
+			t.Fatalf("collection icon %q missing from the Event summary", svg)
+		}
+	}
 }
 
 func assertUninitializedFieldAvailableToManagers(t *testing.T, state authFixtureState, typeID string, call func(string, string, string, int) string) {

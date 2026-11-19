@@ -18,13 +18,22 @@ export function routeSegment(value: string | string[] | undefined): string {
   return value
 }
 
-export type ContentNamespace = 'articles' | 'events'
-export function contentNamespace(value: string | string[] | undefined): ContentNamespace {
-  if (value !== 'articles' && value !== 'events') throw publicError(404)
-  return value
+export type ContentNamespace = 'articles' | 'events' | `collection-${string}`
+export function isContentNamespace(value: string): value is ContentNamespace {
+  return value === 'articles' || value === 'events' || (/^collection-[a-z][a-z0-9-]{0,52}$/u.test(value)
+    && !['collection-article', 'collection-event', 'collection-renderers'].includes(value))
 }
-export function contentType(namespace: ContentNamespace): 'article' | 'event' {
-  return namespace === 'articles' ? 'article' : 'event'
+export function contentNamespace(value: string | string[] | undefined): ContentNamespace {
+  if (typeof value === 'string' && isContentNamespace(value)) return value
+  throw publicError(404)
+}
+export function contentType(namespace: ContentNamespace): string {
+  if (namespace === 'articles') return 'article'
+  if (namespace === 'events') return 'event'
+  return namespace.slice('collection-'.length).replaceAll('-', '_')
+}
+export function contentCollectionTitle(namespace: ContentNamespace) {
+  return namespace === 'articles' || namespace === 'events' ? namespace : 'collection'
 }
 export function contentPath(namespace: ContentNamespace, language: string, slug?: string): string {
   const path = `/${encodeURIComponent(language)}/${namespace}`

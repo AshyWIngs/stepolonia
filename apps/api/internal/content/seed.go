@@ -29,7 +29,7 @@ func SeedInitialRegistry(ctx context.Context, db *sql.DB) error {
 		if !empty || completed {
 			return problem(Conflict, "registry_seed_conflict")
 		}
-		_, err := createType(ctx, tx, initialType())
+		_, err := createType(ctx, tx, initialType(), collectionMetadata{})
 		return err
 	})
 }

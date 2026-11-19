@@ -112,7 +112,7 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  OR e.privilege='UPDATE' AND e.relname='roles' AND col.attname IN ('name','state','version')
  OR e.privilege='UPDATE' AND e.relname='session_policy' AND col.attname IN ('version','idle_timeout_minutes','absolute_timeout_hours')
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
- OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')
+ OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key','enabled')
  OR e.relname='content_items' AND col.attname IN ('id','type_id','version')
  OR e.relname='content_fields' AND col.attname IN ('type_id','field_id','key')
  OR e.relname='security_audit' AND col.attname IN ('id','occurred_at','operation','result','reason','actor_id','target_id','request_id'))))

@@ -353,7 +353,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
 		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
 		"account-security":        {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
-		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection"},
+		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection", "registrySetCollectionAvailability"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -437,6 +437,9 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 		missing := copyWithoutField(example, field)
 		privateSchemaRejects(t, registry, schema, missing)
 		for _, invalid := range []any{nil, false, ""} {
+			if invalid == false && schema.Properties[field].Type == huma.TypeBoolean {
+				continue
+			}
 			missing[field] = invalid
 			privateSchemaRejects(t, registry, schema, missing)
 		}
@@ -446,11 +449,11 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 func optionalRequestField(operation, field string) bool {
 	switch operation {
 	case registryCreateOperation:
-		return field == "initial_access"
+		return field == "initial_access" || field == typeKeyField || field == registryDisplayNameField || field == collectionIconField
 	case registryReviseOperation:
-		return field == "initialize_new_field_access"
+		return field == "initialize_new_field_access" || field == collectionIconField
 	case applySettingsOperation:
-		return field == slugRulesField
+		return field == slugRulesField || field == languageFlagsField
 	default:
 		return false
 	}

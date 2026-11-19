@@ -1,5 +1,5 @@
 import type { components } from '@stepolonia/sdk'
-import { publicError } from './public-content'
+import { isContentNamespace, publicError } from './public-content'
 
 export type PublicContent = components['schemas']['PublicItem']
 export type PublicField = PublicContent['shared'][string]
@@ -46,6 +46,7 @@ export function formatContentValue(field: Exclude<PublicField, { kind: 'boolean'
 }
 
 export function relationPath(path: string): string {
-  if (!/^\/[a-z]{2,8}(?:-[a-z0-9]{1,8})*\/(?:articles|events)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) throw publicError(503)
+  const match = /^\/[a-z]{2,8}(?:-[a-z0-9]{1,8})*\/([a-z0-9-]+)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.exec(path)
+  if (!match?.[1] || !isContentNamespace(match[1])) throw publicError(503)
   return path
 }

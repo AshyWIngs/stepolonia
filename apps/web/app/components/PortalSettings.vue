@@ -23,6 +23,8 @@ const editableSettings = ref<EditablePortal | null>(null)
 const selectedLanguage = ref('')
 const translations = ref<{ showMissing: () => Promise<void> }>()
 const slugRules = ref<{ showInvalid: (index: number) => Promise<void> }>()
+const flagEditor = ref<{ focusInvalid: () => Promise<void> }>()
+const flagUpdates = ref<Record<string, string>>({})
 const publicationStatus = ref<HTMLOutputElement | null>(null)
 const busy = ref(false)
 const dirty = ref(false)
@@ -67,6 +69,11 @@ function handleFailure(error: unknown) {
     emit('step-up')
     return
   }
+  if (error.code === 'invalid_language_flag') {
+    errorMessage('admin.language_flag_invalid')
+    void showPage('languages').then(() => flagEditor.value?.focusInvalid())
+    return
+  }
   if (error.status === 401 || error.code === 'csrf_failed') {
     emit('session-changed')
     errorMessage('admin.changed')
@@ -100,6 +107,7 @@ async function load() {
     const editable = await getPortalSettings()
     if (!active) return
     editableSettings.value = editable
+    flagUpdates.value = {}
     selectedLanguage.value = editable.languages.some(item => item.code === props.uiLanguage)
       ? props.uiLanguage : editable.settings.fallback_language
     dirty.value = false
@@ -152,6 +160,12 @@ function updateSlugRules(rules: SlugRule[]) {
   if (failure.value === 'admin.slug_rules_invalid') failure.value = ''
 }
 
+function updateLanguageFlags(flags: Record<string, string>) {
+  flagUpdates.value = flags
+  dirty.value = true
+  if (failure.value === 'admin.language_flag_invalid') failure.value = ''
+}
+
 function invalidSettingsSection(editable: EditablePortal): PortalSettingsPage | undefined {
   const settings = editable.settings
   if (!settings.title.trim()) return 'identity'
@@ -202,12 +216,15 @@ async function save() {
       settings: editable.settings,
       catalogs: editable.catalogs,
       slug_rules: rules,
+      ...(Object.keys(flagUpdates.value).length ? { language_flags: flagUpdates.value } : {}),
     })
     if (!active) return
     editable.version = result.version
     editable.published_id = result.publicationID
     editable.has_draft = false
     editable.slug_rules = rules
+    editable.language_flags = { ...editable.language_flags, ...result.languageFlags }
+    flagUpdates.value = {}
     dirty.value = false
     notice.value = 'admin.settings_saved'
     emit('published')
@@ -293,6 +310,14 @@ onBeforeUnmount(() => { active = false })
             </option>
           </select>
         </div>
+      </fieldset>
+
+      <fieldset v-show="page === 'languages'" class="settings-fields" :disabled="busy">
+        <PortalLanguageFlags
+          ref="flagEditor" :model-value="flagUpdates" :languages="editableSettings.languages"
+          :flags="editableSettings.language_flags ?? {}" :default-language="uiLanguage" :translate="translate"
+          :invalid="failure === 'admin.language_flag_invalid'" @update:model-value="updateLanguageFlags"
+        />
       </fieldset>
 
       <fieldset v-show="page === 'languages'" class="settings-fields" :disabled="busy">

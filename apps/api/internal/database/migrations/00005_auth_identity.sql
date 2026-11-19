@@ -330,6 +330,7 @@ CREATE TABLE public.security_audit (
             'content.draft_published', 'content.draft_unpublished',
             'content.draft_schema_adopted',
             'content.collection_created', 'content.collection_revised',
+            'content.collection_enabled', 'content.collection_disabled',
             'content.initial_access_granted',
             'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',

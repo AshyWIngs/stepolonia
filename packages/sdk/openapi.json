@@ -950,6 +950,13 @@
             "$ref": "#/components/schemas/Language",
             "description": "Language of the complete returned UI catalog, after fallback."
           },
+          "language_flags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe.",
+            "type": "object"
+          },
           "languages": {
             "description": "Published active UI languages ordered by code. Each has a complete catalog in this publication.",
             "items": {

@@ -3,6 +3,8 @@ import { administrationRequest } from './admin-request'
 export interface CollectionChoice {
   type_id: string
   type_key: string
+  display_name?: string
+  icon_svg?: string
   schema_no: string
   can_create: boolean
 }
@@ -151,9 +153,15 @@ export interface RegistryRenderer {
   fields: RegistryField[]
 }
 
-export interface ManagedCollection {
+export interface RegistryCollection {
   type_id: string
   type_key: string
+  display_name?: string
+  icon_svg?: string
+  enabled: boolean
+}
+
+export interface ManagedCollection extends RegistryCollection {
   route_namespace: string
   version: string
   schema_no: string
@@ -169,25 +177,35 @@ function registryPath(type: string) {
 }
 
 export function listRegistryRenderers() {
-  return administrationRequest<{ items: RegistryRenderer[] }>(`${collectionsPath}/renderers`)
+  return administrationRequest<{ items: RegistryRenderer[], collections: RegistryCollection[] }>(`${collectionsPath}/renderers`)
 }
 
 export function readManagedCollection(type: string) {
   return administrationRequest<ManagedCollection>(registryPath(type))
 }
 
-export function createCollection(renderer: RegistryRenderer, fields: RegistryField[], initialize: boolean, csrf: string) {
+export function createCollection(renderer: RegistryRenderer, fields: RegistryField[], initialize: boolean, csrf: string, metadata?: { type_key?: string, display_name?: string, icon_svg?: string }) {
   return administrationRequest<ManagedCollection>(collectionsPath, csrf, 'POST', {
     route_namespace: renderer.route_namespace,
+    ...metadata,
     initial_access: initialize,
     fields,
   })
 }
 
-export function reviseCollection(collection: ManagedCollection, fields: RegistryField[], initialize: boolean, csrf: string) {
+export function reviseCollection(collection: ManagedCollection, fields: RegistryField[], initialize: boolean, csrf: string, iconSvg?: string) {
   return administrationRequest<ManagedCollection>(registryPath(collection.type_key), csrf, 'PATCH', {
     expected_version: collection.version,
+    icon_svg: iconSvg,
     initialize_new_field_access: initialize,
     fields,
+  })
+}
+
+
+export function setCollectionAvailability(collection: ManagedCollection, enabled: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(`${registryPath(collection.type_key)}/availability`, csrf, 'PATCH', {
+    expected_version: collection.version,
+    enabled,
   })
 }

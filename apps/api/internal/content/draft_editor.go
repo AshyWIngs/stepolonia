@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"stepolonia/apps/api/internal/identity"
@@ -56,9 +57,13 @@ func (e *DraftEditor) ListDraftsForType(ctx context.Context, req identity.AuthRe
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
 	defer cancel()
-	namespaces := make([]string, 0, len(rendererChoices))
+	namespaces := make([]string, 0, len(rendererChoices)+1)
 	for _, renderer := range rendererChoices {
 		namespaces = append(namespaces, renderer.Namespace)
+	}
+	generic := collectionNamespacePrefix + strings.ReplaceAll(typeKey, "_", "-")
+	if registeredNamespace(generic) {
+		namespaces = append(namespaces, generic)
 	}
 	return e.auth.ReadDraftPage(ctx, req, typeKey, limit, offset, identity.DraftListPresentation{
 		RendererNamespaces: namespaces, TitleKey: titleFieldKey, MaxLocales: MaxDraftLocales,

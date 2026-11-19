@@ -9,12 +9,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/siteconfig"
+	"stepolonia/apps/api/internal/staticsvg"
 )
 
 const (
 	settingsTag                = "portal-settings"
 	editableSettingsSchemaName = "EditablePortalSettings"
 	slugRulesField             = "slug_rules"
+	languageFlagsField         = "language_flags"
 )
 
 var applySettingsSchema = newSettingsRequestSchema()
@@ -38,6 +40,11 @@ func newSettingsRequestSchema() *huma.Schema {
 	properties[slugRulesField] = &huma.Schema{
 		Type: huma.TypeArray, Items: rule, MaxItems: intPointer(siteconfig.MaxSlugRules),
 		Description: "When provided, replaces all editable slug suggestion rules. An empty array removes all rules. Omit to preserve the current editable rules. Each normalized language and source pair must be unique.",
+	}
+	properties[languageFlagsField] = &huma.Schema{
+		Type:                 huma.TypeObject,
+		AdditionalProperties: &huma.Schema{Type: huma.TypeString, MaxLength: intPointer(staticsvg.MaxBytes)},
+		Description:          "Optional flag updates keyed by enabled language code. An empty SVG uses a globe. Omitted languages retain their flags. Only static SVG shapes up to 4096 bytes are accepted.",
 	}
 	example := map[string]any{
 		expectedVersionField: "1",
@@ -65,7 +72,7 @@ func addSettingsSchemas(schemas map[string]*huma.Schema) {
 	schemas["Language"] = responseDTOSchema("Enabled language with its native name and text direction.", language)
 	schemas["SlugRule"] = responseDTOSchema("A canonical character replacement for slug suggestions in one content language.", slugRuleExample())
 	for name, example := range map[string]any{
-		"SettingsPublication": settingsPublicationResponse{settingsVersion{2}, exampleUUID},
+		"SettingsPublication": settingsPublicationResponse{settingsVersion: settingsVersion{2}, PublicationID: exampleUUID},
 		editableSettingsSchemaName: editableSettingsResponse{
 			settingsVersion: settingsVersion{1},
 			Settings:        settings,
@@ -73,6 +80,7 @@ func addSettingsSchemas(schemas map[string]*huma.Schema) {
 			Languages:       []siteconfig.Language{language},
 			MessageKeys:     slices.Sorted(maps.Keys(messages)),
 			SlugRules:       []siteconfig.SlugRule{slugRuleExample()},
+			LanguageFlags:   map[string]string{},
 		},
 	} {
 		description := "The activated revision and version after the transaction commits."
@@ -95,6 +103,7 @@ func settingsErrorCodes(rt route) map[int][]string {
 		404: {notFoundCode}, 405: {methodNotAllowedCode}, 503: {securityUnavailableCode},
 	}
 	if rt.method != http.MethodGet {
+		codes[400] = append(codes[400], siteconfig.InvalidLanguageFlagCode)
 		codes[403] = append(codes[403], csrfCode)
 		codes[409] = []string{"site_version_conflict"}
 		codes[413] = []string{bodyTooLargeCode}

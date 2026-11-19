@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	collectionCreatedEvent = "content.collection_created"
-	collectionRevisedEvent = "content.collection_revised"
-	initialAccessEvent     = "content.initial_access_granted"
-	newFieldAccessEvent    = "content.new_field_access_granted"
+	collectionCreatedEvent  = "content.collection_created"
+	collectionRevisedEvent  = "content.collection_revised"
+	collectionEnabledEvent  = "content.collection_enabled"
+	collectionDisabledEvent = "content.collection_disabled"
+	initialAccessEvent      = "content.initial_access_granted"
+	newFieldAccessEvent     = "content.new_field_access_granted"
 )
 
 // CollectionMutation describes fields newly created by the Registry's write
@@ -48,6 +50,25 @@ func (s *AuthService) WithCollectionCreate(ctx context.Context, req AuthRequest,
 
 func (s *AuthService) WithCollectionRevision(ctx context.Context, req AuthRequest, initialize bool, revise collectionWriter) (CollectionAccess, error) {
 	return s.withCollectionMutation(ctx, req, collectionRevisedEvent, initialize, revise)
+}
+
+// WithCollectionAvailability commits the availability change and its audit
+// entry under the same lock as authoring and permission changes.
+func (s *AuthService) WithCollectionAvailability(ctx context.Context, req AuthRequest, enabled bool, write func(context.Context, *sql.Tx) (string, error)) error {
+	if write == nil {
+		return ErrSecurityUnavailable
+	}
+	event := collectionDisabledEvent
+	if enabled {
+		event = collectionEnabledEvent
+	}
+	return s.authorizedCommand(ctx, req, []string{string(OpContentTypesManage)}, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
+		typeID, err := write(ctx, tx)
+		if err != nil {
+			return err
+		}
+		return securityAudit(ctx, tx, event, session.user, typeID, "")
+	})
 }
 
 func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthRequest, event string, initialize bool, write collectionWriter) (CollectionAccess, error) {

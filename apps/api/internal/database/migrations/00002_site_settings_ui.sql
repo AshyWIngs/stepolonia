@@ -102,6 +102,18 @@ CREATE TABLE public.site_revision_languages (
     )
 );
 
+CREATE TABLE public.site_revision_language_flags (
+    revision_id uuid NOT NULL REFERENCES public.site_revisions (id),
+    language_code text COLLATE "C" NOT NULL REFERENCES public.languages (code),
+    svg text NOT NULL,
+    CONSTRAINT site_revision_language_flags_pkey PRIMARY KEY (
+        revision_id, language_code
+    ),
+    CONSTRAINT site_revision_language_flags_size_check CHECK (
+        octet_length(svg) <= 4096
+    )
+);
+
 CREATE TABLE public.site_revision_messages (
     revision_id uuid NOT NULL,
     language_code text NOT NULL,
@@ -303,6 +315,11 @@ BEFORE INSERT OR UPDATE OR DELETE
 ON public.site_revision_languages
 FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
 
+CREATE TRIGGER site_revision_language_flags_guard
+BEFORE INSERT OR UPDATE OR DELETE
+ON public.site_revision_language_flags
+FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
+
 CREATE TRIGGER site_revision_messages_guard
 BEFORE INSERT OR UPDATE OR DELETE
 ON public.site_revision_messages
@@ -361,6 +378,16 @@ SELECT
 FROM public.site_revision_slug_rules AS r
 INNER JOIN public.public_site AS s ON r.revision_id = s.id;
 
+CREATE VIEW public.public_language_flags WITH (security_barrier = true) AS
+SELECT
+    f.revision_id,
+    f.language_code,
+    f.svg
+FROM public.site_revision_language_flags AS f
+INNER JOIN public.public_site AS s ON f.revision_id = s.id
+INNER JOIN public.languages AS l ON f.language_code = l.code AND l.is_enabled
+WHERE f.svg <> '';
+
 COMMENT ON TABLE public.ui_message_keys IS
 'Application-required message keys with their placeholder signatures.';
 
@@ -399,6 +426,15 @@ COMMENT ON TABLE public.site_revision_keys IS
 
 COMMENT ON TABLE public.site_revision_languages IS
 'UI language metadata captured for this revision.';
+
+COMMENT ON TABLE public.site_revision_language_flags IS
+'Language flags captured for one settings revision.';
+
+COMMENT ON COLUMN public.site_revision_language_flags.svg IS
+'Static SVG image. An empty value uses the standard globe.';
+
+COMMENT ON VIEW public.public_language_flags IS
+'Flags for enabled languages in the active publication.';
 
 COMMENT ON TABLE public.site_revision_messages IS
 'Editor-authored messages for a draft or sealed UI catalog.';
@@ -472,6 +508,7 @@ public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
+public.site_revision_language_flags,
 public.site_revision_messages,
 public.site_revision_slug_rules FROM public;
 
@@ -486,12 +523,14 @@ DELETE ON public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
+public.site_revision_language_flags,
 public.site_revision_messages,
 public.site_revision_slug_rules TO sp_publisher;
 
 REVOKE ALL ON public.public_site,
 public.public_ui_languages,
 public.public_ui_messages,
+public.public_language_flags,
 public.public_slug_rules FROM public;
 
 COMMENT ON TABLE public.initial_site_defaults IS
@@ -510,6 +549,7 @@ COMMENT ON COLUMN public.site_revisions.accent IS
 'Theme accent as a hexadecimal RGB color (#RRGGBB).';
 
 -- +goose Down
+DROP VIEW public.public_language_flags;
 DROP VIEW public.public_slug_rules;
 DROP VIEW public.public_ui_messages;
 DROP VIEW public.public_ui_languages;
@@ -517,6 +557,7 @@ DROP VIEW public.public_site;
 DROP TABLE public.site_state;
 DROP TABLE public.site_revision_slug_rules;
 DROP TABLE public.site_revision_messages;
+DROP TABLE public.site_revision_language_flags;
 DROP TABLE public.site_revision_languages;
 DROP TABLE public.site_revision_keys;
 DROP TABLE public.site_revisions;

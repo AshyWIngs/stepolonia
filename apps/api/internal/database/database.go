@@ -106,7 +106,7 @@ func GrantRuntime(ctx context.Context, db *sql.DB, name string) error {
 		"GRANT USAGE ON SCHEMA public TO " + role,
 		"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM " + role,
 		"REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM " + role,
-		"GRANT SELECT ON public.public_languages, public.public_content_types, public.public_content_items, public.public_content_routes, public.public_content_relations, public.public_site, public.public_ui_languages, public.public_ui_messages, public.public_slug_rules TO " + role,
+		"GRANT SELECT ON public.public_languages, public.public_content_types, public.public_content_items, public.public_content_routes, public.public_content_relations, public.public_site, public.public_ui_languages, public.public_ui_messages, public.public_slug_rules, public.public_language_flags TO " + role,
 	} {
 		if _, err := tx.ExecContext(ctx, query); err != nil {
 			return err

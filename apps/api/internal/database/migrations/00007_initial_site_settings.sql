@@ -2,6 +2,50 @@
 INSERT INTO public.initial_site_defaults (singleton, accent)
 VALUES (true, '#2563eb');
 
+UPDATE public.languages AS l
+SET
+    initial_flag_svg = '<svg xmlns="http://www.w3.org/2000/svg" '
+    || 'viewBox="0 0 60 36">' || f.shapes || '</svg>'
+FROM (
+    VALUES
+    (
+        'en',
+        '<path fill="#012169" d="M0 0h60v36H0z"></path>'
+        || '<path stroke="#ffffff" stroke-width="7" '
+        || 'd="M0 0l60 36M60 0L0 36"></path>'
+        || '<path stroke="#c8102e" stroke-width="2.5" '
+        || 'd="M0 0l60 36M60 0L0 36"></path>'
+        || '<path stroke="#ffffff" stroke-width="12" '
+        || 'd="M30 0v36M0 18h60"></path>'
+        || '<path stroke="#c8102e" stroke-width="7" '
+        || 'd="M30 0v36M0 18h60"></path>'
+    ),
+    (
+        'kk',
+        '<rect width="60" height="36" fill="#00afca"></rect>'
+        || '<path fill="#fec50c" d="M5 3h2v30H5zM3 8l3-3 3 3-3 3z'
+        || 'M3 18l3-3 3 3-3 3zM3 28l3-3 3 3-3 3z"></path>'
+        || '<circle cx="34" cy="14" r="6" fill="#fec50c"></circle>'
+        || '<path stroke="#fec50c" stroke-width="1.4" '
+        || 'd="M34 4v2m0 16v2M24 14h2m16 0h2M27 7l1 1m12 12 1 1'
+        || 'M41 7l-1 1M28 20l-1 1"></path>'
+        || '<path fill="#fec50c" d="M19 22l10 3 5 2 5-2 10-3-5 5'
+        || '-8 1-2 3-2-3-8-1z"></path>'
+    ),
+    (
+        'pl',
+        '<rect width="60" height="18" fill="#ffffff"></rect>'
+        || '<rect y="18" width="60" height="18" fill="#dc143c"></rect>'
+    ),
+    (
+        'ru',
+        '<rect width="60" height="12" fill="#ffffff"></rect>'
+        || '<rect y="12" width="60" height="12" fill="#0039a6"></rect>'
+        || '<rect y="24" width="60" height="12" fill="#d52b1e"></rect>'
+    )
+) AS f (code, shapes)
+WHERE l.code = f.code;
+
 -- +goose StatementBegin
 DO $$
 DECLARE
@@ -1065,10 +1109,10 @@ Rozszerz mój dostęp na nowe pola
 Қолданыстағы қолжетімділігімді жаңа өрістерге кеңейту
 
 admin.registry_save
-Save schema changes
-Zapisz zmiany schematu
-Сохранить изменения схемы
-Схема өзгерістерін сақтау
+Save collection changes
+Zapisz zmiany kolekcji
+Сохранить изменения коллекции
+Жинақ өзгерістерін сақтау
 
 admin.registry_create
 Create collection
@@ -2311,6 +2355,156 @@ Choose accent color
 Wybierz kolor akcentu
 Выбрать цвет акцента
 Акцент түсін таңдау
+
+collection
+Collection
+Kolekcja
+Коллекция
+Жинақ
+
+admin.registry_template
+Collection template
+Szablon kolekcji
+Шаблон коллекции
+Жинақ үлгісі
+
+admin.registry_blank_template
+General collection
+Kolekcja ogólna
+Универсальная коллекция
+Жалпы жинақ
+
+admin.registry_collection_name
+Collection name
+Nazwa kolekcji
+Название коллекции
+Жинақ атауы
+
+admin.registry_disabled_collections
+Disabled collections
+Wyłączone kolekcje
+Отключённые коллекции
+Өшірілген жинақтар
+
+admin.registry_disable
+Disable collection
+Wyłącz kolekcję
+Отключить коллекцию
+Жинақты өшіру
+
+admin.registry_enable
+Enable collection
+Włącz kolekcję
+Включить коллекцию
+Жинақты қосу
+
+admin.registry_disabled_notice
+Collection disabled.
+Kolekcja została wyłączona.
+Коллекция отключена.
+Жинақ өшірілді.
+
+admin.registry_enabled_notice
+Collection enabled.
+Kolekcja została włączona.
+Коллекция включена.
+Жинақ қосылды.
+
+admin.registry_disable_effect
+Editing will be paused and the collection will leave the menus. Published pages and drafts will be kept.
+Edycja zostanie wstrzymana, a kolekcja zniknie z menu. Opublikowane strony i szkice zostaną zachowane.
+Редактирование приостановится, коллекция исчезнет из меню. Опубликованные страницы и черновики сохранятся.
+Өңдеу тоқтатылады және жинақ мәзірден алынады. Жарияланған беттер мен нобайлар сақталады.
+
+admin.registry_enable_effect
+The collection will return to the menus for people who have access.
+Kolekcja wróci do menu osób, które mają do niej dostęp.
+Коллекция вернётся в меню пользователей с правом доступа.
+Жинақ қол жеткізу құқығы бар пайдаланушылардың мәзіріне қайтарылады.
+
+admin.sign_in_retry
+Enter your password again to continue signing in.
+Wpisz ponownie hasło, aby kontynuować logowanie.
+Введите пароль ещё раз, чтобы продолжить вход.
+Кіруді жалғастыру үшін құпиясөзді қайта енгізіңіз.
+
+admin.language_flags
+Language flags
+Flagi języków
+Флаги языков
+Тіл жалаулары
+
+admin.language_flag_saved
+Saved flag
+Zapisana flaga
+Сохранённый флаг
+Сақталған жалау
+
+admin.language_flag_svg
+Flag SVG
+Kod SVG flagi
+SVG флага
+Жалаудың SVG коды
+
+admin.language_flag_help
+Paste an SVG with simple shapes, up to 4 KB. Leave empty to use the globe.
+Wklej SVG z prostymi kształtami, do 4 KB. Puste pole wyświetla globus.
+Вставьте SVG с простыми фигурами до 4 КБ. Пустое поле отображает глобус.
+Қарапайым пішіндері бар 4 КБ дейінгі SVG енгізіңіз. Бос өріс глобусты көрсетеді.
+
+admin.language_flag_reset
+Use globe
+Użyj globusa
+Использовать глобус
+Глобусты пайдалану
+
+admin.language_flag_invalid
+This flag could not be saved. Check the SVG and try again.
+Nie można zapisać flagi. Sprawdź SVG i spróbuj ponownie.
+Не удалось сохранить флаг. Проверьте SVG и повторите попытку.
+Жалау сақталмады. SVG кодын тексеріп, қайта көріңіз.
+
+admin.navigation_labels
+Section names
+Nazwy sekcji
+Названия разделов
+Бөлім атаулары
+
+admin.registry_icon
+Collection icon (SVG)
+Ikona kolekcji (SVG)
+Значок коллекции (SVG)
+Жинақ белгішесі (SVG)
+
+admin.registry_icon_help
+Paste an SVG with a viewBox and simple shapes. Leave the field empty to use the default icon.
+Wklej SVG z atrybutem viewBox i prostymi kształtami. Puste pole przywraca ikonę domyślną.
+Вставьте SVG с атрибутом viewBox и простыми фигурами. Пустое поле возвращает стандартный значок.
+viewBox атрибуты және қарапайым пішіндері бар SVG енгізіңіз. Бос өріс әдепкі белгішені қайтарады.
+
+admin.registry_icon_preview
+Menu preview
+Podgląd w menu
+Предпросмотр в меню
+Мәзірде алдын ала қарау
+
+admin.registry_icon_pending
+Preview updates after saving.
+Podgląd zmieni się po zapisaniu.
+Предпросмотр обновится после сохранения.
+Алдын ала көрініс сақтағаннан кейін жаңарады.
+
+admin.registry_icon_default
+Use default icon
+Użyj ikony domyślnej
+Использовать стандартный значок
+Әдепкі белгішені қолдану
+
+admin.registry_icon_invalid
+Use a valid SVG with a viewBox, simple shapes, and up to 4 KB of code.
+Użyj poprawnego SVG z atrybutem viewBox, prostymi kształtami i kodem do 4 KB.
+Используйте корректный SVG с viewBox, простыми фигурами и объёмом кода до 4 КБ.
+viewBox атрибуты, қарапайым пішіндері және 4 КБ-қа дейінгі коды бар дұрыс SVG пайдаланыңыз.
 $catalog$;
     entry text[];
 BEGIN
@@ -2443,6 +2637,10 @@ VALUES
 ('ru', 'ё', 'yo');
 
 -- +goose Down
+UPDATE public.languages
+SET initial_flag_svg = ''
+WHERE code IN ('en', 'kk', 'pl', 'ru');
+
 DELETE FROM public.initial_slug_rules;
 DELETE FROM public.initial_ui_messages;
 DELETE FROM public.ui_message_keys;

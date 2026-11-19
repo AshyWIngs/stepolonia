@@ -97,33 +97,39 @@ func saveNormalizedDraft(ctx context.Context, tx *sql.Tx, expected int64, input 
 	return expected + 1, nil
 }
 
+type AppliedRevision struct {
+	PublicationID string
+	Version       int64
+	LanguageFlags map[string]string
+}
+
 // ApplyTx validates and activates a complete settings revision. The caller
 // owns account authorization, audit and commit.
-func ApplyTx(ctx context.Context, tx *sql.Tx, expected int64, input Draft) (string, int64, error) {
+func ApplyTx(ctx context.Context, tx *sql.Tx, expected int64, input Draft) (AppliedRevision, error) {
 	input, err := normalizeDraft(input)
 	if err != nil {
-		return "", 0, err
+		return AppliedRevision{}, err
 	}
 	old, err := lockDraft(ctx, tx, expected)
 	if err != nil {
-		return "", 0, err
+		return AppliedRevision{}, err
 	}
 	id, err := identifier()
 	if err != nil {
-		return "", 0, err
+		return AppliedRevision{}, err
 	}
 	if err := storeDraft(ctx, tx, id, input); err != nil {
-		return "", 0, err
+		return AppliedRevision{}, err
 	}
 	if err := activateRevision(ctx, tx, id); err != nil {
-		return "", 0, err
+		return AppliedRevision{}, err
 	}
 	if old.Valid {
 		if err := deleteDraft(ctx, tx, old.String); err != nil {
-			return "", 0, err
+			return AppliedRevision{}, err
 		}
 	}
-	return id, expected + 1, nil
+	return AppliedRevision{PublicationID: id, Version: expected + 1, LanguageFlags: input.LanguageFlags}, nil
 }
 
 func (s *Service) Publish(ctx context.Context, expected int64) (string, int64, error) {
@@ -170,14 +176,15 @@ func activateRevision(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 type Editable struct {
-	Version     int64                        `json:"version"`
-	HasDraft    bool                         `json:"has_draft"`
-	PublishedID string                       `json:"published_id"`
-	Settings    Settings                     `json:"settings"`
-	Catalogs    map[string]map[string]string `json:"catalogs"`
-	Languages   []Language                   `json:"languages"`
-	MessageKeys []string                     `json:"message_keys"`
-	SlugRules   []SlugRule                   `json:"slug_rules"`
+	Version       int64                        `json:"version"`
+	HasDraft      bool                         `json:"has_draft"`
+	PublishedID   string                       `json:"published_id"`
+	Settings      Settings                     `json:"settings"`
+	Catalogs      map[string]map[string]string `json:"catalogs"`
+	Languages     []Language                   `json:"languages"`
+	MessageKeys   []string                     `json:"message_keys"`
+	SlugRules     []SlugRule                   `json:"slug_rules"`
+	LanguageFlags map[string]string            `json:"language_flags"`
 }
 
 // ReadEditable returns the current draft, or the current publication if there
@@ -206,6 +213,10 @@ func ReadEditable(ctx context.Context, tx *sql.Tx) (Editable, error) {
 	revision := published
 	if draft.Valid {
 		revision = draft
+	}
+	result.LanguageFlags, err = readLanguageFlags(ctx, tx, editableLanguageFlagsQuery, revision)
+	if err != nil {
+		return Editable{}, err
 	}
 	if !revision.Valid {
 		result.SlugRules, err = readSlugRules(ctx, tx, initialSlugRulesQuery)

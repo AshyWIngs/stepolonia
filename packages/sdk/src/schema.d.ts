@@ -596,6 +596,10 @@ export interface components {
         Publication: {
             /** @description Language of the complete returned UI catalog, after fallback. */
             language: components["schemas"]["Language"];
+            /** @description Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe. */
+            language_flags?: {
+                [key: string]: string;
+            };
             /** @description Published active UI languages ordered by code. Each has a complete catalog in this publication. */
             languages: components["schemas"]["Language"][];
             /** @description Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code. */

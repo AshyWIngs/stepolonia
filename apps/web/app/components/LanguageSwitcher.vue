@@ -7,6 +7,7 @@ defineProps<{
   label: string
   current: LanguageChoice
   choices: LanguageChoice[]
+  flags?: Record<string, string>
   staticLabelVisible?: boolean
   busy?: boolean
 }>()
@@ -27,18 +28,27 @@ function select(code: string, event: MouseEvent, close: () => void) {
     :static-label-visible="staticLabelVisible" :busy="busy"
     :trigger-attrs="{ 'data-current-language': current.code }"
   >
+    <template #icon>
+      <LanguageFlag :svg="flags?.[current.code]" />
+    </template>
     <template #default="{ close }">
       <li v-for="choice in choices" :key="choice.code">
         <NuxtLink
           v-if="choice.href" :to="choice.href" :lang="choice.code" :hreflang="choice.code" :dir="choice.direction"
           :data-language="choice.code" :aria-current="choice.code === current.code ? 'page' : undefined"
           @click="select(choice.code, $event, close)"
-        >{{ choice.native_name }}</NuxtLink>
+        >
+          <LanguageFlag :svg="flags?.[choice.code]" />
+          {{ choice.native_name }}
+        </NuxtLink>
         <button
           v-else type="button" :disabled="busy" :lang="choice.code" :dir="choice.direction"
           :data-language="choice.code" :aria-current="choice.code === current.code ? 'true' : undefined"
           @click="select(choice.code, $event, close)"
-        >{{ choice.native_name }}</button>
+        >
+          <LanguageFlag :svg="flags?.[choice.code]" />
+          {{ choice.native_name }}
+        </button>
       </li>
     </template>
   </HeaderPreference>

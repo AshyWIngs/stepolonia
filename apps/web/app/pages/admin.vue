@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useAsyncData, useHeadSafe, useI18n, useResponseHeader } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
+import { AdminAuthError, isAdminPreauthConflict, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
 import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
+import { listCollections, listRegistryRenderers, type CollectionChoice, type RegistryCollection } from '~/utils/admin-content'
+import { AdminContentError } from '~/utils/admin-request'
 import { portalSettingsPages, type PortalSettingsPage } from '~/utils/admin-site-settings'
 import { usePublicApi } from '~/composables/usePublicApi'
 import { themeModes, type ThemeMode } from '~/composables/usePublicTheme'
@@ -87,6 +89,7 @@ const failure = ref('')
 const limited = ref(false)
 const heading = ref<HTMLElement | null>(null)
 const csrf = ref('')
+const signInLogin = ref('')
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let identityRetryTimer: ReturnType<typeof setTimeout> | undefined
 let active = true
@@ -95,6 +98,21 @@ const domains = ['content', 'registry', 'settings', 'localization', 'access'] as
 type AdminTool = typeof domains[number] | 'account' | 'signed_in'
 const activeTool = ref<AdminTool>('signed_in')
 const expandedTool = ref<AdminTool>()
+const showNavigationLabels = ref(false)
+const contentCollections = ref<CollectionChoice[]>([])
+const contentOffset = ref<number | null>(null)
+const contentSelection = ref('')
+const selectedContent = computed(() => contentCollections.value.find(entry => entry.type_key === contentSelection.value))
+const registry = ref<Awaited<ReturnType<typeof listRegistryRenderers>>>()
+const registrySelection = ref('')
+const registryCreating = ref(false)
+const registryForm = ref(0)
+const enabledCollections = computed(() => registry.value?.collections.filter(entry => entry.enabled) ?? [])
+const disabledCollections = computed(() => registry.value?.collections.filter(entry => !entry.enabled) ?? [])
+const collectionNavigationLoading = ref(false)
+const collectionNavigationError = ref('')
+const collectionPageError = ref('')
+let collectionNavigationRequest = 0
 const portalPage = ref<PortalSettingsPage>('identity')
 const accessPages = ['users', 'roles', 'audit', 'security'] as const
 const portalPages = Object.keys(portalSettingsPages) as PortalSettingsPage[]
@@ -115,7 +133,19 @@ watch(() => editingState.value.dirty, dirty => {
 })
 
 watch(phase, kind => {
-  if (kind !== 'full' && confirmingIdentity.value) void closeIdentityDialog()
+  if (kind !== 'full') {
+    if (confirmingIdentity.value) void closeIdentityDialog()
+    ++collectionNavigationRequest
+    collectionNavigationLoading.value = false
+    collectionNavigationError.value = ''
+    collectionPageError.value = ''
+    registry.value = undefined
+    registrySelection.value = ''
+    registryCreating.value = false
+    contentSelection.value = ''
+    contentCollections.value = []
+    contentOffset.value = null
+  }
 })
 
 const title = computed(() => {
@@ -130,11 +160,18 @@ const title = computed(() => {
 })
 const workspaceTitle = computed(() => {
   if (isPortalTool(activeTool.value)) return portalSettingsPages[portalPage.value].label
-  return activeTool.value === 'registry' ? 'workspace_structure' : activeTool.value
+  if (activeTool.value === 'registry') return registryCreating.value ? 'registry_create' : 'workspace_structure'
+  return activeTool.value
 })
 const blocked = computed(() => pending.value || limited.value)
 const navigationLocked = computed(() => blocked.value || editingState.value.busy || confirmingIdentity.value)
-const localizedTitle = computed(() => t(`admin.${title.value}`))
+const localizedTitle = computed(() => {
+  if (phase.value === 'full' && activeTool.value === 'registry' && !registryCreating.value && registrySelection.value) {
+    const entry = registry.value?.collections.find(entry => entry.type_key === registrySelection.value)
+    if (entry) return collectionLabel(entry)
+  }
+  return t(`admin.${title.value}`)
+})
 useHeadSafe(() => ({
   title: `${localizedTitle.value} · ${catalog.value.settings.title}`,
   htmlAttrs: { lang: locale.value, dir: catalog.value.language.direction, 'data-admin-theme': theme.value },
@@ -177,20 +214,24 @@ function handleFailure(error: unknown, action?: AdminAuthAction) {
     ? 'changed' : 'unavailable'
 }
 
+function applyRestoredSession(restored: Awaited<ReturnType<typeof restoreAdminSession>>) {
+  csrf.value = restored.csrf
+  phase.value = restored.kind
+  if (restored.kind === 'enrollment' || restored.kind === 'recovery') restrictedEntry.value = restored.kind
+  if (restored.kind !== 'full') {
+    activeTool.value = 'signed_in'
+    expandedTool.value = undefined
+    editingState.value = { dirty: false, busy: false }
+  }
+}
+
 async function refresh(moveFocus = false) {
   pending.value = true
   failure.value = ''
   try {
     const restored = await restoreAdminSession()
     if (!active) return
-    csrf.value = restored.csrf
-    phase.value = restored.kind
-    if (restored.kind === 'enrollment' || restored.kind === 'recovery') restrictedEntry.value = restored.kind
-    if (restored.kind !== 'full') {
-      activeTool.value = 'signed_in'
-      expandedTool.value = undefined
-      editingState.value = { dirty: false, busy: false }
-    }
+    applyRestoredSession(restored)
   }
   catch (error: unknown) {
     if (active) handleFailure(error)
@@ -211,6 +252,26 @@ function takeAuthFields(form: HTMLFormElement, ...names: Array<'login' | 'passwo
   }))
 }
 
+async function prepareSignIn(login: string) {
+  signInLogin.value = login
+  const restored = await restoreAdminSession()
+  if (!active) return false
+  applyRestoredSession(restored)
+  if (restored.kind === 'preauth') return true
+  await focusHeading()
+  return false
+}
+
+async function showAuthFailure(error: unknown, action: AdminAuthAction) {
+  if (!active) return
+  if (action === 'login' && isAdminPreauthConflict(error)) {
+    await refresh(true)
+    if (phase.value === 'preauth') failure.value = 'sign_in_retry'
+    return
+  }
+  handleFailure(error, action)
+}
+
 async function submit(action: Exclude<AdminAuthAction, 'step-up'>, event?: SubmitEvent) {
   if (blocked.value) return
   const form = event?.currentTarget
@@ -219,9 +280,12 @@ async function submit(action: Exclude<AdminAuthAction, 'step-up'>, event?: Submi
   notice.value = ''
   failure.value = ''
   try {
-    let fields = {}
+    let fields: Record<string, string> = {}
     if (form instanceof HTMLFormElement) {
-      if (action === 'login') fields = takeAuthFields(form, 'login', 'password')
+      if (action === 'login') {
+        fields = takeAuthFields(form, 'login', 'password')
+        if (!await prepareSignIn(fields.login ?? '')) return
+      }
       if (action === 'mfa/verify') fields = takeAuthFields(form, 'code')
     }
     csrf.value = await submitAdminAuth(action, csrf.value, fields)
@@ -230,7 +294,7 @@ async function submit(action: Exclude<AdminAuthAction, 'step-up'>, event?: Submi
     await focusHeading()
   }
   catch (error: unknown) {
-    if (active) handleFailure(error, action)
+    await showAuthFailure(error, action)
   }
   finally {
     pending.value = false
@@ -273,7 +337,7 @@ function isPortalTool(tool: AdminTool): tool is 'settings' | 'localization' {
 }
 
 function hasSubpages(tool: AdminTool) {
-  return isPortalTool(tool) || tool === 'access'
+  return isPortalTool(tool) || tool === 'access' || tool === 'content' || tool === 'registry'
 }
 
 function openTool(tool: AdminTool, moveFocus = true) {
@@ -281,6 +345,15 @@ function openTool(tool: AdminTool, moveFocus = true) {
   expandedTool.value = hasSubpages(tool) ? tool : undefined
   failure.value = ''
   notice.value = ''
+  if (tool === 'content') {
+    contentCollections.value = []
+    contentOffset.value = null
+    void loadCollectionNavigation(tool)
+  }
+  if (tool === 'registry') {
+    registry.value = undefined
+    void loadCollectionNavigation(tool)
+  }
   if (moveFocus) void focusHeading()
 }
 
@@ -321,6 +394,104 @@ function selectAccessSection(section: typeof accessSection.value) {
     accessSection.value = section
     void focusHeading()
   })
+}
+
+function collectionLabel(entry: { type_key: string, display_name?: string }) {
+  const key = `admin.registry_${entry.type_key}`
+  return entry.display_name || (Object.hasOwn(catalog.value.messages, key) ? t(key) : t('collection'))
+}
+
+function currentCollectionRequest(tool: 'content' | 'registry', request: number) {
+  return active && request === collectionNavigationRequest && activeTool.value === tool
+}
+
+async function updateContentMenu(offset: number, request: number) {
+  const page = await listCollections(offset)
+  if (!currentCollectionRequest('content', request)) return
+  contentCollections.value = offset ? [...contentCollections.value, ...page.items] : page.items
+  contentOffset.value = page.next_offset
+  if (!selectedContent.value) contentSelection.value = contentCollections.value[0]?.type_key ?? ''
+}
+
+async function updateRegistryMenu(request: number) {
+  const result = await listRegistryRenderers()
+  if (!currentCollectionRequest('registry', request)) return
+  registry.value = result
+  if (!result.collections.some(entry => entry.type_key === registrySelection.value)) registrySelection.value = ''
+}
+
+async function loadCollectionNavigation(tool: 'content' | 'registry', offset = 0) {
+  const request = ++collectionNavigationRequest
+  collectionNavigationLoading.value = true
+  collectionNavigationError.value = ''
+  collectionPageError.value = ''
+  try {
+    if (tool === 'content') await updateContentMenu(offset, request)
+    else await updateRegistryMenu(request)
+  }
+  catch (error: unknown) {
+    if (!currentCollectionRequest(tool, request)) return
+    if (error instanceof AdminContentError && error.status === 401) {
+      await refresh(true)
+      return
+    }
+    const message = error instanceof AdminContentError && error.status === 403 ? 'admin.access_denied' : 'admin.unavailable'
+    if (offset > 0) collectionPageError.value = message
+    else collectionNavigationError.value = message
+  }
+  finally {
+    if (request === collectionNavigationRequest) collectionNavigationLoading.value = false
+  }
+}
+
+function selectContent(key: string) {
+  if (key === contentSelection.value) return
+  navigate(() => {
+    editingState.value = { dirty: false, busy: false }
+    contentSelection.value = key
+    void focusHeading()
+  })
+}
+
+function selectRegistry(key = '', create = false) {
+  if (key === registrySelection.value && create === registryCreating.value) return
+  navigate(() => {
+    editingState.value = { dirty: false, busy: false }
+    registrySelection.value = key
+    registryCreating.value = create
+    ++registryForm.value
+    void focusHeading()
+  })
+}
+
+function collectionSaved(entry: RegistryCollection) {
+  if (!registry.value) return
+  registry.value = {
+    items: registry.value.items.map(item => item.type_key === entry.type_key ? { ...item, available: false } : item),
+    collections: [...registry.value.collections.filter(item => item.type_key !== entry.type_key), entry]
+      .sort((first, second) => first.type_key.localeCompare(second.type_key)),
+  }
+  registryCreating.value = false
+  registrySelection.value = entry.enabled ? entry.type_key : ''
+  if (!entry.enabled) {
+    editingState.value = { dirty: false, busy: false }
+    notice.value = 'registry_disabled_notice'
+    void focusHeading()
+  }
+}
+
+function navigationName(tool: AdminTool) {
+  return t(tool === 'registry' ? 'admin.workspace_structure' : `admin.${tool}`)
+}
+
+function closeNavigationGroup(tool: AdminTool, event: KeyboardEvent) {
+  if (expandedTool.value !== tool) return
+  event.stopPropagation()
+  expandedTool.value = undefined
+  const compact = document.getElementById(`admin-rail-button-${tool}`)
+  const labelled = document.getElementById(`admin-nav-button-${tool}`)
+  if (compact?.getClientRects().length) compact.focus()
+  else labelled?.focus()
 }
 
 async function changeRestrictedEntry(mode: RestrictedEntryMode | null) {
@@ -446,6 +617,7 @@ onBeforeUnmount(() => {
       <div class="admin-preferences">
         <LanguageSwitcher
           :label="t('admin.language')" :current="catalog.language" :choices="catalog.languages"
+          :flags="catalog.language_flags"
           :busy="changingLanguage" @select="selectLanguage"
         />
         <ThemeSwitcher v-model="theme" :translate="t" @update:model-value="savePreference('admin-theme', $event)" />
@@ -498,26 +670,96 @@ onBeforeUnmount(() => {
       </form>
     </dialog>
     <div :class="{ 'admin-workspace': workspaceOpen }">
-      <nav v-if="workspaceOpen" class="admin-navigation" :aria-label="t('admin.name')">
-        <ul class="admin-nav-domains">
-          <li v-for="tool in domains" :key="tool" :class="{ 'admin-nav-open': expandedTool === tool }">
+      <nav v-if="workspaceOpen" class="admin-navigation" :class="{ 'admin-nav-show-labels': showNavigationLabels }" :aria-label="t('admin.name')">
+        <div class="admin-nav-mobile-tools">
+          <button type="button" :aria-pressed="showNavigationLabels" @click="showNavigationLabels = !showNavigationLabels">
+            <AdminIcon name="menu" />
+            <span>{{ t('admin.navigation_labels') }}</span>
+          </button>
+        </div>
+        <ul class="admin-nav-rail">
+          <li v-for="tool in domains" :key="tool">
             <button
-              type="button" class="admin-nav-parent" :class="{ 'admin-nav-active': activeTool === tool }"
+              :id="`admin-rail-button-${tool}`" type="button" class="admin-nav-rail-button"
+              :class="{ 'admin-nav-active': activeTool === tool }" :aria-label="navigationName(tool)" :title="navigationName(tool)"
+              :aria-current="activeTool === tool ? 'location' : undefined"
+              :aria-expanded="hasSubpages(tool) ? expandedTool === tool : undefined"
+              :aria-controls="hasSubpages(tool) ? `admin-nav-${tool}` : undefined"
+              :aria-disabled="navigationLocked || undefined"
+              @click="selectTool(tool)" @keydown.esc="closeNavigationGroup(tool, $event)"
+            >
+              <AdminIcon :name="tool" />
+            </button>
+          </li>
+        </ul>
+        <ul class="admin-nav-domains">
+          <li
+            v-for="tool in domains" :key="tool" :class="{ 'admin-nav-open': expandedTool === tool }"
+            @keydown.esc="closeNavigationGroup(tool, $event)"
+          >
+            <button
+              :id="`admin-nav-button-${tool}`" type="button" class="admin-nav-parent" :class="{ 'admin-nav-active': activeTool === tool }"
               :aria-current="activeTool === tool && !hasSubpages(tool) ? 'page' : undefined"
               :aria-expanded="hasSubpages(tool) ? expandedTool === tool : undefined"
               :aria-controls="hasSubpages(tool) ? `admin-nav-${tool}` : undefined"
               :aria-disabled="navigationLocked || undefined" @click="selectTool(tool)"
             >
-              {{ t(tool === 'registry' ? 'admin.workspace_structure' : `admin.${tool}`) }}
+              <AdminIcon :name="tool" />
+              <span class="admin-nav-text">{{ navigationName(tool) }}</span>
               <span v-if="hasSubpages(tool)" class="admin-nav-chevron" aria-hidden="true" />
             </button>
+            <p v-if="expandedTool === tool" class="admin-nav-mobile-title" aria-hidden="true">{{ navigationName(tool) }}</p>
             <ul v-if="hasSubpages(tool)" v-show="expandedTool === tool" :id="`admin-nav-${tool}`" class="admin-nav-children">
               <template v-if="isPortalTool(tool)">
                 <li v-for="page in portalPages.filter(item => portalSettingsPages[item].section === tool)" :key="page">
                   <button
                     type="button" :aria-current="activeTool === tool && portalPage === page ? 'page' : undefined"
                     :aria-disabled="navigationLocked || undefined" @click="selectPortalPage(page)"
-                  >{{ t(`admin.${portalSettingsPages[page].label}`) }}</button>
+                  >
+                    <AdminIcon :name="page" />
+                    <span class="admin-nav-text">{{ t(`admin.${portalSettingsPages[page].label}`) }}</span>
+                  </button>
+                </li>
+              </template>
+              <template v-else-if="tool === 'content'">
+                <li v-for="entry in contentCollections" :key="entry.type_id">
+                  <button
+                    type="button" dir="auto" :aria-current="activeTool === tool && contentSelection === entry.type_key ? 'page' : undefined"
+                    :aria-disabled="navigationLocked || undefined" @click="selectContent(entry.type_key)"
+                  >
+                    <AdminIcon name="collection" :icon-svg="entry.icon_svg" />
+                    <span class="admin-nav-text" dir="auto">{{ collectionLabel(entry) }}</span>
+                  </button>
+                </li>
+                <li v-if="contentOffset !== null">
+                  <button
+                    type="button" :disabled="collectionNavigationLoading || navigationLocked"
+                    @click="loadCollectionNavigation('content', contentOffset)"
+                  >
+                    <AdminIcon name="more" />
+                    <span class="admin-nav-text">{{ t('admin.content_more_collections') }}</span>
+                  </button>
+                </li>
+                <li v-if="collectionPageError" class="admin-error" role="alert">{{ t(collectionPageError) }}</li>
+              </template>
+              <template v-else-if="tool === 'registry'">
+                <li>
+                  <button
+                    type="button" :aria-current="activeTool === tool && !registrySelection && !registryCreating ? 'page' : undefined"
+                    :aria-disabled="navigationLocked || undefined" @click="selectRegistry()"
+                  >
+                    <AdminIcon name="registry" />
+                    <span class="admin-nav-text">{{ t('admin.content_collections') }}</span>
+                  </button>
+                </li>
+                <li v-for="entry in enabledCollections" :key="entry.type_id">
+                  <button
+                    type="button" dir="auto" :aria-current="activeTool === tool && registrySelection === entry.type_key ? 'page' : undefined"
+                    :aria-disabled="navigationLocked || undefined" @click="selectRegistry(entry.type_key)"
+                  >
+                    <AdminIcon name="collection" :icon-svg="entry.icon_svg" />
+                    <span class="admin-nav-text" dir="auto">{{ collectionLabel(entry) }}</span>
+                  </button>
                 </li>
               </template>
               <template v-else>
@@ -525,7 +767,10 @@ onBeforeUnmount(() => {
                   <button
                     type="button" :aria-current="activeTool === tool && accessSection === page ? 'page' : undefined"
                     :aria-disabled="navigationLocked || undefined" @click="selectAccessSection(page)"
-                  >{{ t(`admin.${page}`) }}</button>
+                  >
+                    <AdminIcon :name="page" />
+                    <span class="admin-nav-text">{{ t(`admin.${page}`) }}</span>
+                  </button>
                 </li>
               </template>
             </ul>
@@ -548,7 +793,7 @@ onBeforeUnmount(() => {
         />
         <form v-else-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'admin-auth-error' : undefined" @submit.prevent="submit('login', $event)">
           <label for="admin-login">{{ t('admin.login') }}</label>
-          <input id="admin-login" name="login" type="text" required autocomplete="username" spellcheck="false">
+          <input id="admin-login" name="login" type="text" :value="signInLogin" required autocomplete="username" spellcheck="false">
           <label for="admin-password">{{ t('admin.password') }}</label>
           <input id="admin-password" name="password" type="password" required autocomplete="current-password">
           <button type="submit" :disabled="blocked">{{ t('admin.continue') }}</button>
@@ -574,16 +819,45 @@ onBeforeUnmount(() => {
             @show-page="openPortalPage" @published="refreshPublishedCatalog"
             @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
           />
-          <AdminContentWorkspace
-            v-if="activeTool === 'content'" :csrf="csrf" :ui-language="locale" :translate="t"
-            :default-language="catalog.settings.default_language" :slug-rules="catalog.slug_rules ?? []"
-            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
-          />
-          <AdminTypeBuilder
-            v-if="activeTool === 'registry'" :csrf="csrf" :ui-language="locale" :translate="t"
-            :languages="catalog.languages"
-            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
-          />
+          <template v-if="activeTool === 'content' || activeTool === 'registry'">
+            <p v-if="collectionNavigationLoading"><output>{{ t('admin.working') }}</output></p>
+            <template v-if="collectionNavigationError">
+              <p role="alert">{{ t(collectionNavigationError) }}</p>
+              <button type="button" @click="loadCollectionNavigation(activeTool)">{{ t('admin.retry') }}</button>
+            </template>
+            <AdminContentWorkspace
+              v-else-if="activeTool === 'content' && selectedContent" :key="selectedContent.type_id"
+              :collection="selectedContent" :collection-label="collectionLabel(selectedContent)" :csrf="csrf" :ui-language="locale" :translate="t"
+              :default-language="catalog.settings.default_language" :slug-rules="catalog.slug_rules ?? []"
+              @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
+            />
+            <p v-else-if="activeTool === 'content' && !collectionNavigationLoading">{{ t('admin.content_no_collections') }}</p>
+            <template v-else-if="activeTool === 'registry' && registry">
+              <AdminTypeBuilder
+                v-if="registryCreating || registrySelection" :key="registryForm"
+                :collection-key="registrySelection" :renderers="registry.items" :csrf="csrf" :ui-language="locale" :translate="t"
+                :languages="catalog.languages" :slug-rules="catalog.slug_rules ?? []" :collection-label="collectionLabel"
+                @saved="collectionSaved" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
+              />
+              <div v-else class="admin-collection-overview">
+                <button type="button" class="admin-collection-action" @click="selectRegistry('', true)">
+                  <AdminIcon name="add" />
+                  {{ t('admin.registry_create') }}
+                </button>
+                <details v-if="disabledCollections.length">
+                  <summary>{{ t('admin.registry_disabled_collections') }}</summary>
+                  <ul>
+                    <li v-for="entry in disabledCollections" :key="entry.type_id">
+                      <button type="button" class="admin-secondary admin-collection-action" @click="selectRegistry(entry.type_key)">
+                        <AdminIcon name="collection" :icon-svg="entry.icon_svg" />
+                        <span dir="auto">{{ collectionLabel(entry) }}</span>
+                      </button>
+                    </li>
+                  </ul>
+                </details>
+              </div>
+            </template>
+          </template>
           <AdminAccount
             v-if="activeTool === 'account'" :csrf="csrf" :ui-language="locale" :translate="t"
             @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
@@ -610,4 +884,29 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @import '../assets/admin-sign-in.css';
+
+.admin-collection-overview {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+}
+
+.admin-collection-action {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.admin-collection-overview ul {
+  display: grid;
+  gap: .5rem;
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+.admin-collection-overview summary {
+  align-content: center;
+  min-block-size: 44px;
+  cursor: pointer;
+}
 </style>

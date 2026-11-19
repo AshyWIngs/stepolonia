@@ -346,7 +346,7 @@ GRANT SELECT (type_id, field_id, key) ON public.content_fields TO sp_security;
 
 REVOKE ALL ON public.content_item_assignments FROM public;
 GRANT SELECT, INSERT, DELETE ON public.content_item_assignments TO sp_security;
-GRANT SELECT (key) ON public.content_types TO sp_security;
+GRANT SELECT (key, enabled) ON public.content_types TO sp_security;
 GRANT SELECT (id, type_id, version) ON public.content_items TO sp_security;
 GRANT UPDATE (version) ON public.content_items TO sp_security;
 
@@ -373,7 +373,7 @@ GRANT EXECUTE ON FUNCTION public.delete_archived_role(
 
 -- +goose Down
 DROP FUNCTION public.delete_archived_role(uuid, bigint);
-REVOKE SELECT (id, key) ON public.content_types FROM sp_security;
+REVOKE SELECT (id, key, enabled) ON public.content_types FROM sp_security;
 REVOKE SELECT (type_id, field_id, key)
 ON public.content_fields FROM sp_security;
 REVOKE SELECT (id, type_id, version), UPDATE (version)

@@ -42,6 +42,7 @@ const hasAlternateLanguage = computed(() => choices.value.some(language => langu
     <div v-if="publication" class="site-preferences">
       <LanguageSwitcher
         :label="t('admin.language')" :current="current" :choices="choices"
+        :flags="publication.language_flags"
         :static-label-visible="!hasAlternateLanguage"
         @select="preference = $event"
       />

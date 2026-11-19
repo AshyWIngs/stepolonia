@@ -39,6 +39,13 @@ type publicationFixture struct {
 	publisherGrant             string
 }
 
+func enablePolishContentLocale(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
+VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
+	requireNoError(t, err)
+}
+
 func newPublicationFixture(t *testing.T, typeKey, namespace string) publicationFixture {
 	t.Helper()
 	ctx := context.Background()
@@ -52,9 +59,7 @@ func newPublicationFixture(t *testing.T, typeKey, namespace string) publicationF
 	} else {
 		requireNoError(t, db.QueryRow("SELECT id::text FROM public.content_types WHERE key=$1", typeKey).Scan(&typeID))
 	}
-	_, err := db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
-VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
-	requireNoError(t, err)
+	enablePolishContentLocale(t, db)
 	authorRole := fixturePublicationRole(t, db, "Pracownia tekstu")
 	for _, operation := range []string{"content.items.create", "content.items.read", "content.items.update", "content.items.ready"} {
 		scope := bootstrapAssigned

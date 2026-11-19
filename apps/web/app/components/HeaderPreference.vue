@@ -49,7 +49,7 @@ function focusout(event: FocusEvent) {
       >
         <span :id="labelId" class="header-preference-label">{{ label }}</span>
         <span :id="currentId" class="header-preference-label" :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
-        <PreferenceIcon :name="icon" />
+        <slot name="icon"><PreferenceIcon :name="icon" /></slot>
       </summary>
       <ul class="header-preference-options">
         <slot :close="close" />
@@ -59,7 +59,7 @@ function focusout(event: FocusEvent) {
       v-else class="header-preference-trigger" :aria-hidden="staticLabelVisible || undefined"
       :title="staticLabelVisible ? undefined : `${label} · ${current}`" v-bind="triggerAttrs"
     >
-      <PreferenceIcon :name="icon" />
+      <slot name="icon"><PreferenceIcon :name="icon" /></slot>
       <span v-if="!staticLabelVisible" class="header-preference-label">
         {{ label }} · <span :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
       </span>

@@ -37,11 +37,13 @@ type Publication struct {
 	Languages         []Language        `json:"languages" nullable:"false" doc:"Published active UI languages ordered by code. Each has a complete catalog in this publication."`
 	Messages          map[string]string `json:"messages" doc:"Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code."`
 	SlugRules         []SlugRule        `json:"slug_rules" nullable:"false" doc:"Published slug suggestion rules ordered by content language code and source character."`
+	LanguageFlags     map[string]string `json:"language_flags,omitempty" doc:"Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe."`
 }
 type Draft struct {
-	Settings  Settings
-	Catalogs  map[string]map[string]string
-	SlugRules []SlugRule
+	Settings      Settings
+	Catalogs      map[string]map[string]string
+	SlugRules     []SlugRule
+	LanguageFlags map[string]string
 }
 
 const (
@@ -135,7 +137,7 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 	if version != "" && !strings.EqualFold(version, result.Version) {
 		return result, failure(409, versionConflictCode)
 	}
-	if err = readCatalog(ctx, tx, &result); err != nil {
+	if err = readLocalization(ctx, tx, &result); err != nil {
 		return result, err
 	}
 	result.SlugRules, err = readSlugRules(ctx, tx, publishedSlugRulesQuery, result.Version)
@@ -171,6 +173,10 @@ func normalizeDraft(input Draft) (Draft, error) {
 	}
 
 	input.Catalogs = catalogs
+	input.LanguageFlags, err = normalizeLanguageFlags(input.LanguageFlags)
+	if err != nil {
+		return Draft{}, err
+	}
 	input.SlugRules, err = normalizeSlugRules(input.SlugRules)
 	if err != nil {
 		return Draft{}, err
@@ -193,6 +199,9 @@ func storeDraft(ctx context.Context, tx *sql.Tx, id string, input Draft) error {
 		if err := storeCatalog(ctx, tx, id, code, messages); err != nil {
 			return err
 		}
+	}
+	if err = storeLanguageFlags(ctx, tx, id, input.LanguageFlags); err != nil {
+		return err
 	}
 	return storeSlugRules(ctx, tx, id, input.SlugRules)
 }
@@ -218,6 +227,7 @@ func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map
 }
 func deleteDraft(ctx context.Context, tx *sql.Tx, id string) error {
 	for _, query := range []string{
+		"DELETE FROM public.site_revision_language_flags WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_slug_rules WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_messages WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_languages WHERE revision_id=$1",
@@ -250,7 +260,7 @@ func checkPublicRole(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func readCatalog(ctx context.Context, tx *sql.Tx, result *Publication) error {
+func readLocalization(ctx context.Context, tx *sql.Tx, result *Publication) error {
 	languages, err := readLanguages(ctx, tx, result.Version)
 	if err != nil {
 		return err
@@ -268,7 +278,8 @@ func readCatalog(ctx context.Context, tx *sql.Tx, result *Publication) error {
 		return failure(503, unavailableCode)
 	}
 	result.Messages = messages
-	return nil
+	result.LanguageFlags, err = readLanguageFlags(ctx, tx, publishedLanguageFlagsQuery, result.Version)
+	return err
 }
 func selectLanguage(languages []Language, requested, fallback string) Language {
 	var result Language

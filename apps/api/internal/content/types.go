@@ -82,6 +82,9 @@ type TypeSchema struct {
 	TypeID         string
 	Key            string
 	RouteNamespace string
+	DisplayName    string
+	IconSVG        string
+	Enabled        bool
 	Version        int64
 	SchemaNo       int64
 	Fields         []Definition

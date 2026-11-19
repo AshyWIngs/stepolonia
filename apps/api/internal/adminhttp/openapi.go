@@ -78,7 +78,7 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultAccountPageLimit, identity.MaxAccountPageLimit, identity.MaxAccountPageOffset)...)
 	case listCollectionsOperation:
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
-	case registryReadOperation, registryReviseOperation:
+	case registryReadOperation, registryReviseOperation, registryAvailabilityOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection to manage."))
 	default:
 		if rt.operationID == replaceContentAssigneesOperation || rt.operationID == readContentAssigneesOperation || authTag(rt) == contentDraftTag {
@@ -593,6 +593,7 @@ func privateRoutes() map[string][]route {
 	all[contentDraftPath] = itemDraftRoutes
 	all[contentCollectionsPath] = []route{listCollectionsRoute, registryCreateRoute}
 	all[registryCollectionPath] = []route{registryReadRoute, registryReviseRoute}
+	all[registryAvailabilityPath] = []route{registryAvailabilityRoute}
 	all[registryRenderersPath] = []route{registryRendererRoute}
 	all[draftMetadataPath] = []route{readDraftMetadataRoute}
 	for path, rt := range draftCandidateRoutes {

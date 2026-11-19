@@ -83,7 +83,7 @@ func draftListScope(ctx context.Context, tx *sql.Tx, userID, typeKey string) (dr
  JOIN public.permission_operations o ON o.key=g.operation AND o.scope='content'
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
  JOIN public.user_roles m ON m.role_id=r.id AND m.user_id=$1
- WHERE t.key=$2 AND g.operation=$3 AND g.scope='content' AND g.object_scope IN ('any','assigned')
+ WHERE t.key=$2 AND t.enabled AND g.operation=$3 AND g.scope='content' AND g.object_scope IN ('any','assigned')
  GROUP BY t.id`, userID, typeKey, OpContentRead).Scan(&scope.typeID, &scope.anyItem)
 	if errors.Is(err, sql.ErrNoRows) {
 		return draftPageScope{}, ErrNotFound

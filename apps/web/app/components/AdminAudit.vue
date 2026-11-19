@@ -41,6 +41,8 @@ const eventLabels = new Map([
   ['content.draft_schema_adopted', 'admin.content_adopt_schema'],
   ['content.collection_created', 'admin.registry_create'],
   ['content.collection_revised', 'admin.registry_save'],
+  ['content.collection_enabled', 'admin.registry_enable'],
+  ['content.collection_disabled', 'admin.registry_disable'],
   ['settings.published', 'admin.settings_save_changes'],
   ['security.session_policy_changed', 'admin.session_policy_save'],
   ['mfa.replaced', 'admin.account_replace_factor'],

@@ -155,8 +155,17 @@
   overflow-wrap: anywhere;
 }
 
-.admin-navigation button { inline-size: 100%; text-align: start; overflow-wrap: break-word; }
-.admin-navigation .admin-nav-parent { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.admin-navigation button {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  inline-size: 100%;
+  text-align: start;
+}
+
+.admin-nav-text { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+
+.admin-nav-mobile-tools, .admin-nav-rail, .admin-nav-mobile-title { display: none; }
 .admin-nav-children button { font-weight: 500; }
 .admin-navigation .admin-nav-active:not([aria-current]), .admin-navigation button:not([aria-disabled="true"], [aria-current]):hover { background: var(--admin-bg); }
 
@@ -171,7 +180,7 @@
 
 [aria-expanded="true"] > .admin-nav-chevron { transform: rotate(225deg); }
 
-.admin-navigation [aria-current="page"], .admin-header-action[aria-current="page"] {
+.admin-navigation [aria-current], .admin-header-action[aria-current="page"] {
   border-color: var(--admin-action);
   background: var(--admin-action);
   color: var(--admin-action-text);
@@ -186,6 +195,43 @@
   .admin-workspace { grid-template-columns: minmax(0, 1fr); }
   .admin-nav-domains, .admin-nav-children { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-nav-open { grid-column: 1 / -1; }
+}
+
+@media (max-width: 40rem) {
+  .admin-nav-mobile-tools {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .admin-nav-mobile-tools button { inline-size: auto; }
+  .admin-navigation.admin-nav-show-labels .admin-nav-domains { grid-template-columns: minmax(0, 1fr); }
+
+  .admin-navigation:not(.admin-nav-show-labels) {
+    .admin-nav-domains { grid-template-columns: minmax(0, 1fr); }
+    .admin-nav-parent, .admin-nav-domains > li:not(.admin-nav-open) { display: none; }
+    .admin-nav-mobile-title {
+      display: block;
+      margin: .75rem .5rem .25rem;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .admin-nav-rail {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(44px, 1fr));
+      gap: .25rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .admin-nav-rail-button { justify-content: center; padding: .5rem; }
+  }
+
+}
+
+@media (max-width: 24rem) {
+  .admin-nav-domains, .admin-nav-children { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (width > 48rem) {

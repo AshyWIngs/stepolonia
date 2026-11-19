@@ -240,8 +240,10 @@ async function provision(page, userPage, login, role) {
 }
 
 async function openCollection(page, type) {
-  await button(page, 'Content').click()
-  await page.getByRole('combobox', { name: 'Collection', exact: true }).selectOption(type)
+  const materials = button(page, 'Content')
+  if (await materials.getAttribute('aria-expanded') !== 'true') await materials.click()
+  const label = type === 'article' ? 'Article' : 'Event'
+  await page.locator('#admin-nav-content').getByRole('button', { name: label, exact: true }).click()
 }
 
 async function backToDrafts(page) {

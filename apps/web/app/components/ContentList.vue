@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
 import { usePublicUi } from '~/composables/usePublicUi'
-import { contentPageSize, contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
+import { contentCollectionTitle, contentPageSize, contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
 
 defineOptions({ name: 'PublishedContentList' })
 
@@ -27,7 +27,7 @@ const seoLinks = computed(() => {
   return contentSeoLinks(origin, listPath, namespace, translations)
 })
 useHead(() => ({
-  title: `${t(namespace)} | ${site?.title}`,
+  title: `${t(contentCollectionTitle(namespace))} | ${site?.title}`,
   link: seoLinks.value,
   meta: [{ name: 'description', content: site?.description }],
 }))
@@ -37,7 +37,7 @@ useHead(() => ({
   <section v-if="data" :lang="publication?.language.code" :dir="publication?.language.direction">
     <PublicSiteHeader :namespace="namespace" :languages="data.languages" :current="data.language" :current-path="listPath" />
     <ContentCollectionNav :namespace="namespace" :language="data.language.code" />
-    <h1>{{ t(namespace) }}</h1>
+    <h1>{{ t(contentCollectionTitle(namespace)) }}</h1>
     <ul v-if="data.items.length" class="article-list" :lang="data.language.code" :dir="data.language.direction">
       <li v-for="article in data.items" :key="article.item_id">
         <h2><NuxtLink :to="contentPath(namespace, article.language, article.slug)">{{ contentTitle(article) }}</NuxtLink></h2>

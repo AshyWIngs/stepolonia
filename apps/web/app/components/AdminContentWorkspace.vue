@@ -3,13 +3,15 @@ import { AdminContentError } from '~/utils/admin-request'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { usePublicApi } from '~/composables/usePublicApi'
-import { createDraft, listCollections, listDrafts } from '~/utils/admin-content'
+import { createDraft, listDrafts } from '~/utils/admin-content'
 import type { CollectionChoice, DraftSummary } from '~/utils/admin-content'
 import { ownValue } from '~/utils/draft-edit-buffer'
 import type { SlugRule } from '~/utils/slug-suggestion'
 
 const props = defineProps<{
   csrf: string
+  collection: CollectionChoice
+  collectionLabel: string
   uiLanguage: string
   defaultLanguage: string
   slugRules: SlugRule[]
@@ -17,17 +19,15 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const { client, request } = usePublicApi()
-const collections = ref<CollectionChoice[]>([])
 const languages = ref<components['schemas']['Language'][]>([])
 const drafts = ref<DraftSummary[]>([])
-const selectedType = ref('')
+const selectedType = computed(() => props.collection.type_key)
 const selectedItem = ref('')
 const initialLanguage = ref('')
 const lastLanguages = new Map<string, string>()
 const pageOffsets = new Map<string, number>()
 let draftChanged = false
 const openedType = ref('')
-const collectionOffset = ref<number | null>(null)
 const draftOffset = ref<number | null>(null)
 const opener = ref<HTMLElement | null>(null)
 const heading = ref<HTMLElement | null>(null)
@@ -38,7 +38,6 @@ const loaded = ref(false)
 const failure = ref('')
 const active = ref(true)
 
-const selectedCollection = computed(() => collections.value.find(item => item.type_key === selectedType.value))
 watch([creating, editorState], ([creatingDraft, state]) => {
   emit('editing-state', { dirty: state.dirty, busy: creatingDraft || state.busy })
 })
@@ -51,12 +50,6 @@ function titleLanguage(item: DraftSummary) {
 
 function nativeName(code: string) {
   return languages.value.find(language => language.code === code)?.native_name ?? code
-}
-
-function collectionLabel(key: string) {
-  if (key === 'article') return props.translate('articles')
-  if (key === 'event') return props.translate('events')
-  return key
 }
 
 async function run(work: () => Promise<void>) {
@@ -89,26 +82,11 @@ function showError(error: unknown) {
 
 async function loadWorkspace() {
   await run(async () => {
-    const [page, activeLanguages] = await Promise.all([listCollections(), request(() => client.listLanguages())])
+    const activeLanguages = await request(() => client.listLanguages())
     if (!activeLanguages.data) throw new AdminContentError(activeLanguages.response.status)
     if (!active.value) return
-    collections.value = page.items
-    collectionOffset.value = page.next_offset
     languages.value = activeLanguages.data
-    selectedType.value = page.items[0]?.type_key ?? ''
-    if (selectedType.value) await loadDraftPage()
-    else loaded.value = true
-  })
-}
-
-async function moreCollections() {
-  const offset = collectionOffset.value
-  if (offset === null) return
-  await run(async () => {
-    const page = await listCollections(offset)
-    if (!active.value) return
-    collections.value = [...collections.value, ...page.items]
-    collectionOffset.value = page.next_offset
+    await loadDraftPage()
   })
 }
 
@@ -121,12 +99,6 @@ async function loadDraftPage(offset = 0) {
   drafts.value = offset === 0 ? page.items : [...drafts.value, ...page.items]
   draftOffset.value = page.next_offset
   loaded.value = true
-}
-
-function changeCollection() {
-  drafts.value = []
-  draftOffset.value = null
-  return run(loadDraftPage)
 }
 
 function openDraft(itemID: string, target: EventTarget | null, language = '') {
@@ -167,7 +139,7 @@ async function closeDraft() {
 }
 
 async function create(event: Event) {
-  const collection = selectedCollection.value
+  const collection = props.collection
   const target = event.currentTarget
   if (!collection?.can_create || selectedItem.value || busy.value) return
   creating.value = true
@@ -190,21 +162,12 @@ onBeforeUnmount(() => { active.value = false })
 <template>
   <section :class="['content-workspace', { 'has-draft': selectedItem }]" aria-labelledby="content-workspace-title">
     <div class="workspace-list" :aria-busy="busy">
-      <h2 id="content-workspace-title" ref="heading" tabindex="-1">{{ translate('admin.content_collections') }}</h2>
+      <h2 id="content-workspace-title" ref="heading" tabindex="-1">{{ collectionLabel }}</h2>
       <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
       <p v-if="failure" role="alert">{{ translate(failure) }}</p>
       <button v-if="failure && !selectedItem" type="button" :disabled="busy" @click="loadWorkspace">{{ translate('admin.retry') }}</button>
-      <p v-if="loaded && !collections.length">{{ translate('admin.content_no_collections') }}</p>
-      <template v-if="collections.length">
-        <label for="collection-choice">{{ translate('admin.content_collection') }}</label>
-        <select id="collection-choice" v-model="selectedType" :disabled="busy || Boolean(selectedItem)" @change="changeCollection">
-          <option v-for="entry in collections" :key="entry.type_key" :value="entry.type_key">{{ collectionLabel(entry.type_key) }}</option>
-        </select>
-        <button
-          v-if="collectionOffset !== null" type="button" class="admin-secondary" :disabled="busy || Boolean(selectedItem)"
-          @click="moreCollections"
-        >{{ translate('admin.content_more_collections') }}</button>
-        <button v-if="selectedCollection?.can_create" type="button" :disabled="busy || Boolean(selectedItem)" @click="create">
+      <template v-if="loaded">
+        <button v-if="collection.can_create" type="button" :disabled="busy || Boolean(selectedItem)" @click="create">
           {{ translate('admin.content_create') }}
         </button>
         <p v-if="loaded && !busy && !failure && !drafts.length">{{ translate('admin.content_no_drafts') }}</p>

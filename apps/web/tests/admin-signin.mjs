@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
 import { assertEditorMutationBlocksNavigation, assertSavedAddress, eachInOrder, expectedTitleSlug, verifyAccessAdministration, waitForContentMutation } from './admin-access.mjs'
+import { signInAfterAnotherTabRefreshesPreauth } from './admin-preauth.mjs'
 import { assertStablePreferences, chooseTheme, headerGeometry } from './header-preferences.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
@@ -92,11 +93,12 @@ async function signIn(page, context) {
     element.value = credentials.login
     element.form.elements.namedItem('password').value = credentials.password
   }, { login: process.env.QA_ADMIN_LOGIN, password: process.env.QA_ADMIN_PASSWORD })
-  const login = waitForAuth(page, 'login', 200)
-  await password.press('Enter')
-  await login
-  const mfaHeading = heading(page, 'Two-step verification')
-  await mfaHeading.waitFor()
+  await signInAfterAnotherTabRefreshesPreauth(page, async () => {
+    const login = waitForAuth(page, 'login', 200)
+    await password.press('Enter')
+    await login
+    await heading(page, 'Two-step verification').waitFor()
+  })
   await page.waitForFunction(() => document.activeElement === document.querySelector('main h1'))
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 
@@ -201,6 +203,57 @@ async function verifySlugRuleSettings(page, context) {
   await save.click()
   await page.getByText('Settings saved.', { exact: true }).waitFor()
   assert.equal(await publishedReplacement(), 'll')
+}
+
+async function waitForFlag(control, svg) {
+  if (!svg) {
+    await control.locator('.language-flag svg').waitFor()
+    return
+  }
+  const source = `data:image/svg+xml,${encodeURIComponent(svg)}`
+  await control.locator(`.language-flag img[src=${JSON.stringify(source)}]`).evaluate(image => image.decode())
+}
+
+async function verifyLanguageFlagSettings(page, context) {
+  const source = page.getByRole('textbox', { name: 'Flag SVG', exact: true })
+  const save = page.getByRole('button', { name: 'Save changes', exact: true })
+  const trigger = page.getByTestId('language-switcher').locator('summary')
+  const original = await source.inputValue()
+  const invalid = '<svg viewBox="0 0 24 16"><path d="M0 0 L"/></svg>'
+  await source.fill(invalid)
+  await save.click()
+  await page.getByRole('alert').getByText('This flag could not be saved. Check the SVG and try again.').waitFor()
+  assert.equal(await source.inputValue(), invalid)
+  assert.ok(await source.evaluate(element => element === document.activeElement))
+  await waitForFlag(trigger, original)
+
+  await source.fill('<svg viewBox="0 0 24 16"><rect width="24" height="16" fill="#6a158c"/></svg>')
+  await save.click()
+  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  const { language_flags: flags } = await readPublicSite(context)
+  assert.match(flags.en, /#6a158c/u)
+  await waitForFlag(trigger, flags.en)
+  await waitForFlag(page.getByTestId('language-flag-preview'), flags.en)
+  const publicPage = await context.newPage()
+  try {
+    await publicPage.goto(`${origin}/en/articles`)
+    const publicTrigger = publicPage.getByTestId('language-switcher').locator('summary')
+    await waitForFlag(publicTrigger, flags.en)
+
+    await page.getByRole('button', { name: 'Use globe', exact: true }).click()
+    await save.click()
+    await page.getByText('Settings saved.', { exact: true }).waitFor()
+    assert.equal((await readPublicSite(context)).language_flags.en, undefined)
+    await waitForFlag(trigger)
+    await publicPage.reload()
+    await waitForFlag(publicTrigger)
+  }
+  finally {
+    await publicPage.close()
+  }
+  await source.fill(original)
+  await save.click()
+  await page.getByText('Settings saved.', { exact: true }).waitFor()
 }
 
 async function verifyNestedNavigation(page) {
@@ -368,18 +421,25 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
+async function openSection(page, name) {
+  const trigger = page.locator('.admin-navigation').getByRole('button', { name, exact: true })
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
+}
+function collectionButton(page, domain, label) {
+  return page.locator(`#admin-nav-${domain}`).getByRole('button', { name: label, exact: true })
+}
+
 async function verifyTypeBuilder(page) {
-  await page.getByRole('button', { name: 'Structure', exact: true }).click()
-  const renderer = page.getByRole('combobox', { name: 'Collection to configure', exact: true })
-  await renderer.locator('option[value="article"]').waitFor({ state: 'attached' })
+  await openSection(page, 'Structure')
+  await collectionButton(page, 'registry', 'Article').click()
   const titleField = page.getByRole('group', { name: 'Title', exact: true })
   await titleField.waitFor()
   assert.equal(await titleField.locator('summary').getByText('title', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('group', { name: 'URL slug', exact: true }).count(), 0)
   assert.equal(await page.locator('.builder-field summary').getByText('slug', { exact: true }).count(), 0)
-  assert.equal(await renderer.inputValue(), 'article')
-  assert.deepEqual(await renderer.locator('optgroup[label="Collections"] option').allTextContents(), ['Article'])
-  assert.deepEqual(await renderer.locator('optgroup[label="Create collection"] option').allTextContents(), ['Event'])
+  await collectionButton(page, 'registry', 'Collections').click()
+  await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+  const renderer = page.getByRole('combobox', { name: 'Collection template', exact: true })
   await renderer.selectOption({ label: 'Event' })
   assert.equal(await renderer.isEnabled(), true)
   const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
@@ -394,13 +454,13 @@ async function verifyTypeBuilder(page) {
   await verifyCollectionAccessChallenge(page, initial, create)
   await create.click()
   await page.getByText('Collection created.', { exact: true }).waitFor()
-  assert.deepEqual(await renderer.locator('optgroup[label="Collections"] option').allTextContents(), ['Article', 'Event'])
+  assert.equal(await collectionButton(page, 'registry', 'Event').getAttribute('aria-current'), 'page')
   await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
   const key = page.getByLabel('Field key', { exact: true })
   assert.ok(await key.evaluate(element => element === document.activeElement))
   await key.fill('subtitle')
   await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
-  const save = page.getByRole('button', { name: 'Save schema changes', exact: true })
+  const save = page.getByRole('button', { name: 'Save collection changes', exact: true })
   await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/content-types/event', 'PATCH', () => save.click(), ['Content', 'Sign out'])
   await page.getByText('Current schema 2', { exact: true }).waitFor()
   await page.getByText('Collection changes saved.', { exact: true }).waitFor()
@@ -408,9 +468,9 @@ async function verifyTypeBuilder(page) {
   await verifyFieldTranslations(page, save)
   const articleSchema = '**/api/v1/admin/content-types/article'
   await page.route(articleSchema, route => route.fulfill({ status: 503, json: { code: 'security_unavailable' } }))
-  await renderer.selectOption('article')
+  await collectionButton(page, 'registry', 'Article').click()
   await page.getByRole('alert').waitFor()
-  assert.equal(await page.getByRole('button', { name: 'Save schema changes', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Save collection changes', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Create collection', exact: true }).count(), 0)
   assert.equal(await page.locator('summary').getByText('subtitle', { exact: true }).count(), 0)
   await page.unroute(articleSchema)
@@ -418,6 +478,133 @@ async function verifyTypeBuilder(page) {
   await page.getByRole('group', { name: 'Title', exact: true }).waitFor()
   assert.equal(await page.locator('summary').getByText('subtitle', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
+}
+
+async function createNamedCollection(page, name, configure) {
+  await openSection(page, 'Structure')
+  await collectionButton(page, 'registry', 'Collections').click()
+  const create = page.getByRole('button', { name: 'Create collection', exact: true })
+  await create.click()
+  await page.getByLabel('Collection name', { exact: true }).fill(name)
+  if (configure) await configure()
+  await page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true }).check()
+  const response = waitForContentMutation(page, '/api/v1/admin/content-types', 'POST', 201)
+  await create.click()
+  const created = await (await response).json()
+  await page.getByText('Collection created.', { exact: true }).waitFor()
+  assert.equal(await collectionButton(page, 'registry', name).getAttribute('aria-current'), 'page')
+  return created
+}
+
+async function verifyCustomCollection(page, context) {
+  const name = 'Community notices'
+  const svg = '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>'
+  const created = await createNamedCollection(page, name, async () => {
+    await page.getByLabel('Collection icon (SVG)', { exact: true }).fill(svg)
+  })
+  const structureIcon = collectionButton(page, 'registry', name).locator('.admin-icon--custom')
+  await structureIcon.waitFor()
+  const mask = await structureIcon.evaluate(icon => getComputedStyle(icon).maskImage)
+  assert.match(mask, /^url\("data:image\/svg\+xml/iu)
+  assert.equal(await page.getByTestId('collection-icon-preview').locator('.admin-icon--custom').count(), 1)
+  const available = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/admin/content-types?offset=0', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Collection inventory returned ${response.status}`)
+    return response.json()
+  })
+  assert.ok(available.items.some(item => item.type_key === created.type_key && item.display_name === name))
+  await page.route('**/api/v1/admin/content-types?offset=0', route => route.fulfill({
+    status: 200, json: { ...available, next_offset: 100 },
+  }), { times: 1 })
+  await openSection(page, 'Content')
+  const contentIcon = collectionButton(page, 'content', name).locator('.admin-icon--custom')
+  await contentIcon.waitFor()
+  assert.equal(await contentIcon.evaluate(icon => getComputedStyle(icon).maskImage), mask)
+  const target = await verifyContentWorkflow(page, context, {
+    type: created.type_key, namespace: created.route_namespace, label: name, slugBase: 'community-notice',
+    title: 'Community notice', keepPublished: true,
+  })
+  await verifyRelatedCollectionSSR(page, context, name, target)
+
+  await openSection(page, 'Structure')
+  await collectionButton(page, 'registry', name).click()
+  const disable = page.getByRole('button', { name: 'Disable collection', exact: true })
+  await disable.click()
+  let dialog = page.getByRole('dialog', { name: 'Disable collection', exact: true })
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await collectionButton(page, 'registry', name).isVisible(), true)
+  await disable.click()
+  await dialog.getByRole('button', { name: 'Disable collection', exact: true }).click()
+  await page.getByRole('status').getByText('Collection disabled.', { exact: true }).waitFor()
+  assert.equal(await collectionButton(page, 'registry', name).count(), 0)
+  await openSection(page, 'Content')
+  await collectionButton(page, 'content', 'Article').waitFor()
+  assert.equal(await collectionButton(page, 'content', name).count(), 0)
+  assert.equal((await context.request.get(new URL(target.path, origin).href)).status(), 200)
+
+  await openSection(page, 'Structure')
+  await page.getByText('Disabled collections', { exact: true }).click()
+  await page.locator('.admin-collection-overview').getByRole('button', { name, exact: true }).click()
+  await page.getByRole('button', { name: 'Enable collection', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: 'Enable collection', exact: true })
+  await dialog.getByRole('button', { name: 'Enable collection', exact: true }).click()
+  await page.getByRole('status').getByText('Collection enabled.', { exact: true }).waitFor()
+  await openSection(page, 'Content')
+  await collectionButton(page, 'content', name).click()
+  await page.getByRole('button', { name: /Community notice.*English/u }).waitFor()
+  await verifyCollectionIconReset(page, name, created, mask)
+}
+
+async function verifyCollectionIconReset(page, name, collection, previousMask) {
+  await openSection(page, 'Structure')
+  await collectionButton(page, 'registry', name).click()
+  const input = page.getByLabel('Collection icon (SVG)', { exact: true })
+  const save = page.getByRole('button', { name: 'Save collection changes', exact: true })
+  const path = `/api/v1/admin/content-types/${collection.type_key}`
+  const unsupported = '<svg viewBox="0 0 24 24"><title>Sample</title><circle cx="12" cy="12" r="8"/></svg>'
+  await input.fill(unsupported)
+  const rejected = waitForContentMutation(page, path, 'PATCH', 400)
+  await save.click()
+  assert.equal((await (await rejected).json()).code, 'invalid_collection_icon')
+  await page.getByText('Use a valid SVG with a viewBox, simple shapes, and up to 4 KB of code.', { exact: true }).waitFor()
+  assert.equal(await input.inputValue(), unsupported)
+  const icon = collectionButton(page, 'registry', name).locator('.admin-icon--custom')
+  assert.equal(await icon.evaluate(element => getComputedStyle(element).maskImage), previousMask)
+
+  await page.getByRole('button', { name: 'Use default icon', exact: true }).click()
+  const reset = waitForContentMutation(page, path, 'PATCH', 200)
+  await save.click()
+  const result = await (await reset).json()
+  assert.equal(result.icon_svg, '')
+  assert.equal(result.schema_no, collection.schema_no)
+  await collectionButton(page, 'registry', name).locator('svg.admin-icon').waitFor()
+  await openSection(page, 'Content')
+  await collectionButton(page, 'content', name).locator('svg.admin-icon').waitFor()
+}
+
+async function verifyRelatedCollectionSSR(page, context, targetName, target) {
+  const sourceName = 'Notice directory'
+  const source = await createNamedCollection(page, sourceName, async () => {
+    await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
+    const field = page.locator('.builder-field').last()
+    await field.locator('input[id^="registry-key-"]').fill('related_notice')
+    await field.locator('select[id^="registry-kind-"]').selectOption('relation')
+    await field.locator('select[id^="registry-visibility-"]').selectOption('public')
+    await field.locator('select[id^="registry-target-"]').selectOption({ label: targetName })
+  })
+  await createContentDraftWithKeyboard(page, source.type_key, sourceName)
+  const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
+  await editor.getByLabel(/^Title(?: \(|$)/).fill('Notice directory')
+  await editor.getByLabel('related_notice', { exact: true }).fill(target.id)
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  const published = editor.getByRole('link', { name: 'English', exact: true })
+  await published.waitFor()
+  const rendered = await context.request.get(new URL(await published.getAttribute('href'), origin).href)
+  assert.equal(rendered.status(), 200)
+  assert.ok((await rendered.text()).includes(`href="${target.path}"`))
+  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
 }
 
 async function verifyFieldTranslations(page, save) {
@@ -439,10 +626,9 @@ async function verifyFieldTranslations(page, save) {
   await page.getByText('Current schema 2', { exact: true }).waitFor()
 }
 
-async function createContentDraftWithKeyboard(page, type) {
-  await page.getByRole('button', { name: 'Content', exact: true }).click()
-  const collection = page.getByRole('combobox', { name: 'Collection', exact: true })
-  await collection.selectOption(type)
+async function createContentDraftWithKeyboard(page, type, label) {
+  await openSection(page, 'Content')
+  await collectionButton(page, 'content', label).click()
   const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
   await create.waitFor()
   await create.focus()
@@ -452,8 +638,8 @@ async function createContentDraftWithKeyboard(page, type) {
   return (await creating).json()
 }
 
-async function verifyContentWorkflow(page, context, { type, namespace, slugBase, title, checkLayout = false }) {
-  const { item_id: id } = await createContentDraftWithKeyboard(page, type)
+async function verifyContentWorkflow(page, context, { type, namespace, label, slugBase, title, checkLayout = false, keepPublished = false }) {
+  const { item_id: id } = await createContentDraftWithKeyboard(page, type, label)
   const slug = expectedTitleSlug(slugBase, id)
   const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
   await editor.getByLabel(/^Title(?: \(|$)/).waitFor()
@@ -468,6 +654,7 @@ async function verifyContentWorkflow(page, context, { type, namespace, slugBase,
   const optionalField = editor.getByLabel('subtitle', { exact: true })
   if (await optionalField.count()) await optionalField.fill('Private editor text.')
   if (checkLayout) await assertEditorLayouts(page, editor)
+  if (keepPublished) await verifyDraftSurvivesMenuError(page, editor, title)
   await assertSavedAddress(page, type, id, save, 'en', slug)
   await editor.getByText('Draft saved.', { exact: true }).waitFor()
 
@@ -494,6 +681,10 @@ async function verifyContentWorkflow(page, context, { type, namespace, slugBase,
     assert.equal((await request(omitted)).status(), 404)
     await publishOtherTranslation(page, editor, id, request, omitted, apiPath, title)
   }
+  if (keepPublished) {
+    await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
+    return { id, path: publicPath }
+  }
   await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
   const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
   await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
@@ -503,6 +694,16 @@ async function verifyContentWorkflow(page, context, { type, namespace, slugBase,
   await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
   await editor.waitFor({ state: 'hidden' })
   assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
+}
+
+async function verifyDraftSurvivesMenuError(page, editor, title) {
+  await page.route('**/api/v1/admin/content-types?offset=100', route => route.fulfill({
+    status: 503, json: { code: 'security_unavailable' },
+  }), { times: 1 })
+  const navigation = page.locator('#admin-nav-content')
+  await navigation.getByRole('button', { name: 'Load more collections', exact: true }).click()
+  await navigation.getByRole('alert').waitFor()
+  assert.equal(await editor.getByLabel(/^Title(?: \(|$)/).inputValue(), title)
 }
 
 async function interruptPublicationRefresh(page, type, id) {
@@ -697,9 +898,8 @@ async function assertTitleAddresses(page, editor, locale, title, id, original) {
 
 async function verifyEditorialNavigation(page) {
   await selectInterfaceLanguage(page, 'pl')
-  await page.getByRole('button', { name: 'Materiały', exact: true }).click()
-  const collection = page.getByRole('combobox', { name: 'Kolekcja', exact: true })
-  await collection.selectOption('article')
+  await openSection(page, 'Materiały')
+  await collectionButton(page, 'content', 'Artykuł').click()
   const creating = waitForContentMutation(page, '/api/v1/admin/content/article', 'POST', 201)
   await page.getByRole('button', { name: 'Utwórz szkic', exact: true }).click()
   const { item_id: id } = await (await creating).json()
@@ -753,25 +953,38 @@ async function assertPublishedLocales(page) {
   await page.waitForFunction(() => document.documentElement.lang === 'en')
   const language = page.getByTestId('language-switcher')
   const summary = language.locator('summary')
+  const { language_flags: flags } = await readPublicSite(page.context())
+  assert.equal(new Set(Object.values(flags)).size, 4)
+  await waitForFlag(summary, flags.en)
   await summary.press('Enter')
   assert.deepEqual(await language.locator('button[data-language]').evaluateAll(options => options.map(option => option.dataset.language)), ['en', 'kk', 'pl', 'ru'])
+  await waitForFlag(language.locator('button[data-language="kk"]'), flags.kk)
   await language.locator('button[data-language="kk"]').press('Escape')
   assert.equal(await language.getAttribute('open'), null)
   assert.ok(await summary.evaluate(element => element === document.activeElement))
   await eachInOrder([['kk', 'Кіру'], ['ru', 'Вход'], ['pl', 'Zaloguj się']], async ([locale, name]) => {
     await selectInterfaceLanguage(page, locale)
     await heading(page, name).waitFor()
+    await waitForFlag(summary, flags[locale])
   })
   const localized = await page.reload()
   assert.equal(localized.status(), 200)
   assert.match(await localized.text(), /<html[^>]+lang="pl"/u)
   await heading(page, 'Zaloguj się').waitFor()
   assert.equal(await summary.getAttribute('data-current-language'), 'pl')
+  await waitForFlag(summary, flags.pl)
   await page.goto(origin)
   await page.waitForURL(`${origin}/pl/articles`)
-  assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'pl')
+  assert.equal(await summary.getAttribute('data-current-language'), 'pl')
+  await waitForFlag(summary, flags.pl)
+  await summary.press('Enter')
+  const russian = language.locator('a[data-language="ru"]')
+  await waitForFlag(russian, flags.ru)
+  await russian.click()
+  await page.waitForURL(`${origin}/ru/articles`)
+  await waitForFlag(summary, flags.ru)
   await page.goto(admin)
-  await heading(page, 'Zaloguj się').waitFor()
+  await heading(page, 'Вход').waitFor()
   await selectInterfaceLanguage(page, 'en')
   await heading(page, 'Sign in').waitFor()
 }
@@ -792,6 +1005,7 @@ async function verifyWorkspaceGeometry(page) {
         assertStablePreferences(initialHeader, await headerGeometry(page))
         assert.ok(Math.abs(await workspaceTop() - initialTop) <= 1, 'A shipped language moved the workspace')
         await assertFit(page)
+        await assertSidebarChevrons(page)
       })
     })
   })
@@ -799,18 +1013,67 @@ async function verifyWorkspaceGeometry(page) {
   await page.setViewportSize({ width: 768, height: 1024 })
 }
 
+async function verifyCompactNavigation(page) {
+  await page.setViewportSize({ width: 320, height: 844 })
+  const rail = page.locator('.admin-nav-rail')
+  await rail.waitFor()
+  const controls = await rail.getByRole('button').evaluateAll(buttons =>
+    buttons.map(button => {
+      const { width, height, top } = button.getBoundingClientRect()
+      return { width, height, top, icon: Boolean(button.querySelector('svg[aria-hidden="true"]')) }
+    }),
+  )
+  assert.equal(controls.length, 5)
+  for (const control of controls) {
+    assert.ok(control.width >= 44 && control.height >= 44 && control.icon)
+    assert.ok(Math.abs(control.top - controls[0].top) <= 1)
+  }
+  const content = rail.getByRole('button', { name: 'Content', exact: true })
+  assert.equal(await content.getAttribute('title'), 'Content')
+  await content.press('Enter')
+  const article = collectionButton(page, 'content', 'Article')
+  await article.waitFor()
+  assert.equal(await content.getAttribute('aria-expanded'), 'true')
+  assert.equal(await article.locator('svg.admin-icon').count(), 1)
+  await article.press('Escape')
+  assert.equal(await content.getAttribute('aria-expanded'), 'false')
+  assert.ok(await content.evaluate(button => button === document.activeElement))
+
+  const names = page.getByRole('button', { name: 'Section names', exact: true })
+  await names.click()
+  await rail.waitFor({ state: 'hidden' })
+  assert.equal(await names.getAttribute('aria-pressed'), 'true')
+  await page.locator('.admin-nav-parent').getByText('Content', { exact: true }).waitFor()
+  await assertFit(page)
+  await names.click()
+  await rail.waitFor()
+  await page.setViewportSize({ width: 768, height: 1024 })
+}
+
+async function assertSidebarChevrons(page) {
+  const contained = await page.locator('.admin-nav-chevron').evaluateAll(chevrons =>
+    chevrons.every((chevron) => {
+      const button = chevron.parentElement.getBoundingClientRect()
+      const icon = chevron.getBoundingClientRect()
+      return icon.left >= button.left && icon.right <= button.right
+    }),
+  )
+  assert.ok(contained, 'Disclosure chevrons must stay inside their buttons')
+}
+
 async function assertHeaderIcons(page) {
   const utilities = page.locator('.admin-preferences')
   const boxes = await utilities.locator(':scope > button, .header-preference-trigger').evaluateAll(elements =>
     elements.map(element => {
       const { width, height, top, left, right } = element.getBoundingClientRect()
-      return { width, height, top, left, right, svg: element.querySelector('svg')?.getAttribute('aria-hidden') }
+      const decorativeIcon = element.querySelector('svg[aria-hidden="true"], .language-flag[aria-hidden="true"] img[alt=""]')
+      return { width, height, top, left, right, hasIcon: Boolean(decorativeIcon) }
     }))
   assert.equal(boxes.length, 4)
   const viewportWidth = await page.evaluate(() => innerWidth)
   for (const box of boxes) {
     assert.ok(box.width >= 44 && box.height >= 44)
-    assert.equal(box.svg, 'true')
+    assert.ok(box.hasIcon)
     assert.ok(Math.abs(box.top - boxes[0].top) <= 1)
     assert.ok(box.left >= 0 && box.right <= viewportWidth)
   }
@@ -852,14 +1115,17 @@ try {
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifyWorkspaceGeometry(page)
+  await verifyCompactNavigation(page)
   await verifySessionPolicy(page)
   await verifyNestedNavigation(page)
   await verifyTextSearchAfterResize(page)
   await verifySettingsSave(page, context)
   await verifySlugRuleSettings(page, context)
+  await verifyLanguageFlagSettings(page, context)
   await verifyTypeBuilder(page)
-  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slugBase: 'portal-workflow-verification', title: 'Portal workflow verification', checkLayout: true })
-  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slugBase: 'community-workshop', title: 'Community workshop' })
+  await verifyContentWorkflow(page, context, { type: 'article', label: 'Article', namespace: 'articles', slugBase: 'portal-workflow-verification', title: 'Portal workflow verification', checkLayout: true })
+  await verifyContentWorkflow(page, context, { type: 'event', label: 'Event', namespace: 'events', slugBase: 'community-workshop', title: 'Community workshop' })
+  await verifyCustomCollection(page, context)
   await verifyEditorialNavigation(page)
   await verifyAccessAdministration(browser, page, origin, assertTheme, assertFit)
   await signOut(page, context, cookie)

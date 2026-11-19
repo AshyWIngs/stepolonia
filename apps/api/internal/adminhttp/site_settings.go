@@ -38,18 +38,20 @@ type settingsVersion struct {
 
 type editableSettingsResponse struct {
 	settingsVersion
-	HasDraft    bool                         `json:"has_draft"`
-	PublishedID string                       `json:"published_id,omitempty"`
-	Settings    siteconfig.Settings          `json:"settings"`
-	Catalogs    map[string]map[string]string `json:"catalogs"`
-	Languages   []siteconfig.Language        `json:"languages"`
-	MessageKeys []string                     `json:"message_keys"`
-	SlugRules   []siteconfig.SlugRule        `json:"slug_rules" nullable:"false" doc:"Slug suggestion rules from the same editable revision, ordered by content language code and source character."`
+	HasDraft      bool                         `json:"has_draft"`
+	PublishedID   string                       `json:"published_id,omitempty"`
+	Settings      siteconfig.Settings          `json:"settings"`
+	Catalogs      map[string]map[string]string `json:"catalogs"`
+	Languages     []siteconfig.Language        `json:"languages"`
+	MessageKeys   []string                     `json:"message_keys"`
+	SlugRules     []siteconfig.SlugRule        `json:"slug_rules" nullable:"false" doc:"Slug suggestion rules from the same editable revision, ordered by content language code and source character."`
+	LanguageFlags map[string]string            `json:"language_flags" nullable:"false" doc:"Static SVG flags for enabled languages in the editable revision. Missing entries use a globe."`
 }
 
 type settingsPublicationResponse struct {
 	settingsVersion
-	PublicationID string `json:"publication_id"`
+	PublicationID string            `json:"publication_id"`
+	LanguageFlags map[string]string `json:"language_flags,omitempty" doc:"Normalized SVG for languages changed by this request. An empty value means a globe."`
 }
 
 type settingsInput struct {
@@ -57,6 +59,7 @@ type settingsInput struct {
 	Settings        siteconfig.Settings          `json:"settings"`
 	Catalogs        map[string]map[string]string `json:"catalogs"`
 	SlugRules       []siteconfig.SlugRule        `json:"slug_rules"`
+	LanguageFlags   map[string]string            `json:"language_flags"`
 }
 
 func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route, ip string) {
@@ -101,16 +104,16 @@ func (h *handler) readSettings(ctx context.Context, w http.ResponseWriter, req i
 	respond(w, editableSettingsResponse{
 		settingsVersion: settingsVersion{editable.Version}, HasDraft: editable.HasDraft, PublishedID: editable.PublishedID,
 		Settings: editable.Settings, Catalogs: editable.Catalogs, Languages: editable.Languages, MessageKeys: editable.MessageKeys,
-		SlugRules: editable.SlugRules,
+		SlugRules: editable.SlugRules, LanguageFlags: editable.LanguageFlags,
 	})
 }
 
 func (h *handler) applySettings(ctx context.Context, w http.ResponseWriter, req identity.AuthRequest, input settingsInput) {
-	var result settingsPublicationResponse
+	var result siteconfig.AppliedRevision
 	err := h.settings.ApplySiteSettings(ctx, req, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
-		result.PublicationID, result.Version, err = siteconfig.ApplyTx(ctx, tx, input.ExpectedVersion, siteconfig.Draft{
-			Settings: input.Settings, Catalogs: input.Catalogs, SlugRules: input.SlugRules,
+		result, err = siteconfig.ApplyTx(ctx, tx, input.ExpectedVersion, siteconfig.Draft{
+			Settings: input.Settings, Catalogs: input.Catalogs, SlugRules: input.SlugRules, LanguageFlags: input.LanguageFlags,
 		})
 		return settingsCommandError(err)
 	})
@@ -118,12 +121,18 @@ func (h *handler) applySettings(ctx context.Context, w http.ResponseWriter, req 
 		writeSettingsError(w, err)
 		return
 	}
-	respond(w, result)
+	respond(w, settingsPublicationResponse{
+		settingsVersion: settingsVersion{result.Version}, PublicationID: result.PublicationID, LanguageFlags: result.LanguageFlags,
+	})
 }
 
 func decodeSettings(raw []byte, schema *huma.Schema, input *settingsInput) bool {
 	value, ok := decodeUniqueJSON(raw)
-	if !ok || !utf8.Valid(raw) || !exactDraftProperties(value, schema) {
+	object, isObject := value.(map[string]any)
+	if !ok || !isObject || !utf8.Valid(raw) || !exactDraftProperties(value, schema) {
+		return false
+	}
+	if flags, present := object[languageFlagsField]; present && flags == nil {
 		return false
 	}
 	var result huma.ValidateResult
@@ -148,7 +157,7 @@ func settingsCommandError(err error) error {
 
 func writeSettingsError(w http.ResponseWriter, err error) {
 	var domain *siteconfig.Error
-	if errors.As(err, &domain) && domain.Status == http.StatusConflict {
+	if errors.As(err, &domain) && (domain.Status == http.StatusConflict || domain.Code == siteconfig.InvalidLanguageFlagCode) {
 		problem(w, domain.Status, domain.Code)
 		return
 	}

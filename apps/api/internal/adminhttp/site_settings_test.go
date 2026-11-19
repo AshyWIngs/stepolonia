@@ -29,12 +29,16 @@ func TestSettingsMutationsRejectInvalidVersionsAndProperties(t *testing.T) {
 	const version = `"expected_version":"1"`
 	for _, property := range []string{`"expected_version":987`, `"expected_version":"01"`,
 		`"expected_version":"1","expected_version":"2"`, `"Expected_version":"1"`,
-		`"expected_version":"1","extra":false`} {
+		`"expected_version":"1","extra":false`, version + `,"language_flags":null`,
+		version + `,"language_flags":{"en":null}`} {
 		raw := strings.Replace(valid, version, property, 1)
 		var input settingsInput
 		if decodeSettings([]byte(raw), schema, &input) {
 			t.Fatalf("accepted invalid settings input %s", property)
 		}
+	}
+	if !decodeSettings([]byte(strings.Replace(valid, version, version+`,"language_flags":{}`, 1)), schema, &good) {
+		t.Fatal("empty language flag updates were rejected")
 	}
 	var trailing settingsInput
 	if decodeSettings([]byte(valid+`{}`), schema, &trailing) {
