@@ -2,6 +2,7 @@
 SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
+SQL_MIGRATIONS = apps/api/internal/database/migrations
 
 .PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate import-languages db-test publishing-test auth-test resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
@@ -43,9 +44,9 @@ check-db: db-test
 # Check application Goose migrations. Empty input and skipped files fail verification.
 lint-sql:
 	@test "$$(sqlfluff --version)" = "sqlfluff, version 4.5.0"
-	@test -n "$(wildcard apps/api/internal/database/migrations/*.sql)"
-	sqlfluff lint --config .sqlfluff --disregard-sqlfluffignores --disable-noqa $(wildcard apps/api/internal/database/migrations/*.sql)
-	python3 scripts/migration_layout.py
+	@test -n "$(wildcard $(SQL_MIGRATIONS)/*.sql)"
+	sqlfluff lint --config .sqlfluff --disregard-sqlfluffignores --disable-noqa $(wildcard $(SQL_MIGRATIONS)/*.sql)
+	bash -o pipefail -c 'sqlfluff parse --config .sqlfluff --format json --code-only "$(SQL_MIGRATIONS)" | python3 scripts/migration_layout.py'
 
 lint-go:
 	mkdir -p reports

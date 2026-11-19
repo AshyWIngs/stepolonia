@@ -4,10 +4,9 @@
 from collections import Counter
 import json
 from pathlib import Path
-import subprocess
+import sys
 
 
-MIGRATIONS = Path("apps/api/internal/database/migrations")
 COUNTS = {
     "tables": "create_table_statement",
     "views": "create_view_statement",
@@ -19,12 +18,7 @@ COUNTS = {
 
 def main():
     """Count top-level Up and Down statements without parsing literal text as SQL."""
-    result = subprocess.run(
-        ["sqlfluff", "parse", "--config", ".sqlfluff", "--format", "json",
-         "--code-only", str(MIGRATIONS)],
-        check=True, stdout=subprocess.PIPE, text=True,
-    )
-    files = sorted(json.loads(result.stdout), key=lambda file: file["filepath"])
+    files = sorted(json.load(sys.stdin), key=lambda file: file["filepath"])
     if not files:
         raise RuntimeError("No SQL migration files were parsed")
 

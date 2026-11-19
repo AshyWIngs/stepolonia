@@ -24,7 +24,7 @@ function close(returnFocus = true) {
   if (returnFocus) summary.value?.focus()
 }
 
-function escape(event: KeyboardEvent) {
+function handleEscape(event: KeyboardEvent) {
   if (!details.value?.open) return
   event.preventDefault()
   event.stopPropagation()
@@ -42,7 +42,7 @@ function focusout(event: FocusEvent) {
     <span :id="currentId" class="header-preference-label" :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
     <details
       v-if="interactive" ref="details" :data-testid="testId"
-      :aria-busy="busy || undefined" @keydown.esc="escape" @focusout="focusout"
+      :aria-busy="busy || undefined" @keydown.esc="handleEscape" @focusout="focusout"
     >
       <summary
         ref="summary" class="header-preference-trigger"
