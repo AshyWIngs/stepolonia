@@ -16,9 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/content"
-	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/platform"
 	"stepolonia/apps/api/internal/siteconfig"
 )
@@ -72,7 +70,7 @@ func adminBrowserProxy(web *url.URL, api http.Handler, logger *slog.Logger) http
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(web)
 			req.Out.Header.Del("Cookie")
-			if preference, err := req.In.Cookie("admin-language"); err == nil {
+			if preference, err := req.In.Cookie("sp_content_language"); err == nil {
 				req.Out.AddCookie(preference)
 			}
 			req.Out.Header.Del("Authorization")
@@ -157,10 +155,10 @@ func assertUnpublishedAdminUnavailable(t *testing.T, f authHTTPFixture) {
 func publishTestSiteCatalog(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
-	requireNoError(t, database.Seed(ctx, db))
-	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('en','kk','pl','ru')")
+	_, err := db.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN (SELECT language_code FROM public.initial_ui_messages)")
 	requireNoError(t, err)
-	site := apiexamples.DemoSite()
+	site, err := siteconfig.ReadInitialDraft(ctx, db)
+	requireNoError(t, err)
 	site.Settings.Title = "Editorial workspace"
 	site.Settings.DefaultLanguage = "en"
 	site.Settings.FallbackLanguage = "en"

@@ -69,7 +69,7 @@
   gap: 0.75rem 1.5rem;
   align-items: center;
   justify-content: space-between;
-  max-width: 72rem;
+  max-width: 78rem;
   margin-inline: auto;
 }
 
@@ -91,18 +91,31 @@
   color: var(--admin-muted);
 }
 
-.admin-navigation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .5rem;
-  max-width: 72rem;
+.admin-workspace {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(1rem, 3vw, 2rem);
+  max-width: 78rem;
   margin: 1.5rem auto 0;
-  padding-block-end: .75rem;
-  border-block-end: 1px solid var(--admin-border);
 }
 
-.admin-navigation button, .admin-leave button {
+.admin-navigation {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+  padding: .5rem;
+  border-radius: .65rem;
+  background: var(--admin-card);
+}
+
+.admin-identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.admin-navigation button, .admin-identity-actions button, .admin-leave button {
   min-height: 44px;
   min-width: 0;
   padding: .5rem .75rem;
@@ -113,22 +126,25 @@
   font: inherit;
   font-weight: 650;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
-.admin-navigation [aria-current="page"] {
+.admin-navigation button { text-align: start; }
+
+:is(.admin-navigation, .admin-identity-actions) [aria-current="page"] {
   border-color: var(--admin-action);
   background: var(--admin-action);
   color: var(--admin-action-text);
 }
 
-.admin-navigation .admin-sign-out {
-  margin-inline-start: auto;
-  border-color: var(--admin-border);
-}
-
-.admin-navigation button:disabled {
+:is(.admin-navigation, .admin-identity-actions) button:disabled {
   opacity: .65;
   cursor: default;
+}
+
+@media (max-width: 48rem) {
+  .admin-workspace { grid-template-columns: minmax(0, 1fr); }
+  .admin-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .admin-leave {
@@ -169,21 +185,11 @@
   background: var(--admin-card);
 }
 
-.admin-card--wide {
-  max-width: 52rem;
-}
-
-.admin-card--signed-in {
-  max-width: 72rem;
-  margin-block-start: 1rem;
-}
-
-.admin-card--signed-in > h1:focus {
-  outline-offset: 4px;
-}
-
 .admin-card--workspace {
-  max-width: 75rem;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
 }
 
 .admin-card h1 {

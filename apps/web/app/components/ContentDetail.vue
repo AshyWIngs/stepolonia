@@ -37,8 +37,8 @@ useHead(() => {
 
 <template>
   <section v-if="data?.kind === 'content'">
+    <PublicSiteHeader :namespace="namespace" :languages="data.languages" :current="data.language" :translations="data.item.translations" />
     <ContentCollectionNav :namespace="namespace" :language="data.language.code" detail />
-    <ContentLanguageNav :namespace="namespace" :languages="data.languages" :current="data.language.code" :translations="data.item.translations" />
     <article :lang="data.item.language" :dir="data.language.direction">
       <h1>{{ contentTitle(data.item) }}</h1>
       <ContentFields :item="data.item" />

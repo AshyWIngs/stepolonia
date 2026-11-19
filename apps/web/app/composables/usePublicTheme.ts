@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { useCookie, useRequestURL } from '#imports'
+import { useCookie, useRequestURL, useState } from '#imports'
 
 export const publicThemes = ['system', 'light', 'dark'] as const
 
@@ -10,8 +10,12 @@ export function usePublicTheme() {
     secure: useRequestURL().protocol === 'https:',
     maxAge: 31536000,
   })
+  const theme = useState('public-theme', () => publicThemes.find(value => value === preference.value) ?? 'system')
   return computed({
-    get: () => publicThemes.find(theme => theme === preference.value) ?? 'system',
-    set: theme => { preference.value = theme },
+    get: () => theme.value,
+    set: value => {
+      theme.value = value
+      preference.value = value
+    },
   })
 }

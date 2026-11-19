@@ -27,7 +27,7 @@ func seedContent(ctx context.Context, db *sql.DB, token string) error {
 	if !owned {
 		return errors.New("refusing fixture writes outside owned disposable database")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','ru','en','kk')`); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code IN (SELECT language_code FROM public.initial_ui_messages)`); err != nil {
 		return err
 	}
 	article, event := apiexamples.Article(), apiexamples.Event()
@@ -150,8 +150,15 @@ func seedSite(ctx context.Context, db *sql.DB) error {
 	if err := db.QueryRowContext(ctx, `SELECT version FROM public.site_state WHERE singleton`).Scan(&version); err != nil {
 		return err
 	}
+	draft, err := siteconfig.ReadInitialDraft(ctx, db)
+	if err != nil {
+		return err
+	}
+	settings := apiexamples.DemoSiteSettings()
+	settings.Accent = draft.Settings.Accent
+	draft.Settings = settings
 	service := siteconfig.NewService(db)
-	version, err := service.SaveDraft(ctx, version, apiexamples.DemoSite())
+	version, err = service.SaveDraft(ctx, version, draft)
 	if err != nil {
 		return err
 	}

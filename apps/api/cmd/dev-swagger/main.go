@@ -117,9 +117,6 @@ func bootstrap(ctx context.Context, db *sql.DB, token string) error {
 	if err := database.Up(ctx, db, runtimeRole); err != nil {
 		return err
 	}
-	if err := database.Seed(ctx, db); err != nil {
-		return err
-	}
 	if err := seedContent(ctx, db, token); err != nil {
 		return err
 	}

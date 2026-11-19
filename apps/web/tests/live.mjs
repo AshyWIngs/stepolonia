@@ -52,6 +52,8 @@ function publishedHTML(html) {
 async function checkSSR() {
   const event = await documentResponse('/fr/events/stage32-event', 200)
   assert.ok(event.html.includes('Stage 3.2 Event'))
+  assert.match(event.html, /class="language-switcher-current"[^>]+data-current-language="fr"/u)
+  assert.ok(!event.html.includes('data-testid="language-switcher"'))
   assert.ok(event.html.includes('>À la une</dt>'))
   const eventFields = event.html.replaceAll('<!--[-->', '').replaceAll('<!--]-->', '')
   assert.match(eventFields, /data-field="featured"[^>]*>Fixture ru admin\.content_yes</u)
@@ -254,7 +256,9 @@ async function checkLanguageSelection() {
 async function selectContentLanguage(page, language) {
   // SSR markup is clickable before Nuxt installs the cookie click handler.
   await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
-  await page.locator(`[data-testid="content-languages"] a[data-language="${language}"]`).click()
+  const switcher = page.getByTestId('language-switcher')
+  await switcher.locator('summary').press('Enter')
+  await switcher.locator(`a[data-language="${language}"]`).click()
   await page.waitForFunction(language => document.cookie.split(';').some(cookie => cookie.trim() === `sp_content_language=${language}`), language)
 }
 
@@ -274,7 +278,17 @@ async function checkLanguageBrowser() {
     await page.locator(`a[href="${currentPath}"]`).first().click()
     await page.waitForURL(`${base}${currentPath}`)
     await page.getByRole('heading', { name: articleTitle, exact: true }).waitFor()
-    await page.locator('[data-testid="content-languages"] a[data-language="ru"]').click()
+    const switcher = page.getByTestId('language-switcher')
+    const summary = switcher.locator('summary')
+    assert.equal(await summary.getAttribute('data-current-language'), 'fr')
+    await summary.press('Enter')
+    const russian = switcher.getByRole('link', { name: 'Русский', exact: true })
+    assert.equal(await russian.getAttribute('href'), '/ru/articles/stage22-ru-current')
+    assert.equal(await russian.getAttribute('hreflang'), 'ru')
+    await russian.press('Escape')
+    assert.equal(await switcher.getAttribute('open'), null)
+    assert.ok(await summary.evaluate(element => element === document.activeElement))
+    await selectContentLanguage(page, 'ru')
     await page.waitForURL(`${base}/ru/articles/stage22-ru-current`)
     await page.getByRole('heading', { name: 'Title stage22-ru-current', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.__stage22Navigation), 'same-document')

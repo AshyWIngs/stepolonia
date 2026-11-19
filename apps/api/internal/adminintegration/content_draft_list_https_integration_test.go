@@ -59,9 +59,7 @@ func TestAdminDraftListAuthorizesPresentationHTTPSIntegration(t *testing.T) {
 	f.command(t, f.author, assigned, sharedReadyCommand, sharedReadyBody, http.StatusOK)
 	f.command(t, f.author, assigned, localeReadyCommand, localeReadyBody, http.StatusOK)
 	f.command(t, f.publisher, assigned, publishCommand, publishBody, http.StatusOK)
-	_, err := f.owner.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
- VALUES('en','English','English','ltr',true),('kk','Kazakh','Қазақша','ltr',true),('ru','Russian','Русский','ltr',true)
- ON CONFLICT(code) DO NOTHING`)
+	_, err := f.owner.Exec(`UPDATE public.languages SET is_enabled=true WHERE code IN ('en','kk','ru')`)
 	requireNoError(t, err)
 	_, err = f.owner.Exec(`INSERT INTO public.content_draft_locales(item_id,locale_code,scalar_values) VALUES
  ($1,'en',jsonb_build_object('title',repeat('ą',300))),($1,'kk',jsonb_build_object('title',$2::text)),($1,'ru','{"title":12}')`,

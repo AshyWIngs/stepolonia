@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { useHeadSafe, useRequestHeader, useResponseHeader, useRoute, useState } from '#imports'
+import { useHeadSafe, useResponseHeader, useRoute } from '#imports'
 import { computed } from 'vue'
+import { usePortalAcceptLanguage } from '~/composables/usePortalLanguagePreference'
 import { usePublicSite } from '~/composables/usePublicSite'
-import { publicThemes, usePublicTheme } from '~/composables/usePublicTheme'
+import { usePublicTheme } from '~/composables/usePublicTheme'
 import { usePublicUi } from '~/composables/usePublicUi'
 import { isAdminPath } from '~/utils/admin-path'
 
@@ -11,9 +12,8 @@ const admin = computed(() => isAdminPath(route.path))
 const { publication, load } = usePublicSite()
 if (!admin.value) await load(route.fullPath)
 const site = computed(() => publication.value?.settings)
-// Preserve the request header on direct content visits for later client navigation to the homepage.
-useState('content-accept-language', () => useRequestHeader('accept-language') ?? '')
-const { uiLanguage, t } = usePublicUi()
+usePortalAcceptLanguage()
+const { uiLanguage } = usePublicUi()
 const theme = usePublicTheme()
 useHeadSafe(() => admin.value ? {} : ({
   title: site.value?.title,
@@ -26,20 +26,6 @@ useResponseHeader('Cache-Control').value = 'no-store'
 <template>
   <NuxtPage v-if="admin" />
   <main v-else class="public-site" :style="{ '--site-accent': site?.accent }">
-    <header class="site-header">
-      <div class="site-identity" :lang="site?.default_language">
-        <p v-if="site?.tagline" class="eyebrow">{{ site?.tagline }}</p>
-        <NuxtLink to="/" class="site-name">{{ site?.title }}</NuxtLink>
-        <p v-if="site?.description" class="site-description">{{ site?.description }}</p>
-        <p v-if="site?.notice" class="note">{{ site?.notice }}</p>
-      </div>
-      <div v-if="publication" class="site-preferences">
-        <label for="public-theme">{{ t('admin.theme') }}</label>
-        <select id="public-theme" v-model="theme">
-          <option v-for="mode in publicThemes" :key="mode" :value="mode">{{ t(`admin.${mode}`) }}</option>
-        </select>
-      </div>
-    </header>
     <NuxtPage :page-key="route => route.fullPath" />
   </main>
 </template>
@@ -71,8 +57,10 @@ body { margin: 0; }
 .site-name { color: inherit; font-family: Georgia, serif; font-size: 1.6rem; text-decoration: none; }
 .site-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 1rem; margin-bottom: 2rem; }
 .site-identity { flex: 1 1 18rem; min-width: 0; }
-.site-preferences { display: grid; gap: .25rem; width: max-content; max-width: 100%; }
-.site-preferences select {
+.site-preferences { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; max-inline-size: 100%; }
+.site-theme-control { display: grid; gap: .25rem; color: var(--public-muted); font-size: .875rem; }
+.site-interface-language { flex-basis: 100%; margin: 0; color: var(--public-muted); font-size: .875rem; }
+.site-theme-control select {
   min-width: 0;
   min-height: 44px;
   max-width: 100%;
@@ -94,8 +82,6 @@ p, li { line-height: 1.7; }
 .article-list li { padding: 1rem 0; border-bottom: 1px solid var(--public-border); }
 .article-list h2 { margin: 0; font-size: 1.6rem; }
 .pagination { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 2rem; }
-.language-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1.5rem; }
-.language-nav [aria-current="page"] { font-weight: 700; }
 .article-body { overflow-wrap: anywhere; }
 .article-body pre { overflow-x: auto; padding: 1rem; background: var(--public-surface); direction: ltr; }
 .article-body code { font-size: 0.9em; }

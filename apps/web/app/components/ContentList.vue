@@ -37,8 +37,8 @@ useHead(() => ({
 
 <template>
   <section v-if="data">
+    <PublicSiteHeader :namespace="namespace" :languages="data.languages" :current="data.language" :current-path="listPath" />
     <ContentCollectionNav :namespace="namespace" :language="data.language.code" />
-    <ContentLanguageNav :namespace="namespace" :languages="data.languages" :current="data.language.code" />
     <h1>{{ t(namespace) }}</h1>
     <ul v-if="data.items.length" class="article-list" :lang="data.language.code" :dir="data.language.direction">
       <li v-for="article in data.items" :key="article.item_id">

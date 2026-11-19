@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"maps"
 	"slices"
 
-	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/siteconfig"
 )
@@ -13,22 +13,21 @@ import (
 const commandInitializeSite = "initialize-site"
 
 func initializeSite(ctx context.Context, db *sql.DB, title, language string) error {
-	draft := apiexamples.DemoSite()
-	if _, ok := draft.Catalogs[language]; !ok {
-		return inputError{"initial language must have a bundled interface catalog"}
-	}
-	draft.Settings = siteconfig.Settings{
-		Title: title, Accent: "#2563eb", DefaultLanguage: language, FallbackLanguage: language,
-	}
-	languages := make([]string, 0, len(draft.Catalogs))
-	for code := range draft.Catalogs {
-		languages = append(languages, code)
-	}
-	slices.Sort(languages)
 	return identity.WithWriteMutex(ctx, db, func(ctx context.Context, tx *sql.Tx) error {
 		if err := checkInitialSite(ctx, tx); err != nil {
 			return err
 		}
+		draft, err := siteconfig.ReadInitialDraft(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, ok := draft.Catalogs[language]; !ok {
+			return inputError{"initial language must have an installed UI catalog"}
+		}
+		draft.Settings.Title = title
+		draft.Settings.DefaultLanguage = language
+		draft.Settings.FallbackLanguage = language
+		languages := slices.Sorted(maps.Keys(draft.Catalogs))
 		if _, err := tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code=ANY($1::text[]) AND NOT is_enabled`, languages); err != nil {
 			return err
 		}

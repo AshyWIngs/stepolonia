@@ -5,6 +5,8 @@ import type { EditablePortal } from '~/utils/admin-site-settings'
 
 const props = defineProps<{
   csrf: string
+  uiLanguage: string
+  uiMessages: Record<string, string>
   translate: (key: string) => string
 }>()
 const emit = defineEmits<{
@@ -17,8 +19,18 @@ const emit = defineEmits<{
 
 const draft = ref<EditablePortal | null>(null)
 const selectedLanguage = ref('')
+const sections = [
+  { id: 'identity', label: 'admin.settings_identity' },
+  { id: 'appearance', label: 'admin.settings_appearance' },
+  { id: 'languages', label: 'admin.settings_languages' },
+  { id: 'translations', label: 'admin.interface_texts' },
+] as const
+type SettingsSection = typeof sections[number]['id']
+const section = ref<SettingsSection>('identity')
+const sectionLabel = computed(() => sections.find(item => item.id === section.value)?.label ?? sections[0].label)
 const heading = ref<HTMLElement | null>(null)
 const confirmationHeading = ref<HTMLElement | null>(null)
+const translations = ref<{ showMissing: () => Promise<void> }>()
 const publishButton = ref<HTMLButtonElement | null>(null)
 const publicationStatus = ref<HTMLOutputElement | null>(null)
 const busy = ref(false)
@@ -35,6 +47,7 @@ let active = true
 const language = computed(() => draft.value?.languages.find(item => item.code === selectedLanguage.value))
 const catalogsByLanguage = computed(() => new Map(Object.entries(draft.value?.catalogs ?? {})))
 const messages = computed(() => catalogsByLanguage.value.get(selectedLanguage.value))
+const reference = computed(() => catalogsByLanguage.value.get(draft.value?.settings.fallback_language ?? ''))
 const catalogLanguages = computed(() => {
   const editable = draft.value
   return editable?.languages.filter(item => catalogsByLanguage.value.has(item.code)) ?? []
@@ -43,9 +56,14 @@ const disabledCatalogCodes = computed(() => {
   const editable = draft.value
   if (!editable) return []
   const enabled = new Set(editable.languages.map(item => item.code))
-  return Object.keys(editable.catalogs).filter(code => !enabled.has(code))
+  return Object.keys(editable.catalogs).filter(code => !enabled.has(code) && code !== editable.settings.fallback_language)
 })
 const publishDisabled = computed(() => busy.value || conflict.value || confirming.value || dirty.value || !draft.value?.has_draft)
+const accentPattern = /^#[\da-f]{6}$/iu
+const pickerColor = computed(() => {
+  const accent = draft.value?.settings.accent
+  return accent && accentPattern.test(accent) ? accent : undefined
+})
 
 function errorMessage(key: string) {
   failure.value = key
@@ -93,9 +111,8 @@ async function load() {
     const editable = await getPortalSettings()
     if (!active) return
     draft.value = editable
-    const preferred = editable.settings.fallback_language
-    selectedLanguage.value = editable.languages.some(item => item.code === preferred)
-      ? preferred : (editable.languages[0]?.code ?? '')
+    selectedLanguage.value = editable.languages.some(item => item.code === props.uiLanguage)
+      ? props.uiLanguage : editable.settings.fallback_language
     dirty.value = false
     conflict.value = false
   }
@@ -110,7 +127,7 @@ async function load() {
 function addCatalog() {
   const editable = draft.value
   if (!editable || !language.value || messages.value) return
-  editable.catalogs[language.value.code] = {}
+  editable.catalogs = { ...editable.catalogs, [language.value.code]: {} }
   dirty.value = true
 }
 
@@ -121,9 +138,43 @@ function removeCatalog(code: string) {
   dirty.value = true
 }
 
+async function showSection(target: SettingsSection) {
+  if (section.value === target) return
+  section.value = target
+  await nextTick()
+  heading.value?.focus()
+}
+
+function changeMessage(key: string, value: string) {
+  const editable = draft.value
+  const entries = messages.value
+  if (!editable || !entries || !editable.message_keys.includes(key)) return
+  const updated = new Map(Object.entries(entries))
+  updated.set(key, value)
+  const catalogs = new Map(catalogsByLanguage.value)
+  catalogs.set(selectedLanguage.value, Object.fromEntries(updated))
+  editable.catalogs = Object.fromEntries(catalogs)
+  dirty.value = true
+}
+
+function invalidSettingsSection(editable: EditablePortal): SettingsSection | undefined {
+  const settings = editable.settings
+  if (!settings.title.trim()) return 'identity'
+  if (!accentPattern.test(settings.accent)) return 'appearance'
+  if (!editable.languages.some(language => language.code === settings.default_language) ||
+      !catalogLanguages.value.some(language => language.code === settings.fallback_language)) return 'languages'
+  return undefined
+}
+
 async function save() {
   const editable = draft.value
   if (!editable || busy.value || conflict.value || confirming.value || !dirty.value) return
+  const invalidSection = invalidSettingsSection(editable)
+  if (invalidSection) {
+    errorMessage('admin.settings_invalid')
+    await showSection(invalidSection)
+    return
+  }
   busy.value = true
   failure.value = ''
   notice.value = ''
@@ -166,7 +217,10 @@ async function confirmPublication() {
   const incomplete = incompleteCatalog(draft.value)
   if (incomplete) {
     selectedLanguage.value = incomplete
-    errorMessage('admin.settings_invalid')
+    notice.value = ''
+    errorMessage('admin.settings_complete_catalog')
+    await showSection('translations')
+    await translations.value?.showMissing()
     return
   }
   confirming.value = true
@@ -206,17 +260,21 @@ async function publish() {
 }
 
 onMounted(async () => {
-  heading.value?.focus()
   await load()
 })
 onBeforeUnmount(() => { active = false })
 </script>
 
 <template>
-  <section class="portal-settings" aria-labelledby="portal-settings-heading" :aria-busy="busy">
+  <section class="portal-settings" :aria-label="translate('admin.settings')" :aria-busy="busy">
     <div class="settings-header">
-      <h2 id="portal-settings-heading" ref="heading" tabindex="-1">{{ translate('admin.settings') }}</h2>
-      <button type="button" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
+      <nav v-if="draft" :aria-label="translate('admin.settings')" class="settings-navigation">
+        <button
+          v-for="item in sections" :key="item.id" type="button" class="admin-secondary"
+          :disabled="busy || confirming" :aria-current="section === item.id ? 'page' : undefined"
+          @click="showSection(item.id)">{{ translate(item.label) }}</button>
+      </nav>
+      <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
     </div>
     <output v-if="notice" ref="publicationStatus" tabindex="-1">{{ translate(notice) }}</output>
     <output v-if="busy">{{ translate('admin.working') }}</output>
@@ -225,7 +283,8 @@ onBeforeUnmount(() => { active = false })
     <button v-else-if="!draft && failure" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
 
     <form v-if="draft" @submit.prevent="save">
-      <fieldset class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
+      <h2 id="portal-settings-heading" ref="heading" tabindex="-1">{{ translate(sectionLabel) }}</h2>
+      <fieldset v-if="section === 'identity'" class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
         <label for="portal-title">{{ translate('admin.portal_name') }}</label>
         <input id="portal-title" v-model="draft.settings.title" maxlength="200" required>
 
@@ -237,10 +296,20 @@ onBeforeUnmount(() => { active = false })
 
         <label for="portal-notice">{{ translate('admin.notice') }}</label>
         <textarea id="portal-notice" v-model="draft.settings.notice" maxlength="2000" rows="3" />
+      </fieldset>
 
+      <fieldset v-else-if="section === 'appearance'" class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
         <label for="portal-accent">{{ translate('admin.accent') }}</label>
-        <input id="portal-accent" v-model="draft.settings.accent" pattern="#[0-9a-fA-F]{6}" required>
+        <div class="settings-accent">
+          <input id="portal-accent" v-model="draft.settings.accent" pattern="#[0-9a-fA-F]{6}" required>
+          <input
+            type="color" :aria-label="translate('admin.settings_choose_accent')" :value="pickerColor"
+            @input="draft.settings.accent = ($event.target as HTMLInputElement).value"
+          >
+        </div>
+      </fieldset>
 
+      <fieldset v-else-if="section === 'languages'" class="settings-fields" :disabled="busy || confirming" @change="dirty = true">
         <label for="portal-default-language">{{ translate('admin.default_language') }}</label>
         <select id="portal-default-language" v-model="draft.settings.default_language" required>
           <option v-for="item in draft.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
@@ -256,38 +325,13 @@ onBeforeUnmount(() => { active = false })
         </select>
       </fieldset>
 
-      <fieldset class="settings-fields" :disabled="busy || confirming">
-        <legend>{{ translate('admin.interface_texts') }}</legend>
-        <label for="portal-catalog-language">{{ translate('admin.language') }}</label>
-        <select id="portal-catalog-language" v-model="selectedLanguage">
-          <option v-for="item in draft.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
-        <button v-if="language && !messages" type="button" @click="addCatalog">{{ translate('admin.add_catalog') }}</button>
-        <button
-          v-if="language && messages && language.code !== draft.settings.fallback_language"
-          type="button" @click="removeCatalog(language.code)"
-        >{{ translate('admin.remove_catalog') }}</button>
-        <template v-for="code in disabledCatalogCodes" :key="code">
-          <button v-if="code !== draft.settings.fallback_language" type="button" @click="removeCatalog(code)">
-            {{ translate('admin.remove_catalog') }} ({{ code }})
-          </button>
-        </template>
-        <template v-if="messages">
-          <template v-for="(key, index) in draft.message_keys" :key="key">
-            <label class="message-key" :for="`portal-message-${index}`"><code>{{ key }}</code></label>
-            <textarea
-              :id="`portal-message-${index}`"
-              v-model="messages[key]"
-              :lang="language?.code"
-              :dir="language?.direction"
-              rows="2"
-              maxlength="4000"
-              @input="dirty = true"
-            />
-          </template>
-        </template>
+      <fieldset v-show="section === 'translations'" class="settings-fields" :disabled="busy || confirming">
+        <PortalTranslationSettings
+          ref="translations" v-model:language="selectedLanguage" :languages="draft.languages" :keys="draft.message_keys"
+          :messages="messages" :reference="reference" :reference-language="draft.settings.fallback_language"
+          :ui-language="uiLanguage" :ui-messages="uiMessages" :disabled-catalogs="disabledCatalogCodes" :translate="translate"
+          @add-catalog="addCatalog" @remove-catalog="removeCatalog" @update:message="changeMessage"
+        />
       </fieldset>
 
       <div class="settings-actions">
@@ -332,7 +376,7 @@ onBeforeUnmount(() => { active = false })
   justify-content: space-between;
 }
 
-.settings-header h2,
+.portal-settings h2,
 .settings-confirmation h3,
 .settings-confirmation dl,
 .settings-confirmation dd {
@@ -347,6 +391,17 @@ onBeforeUnmount(() => { active = false })
   min-inline-size: 0;
 }
 
+.settings-accent {
+  display: flex;
+  gap: .5rem;
+}
+
+.settings-accent input[type='color'] {
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  padding: .35rem;
+}
+
 .settings-fields {
   margin: 0;
   padding: 0.75rem;
@@ -354,9 +409,7 @@ onBeforeUnmount(() => { active = false })
   border-radius: 0.4rem;
 }
 
-.portal-settings input,
-.portal-settings select,
-.portal-settings textarea,
+.portal-settings :deep(:is(input:not([type='checkbox']), select, textarea)),
 .portal-settings button {
   box-sizing: border-box;
   max-inline-size: 100%;
@@ -383,8 +436,15 @@ onBeforeUnmount(() => { active = false })
   resize: vertical;
 }
 
-.message-key {
-  overflow-wrap: anywhere;
+.settings-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.settings-navigation [aria-current="page"] {
+  background: var(--admin-action);
+  color: var(--admin-action-text);
 }
 
 .settings-confirmation {

@@ -1,6 +1,7 @@
 package adminhttp
 
 import (
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -10,7 +11,10 @@ import (
 	"stepolonia/apps/api/internal/siteconfig"
 )
 
-const settingsTag = "portal-settings"
+const (
+	settingsTag                = "portal-settings"
+	editableSettingsSchemaName = "EditablePortalSettings"
+)
 
 var settingsRequestSchemas = map[string]*huma.Schema{
 	saveSettingsOperation:    newSettingsRequestSchema(true),
@@ -24,7 +28,6 @@ func newSettingsRequestSchema(save bool) *huma.Schema {
 	}
 	required := []string{expectedVersionField}
 	if save {
-		demo := apiexamples.DemoSite()
 		settings := huma.SchemaFromType(huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer), reflect.TypeFor[siteconfig.Settings]())
 		settings.AdditionalProperties = false
 		properties["settings"] = settings
@@ -32,10 +35,14 @@ func newSettingsRequestSchema(save bool) *huma.Schema {
 			Type: huma.TypeObject, AdditionalProperties: &huma.Schema{Type: huma.TypeString},
 		}}
 		required = append(required, "settings", "catalogs")
-		example["settings"] = demo.Settings
-		example["catalogs"] = demo.Catalogs
+		example["settings"] = apiexamples.PortalSettings()
+		example["catalogs"] = map[string]map[string]string{"pl": apiexamples.PortalMessageExample()}
 	}
-	schema := closedObjectSchema("Versioned portal settings command. Submit the latest editable version and the complete replacement when saving a draft.", properties, required, example)
+	description := "Publish the draft at the expected settings version."
+	if save {
+		description = "Replace the draft at the expected settings version. Read editable settings to get the complete catalogs. The example illustrates the shape with one message."
+	}
+	schema := closedObjectSchema(description, properties, required, example)
 	schema.PrecomputeMessages()
 	return schema
 }
@@ -45,24 +52,27 @@ func settingsRequestSchema(operation string) *huma.Schema {
 }
 
 func addSettingsSchemas(schemas map[string]*huma.Schema) {
-	demo := apiexamples.DemoSite()
-	schemas["Settings"] = responseDTOSchema("Installation title, descriptions, accent and language settings.", demo.Settings)
-	schemas["Language"] = responseDTOSchema("Enabled language with its native name and text direction.", siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: "ltr"})
-	keys := make([]string, 0, len(demo.Catalogs["pl"]))
-	for key := range demo.Catalogs["pl"] {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
+	settings := apiexamples.PortalSettings()
+	language := siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: "ltr"}
+	messages := apiexamples.PortalMessageExample()
+	schemas["Settings"] = responseDTOSchema("Installation title, descriptions, accent and language settings.", settings)
+	schemas["Language"] = responseDTOSchema("Enabled language with its native name and text direction.", language)
 	for name, example := range map[string]any{
 		"SettingsVersion":     settingsVersion{2},
 		"SettingsPublication": settingsPublicationResponse{settingsVersion{3}, exampleUUID},
-		"EditablePortalSettings": editableSettingsResponse{
-			settingsVersion: settingsVersion{1}, Settings: demo.Settings, Catalogs: demo.Catalogs,
-			Languages:   []siteconfig.Language{{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: "ltr"}},
-			MessageKeys: keys,
+		editableSettingsSchemaName: editableSettingsResponse{
+			settingsVersion: settingsVersion{1},
+			Settings:        settings,
+			Catalogs:        map[string]map[string]string{language.Code: messages},
+			Languages:       []siteconfig.Language{language},
+			MessageKeys:     slices.Sorted(maps.Keys(messages)),
 		},
 	} {
-		schema := responseDTOSchema("Portal settings state or committed command result. The version guards the next edit or publication.", example)
+		description := "Portal settings state or committed command result. The version guards the next edit or publication."
+		if name == editableSettingsSchemaName {
+			description = "Current draft or publication, enabled languages and registered message keys. The example illustrates the catalog shape with one message."
+		}
+		schema := responseDTOSchema(description, example)
 		schema.Properties["version"] = contentVersionSchema("Current settings version.", "1")
 		schemas[name] = schema
 	}

@@ -81,8 +81,7 @@ func testDomainEngineStep(t *testing.T, ctx context.Context, db *sql.DB) {
 	} {
 		rejectSQL(t, ctx, db, "", query, "23514")
 	}
-	_, err = db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
-VALUES ('en','English','English','ltr',true)`)
+	_, err = db.Exec(`UPDATE public.languages SET is_enabled=true WHERE code='en'`)
 	requireNoError(t, err)
 	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq)
@@ -97,7 +96,8 @@ VALUES ('d1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-00000000
 INSERT INTO public.content_routes(namespace,locale_code,slug,type_id,item_id)
 VALUES ('domain-step','en','step-publication','d1000000-0000-0000-0000-000000000001','d1000000-0000-0000-0000-000000000003');
 INSERT INTO public.content_publication_locales(publication_id,item_id,locale_code,locale_generation,slug)
-VALUES ('d1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-000000000003','en',1,'step-publication');
+SELECT 'd1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-000000000003',code,generation,'step-publication'
+FROM public.languages WHERE code='en';
 UPDATE public.content_publications SET sealed=true;
 UPDATE public.content_items SET published_id='d1000000-0000-0000-0000-000000000005',version=version+1
 WHERE id='d1000000-0000-0000-0000-000000000003'`)

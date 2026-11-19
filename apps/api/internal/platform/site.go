@@ -75,14 +75,13 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 	responses["503"].Description = "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
 	responses["503"].Content[problemJSONMediaType].Example = newProblem(503, siteUnavailableCode)
 	language := siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: leftToRightDirection}
-	demo := apiexamples.DemoSite()
 	value := siteconfig.Publication{
 		Version:           "33333333-3333-4333-8333-333333333333",
-		Settings:          demo.Settings,
+		Settings:          apiexamples.PortalSettings(),
 		RequestedLanguage: "kk",
 		Language:          language,
 		Languages:         []siteconfig.Language{language},
-		Messages:          demo.Catalogs[language.Code],
+		Messages:          apiexamples.PortalMessageExample(),
 	}
 	omitted := value
 	omitted.RequestedLanguage = ""
@@ -92,8 +91,8 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 			jsonMediaType: {
 				Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[siteconfig.Publication](), true, "Publication"),
 				Examples: map[string]*huma.Example{
-					"fallback": {Summary: "Kazakh requested, Polish catalog selected as fallback", Value: value},
-					"omitted":  {Summary: "lang omitted, requested_language empty and fallback catalog selected", Value: omitted},
+					"fallback": {Summary: "Kazakh requested, Polish fallback returned", Description: "The example includes one message to illustrate the catalog shape.", Value: value},
+					"omitted":  {Summary: "Polish fallback returned when lang is omitted", Description: "The example includes one message to illustrate the catalog shape.", Value: omitted},
 				},
 			},
 		},

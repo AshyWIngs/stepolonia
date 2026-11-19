@@ -134,11 +134,15 @@ async function verifySettingsPublication(page, context) {
   await page.getByRole('button', { name: 'Portal settings', exact: true }).click()
   const portalName = page.getByLabel('Portal name', { exact: true })
   assert.equal(await portalName.inputValue(), oldSite.settings.title)
-  const message = page.getByLabel('admin.code_help', { exact: true })
-  assert.equal(await message.inputValue(), oldSite.messages['admin.code_help'])
   await page.setViewportSize({ width: 320, height: 844 })
   await assertFit(page)
   await portalName.fill(newTitle)
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+  assert.ok(await page.getByLabel('Choose accent color', { exact: true }).isVisible())
+  assert.equal(await portalName.count(), 0)
+  await page.getByRole('button', { name: 'Portal details', exact: true }).click()
+  assert.equal(await portalName.inputValue(), newTitle)
+  const message = await findSettingsTranslation(page, oldSite.messages['admin.code_help'])
   await message.fill('   ')
   const saveDraft = page.getByRole('button', { name: 'Save draft', exact: true })
   const publishDraft = page.getByRole('button', { name: 'Publish draft', exact: true })
@@ -148,7 +152,9 @@ async function verifySettingsPublication(page, context) {
   await publishDraft.click()
   const messageAlert = page.getByRole('alert')
   await messageAlert.waitFor()
-  assert.equal(await messageAlert.textContent(), 'Check the portal fields and complete each selected translation.')
+  assert.equal(await messageAlert.textContent(), 'Complete the missing translations or remove this language before publishing.')
+  assert.ok(await page.getByRole('checkbox', { name: 'Only untranslated texts', exact: true }).isChecked())
+  assert.equal(await page.getByRole('searchbox', { name: 'Search texts', exact: true }).inputValue(), '')
   assert.equal(await confirmation.count(), 0)
   assert.deepEqual(await readPublicSite(context), oldSite)
 
@@ -172,6 +178,31 @@ async function verifySettingsPublication(page, context) {
   await heading(page, 'Signed in').waitFor()
 }
 
+async function findSettingsTranslation(page, sourceText) {
+  await page.getByRole('button', { name: 'Interface texts', exact: true }).click()
+  const language = page.getByRole('combobox', { name: 'Language to edit', exact: true })
+  assert.equal(await language.inputValue(), 'en')
+  await language.selectOption('pl')
+  const search = page.getByRole('searchbox', { name: 'Search texts', exact: true })
+  await search.fill('Sign out')
+  const visibleWording = page.getByRole('list', { name: 'Text to edit', exact: true })
+  await visibleWording.getByRole('button', { name: 'Sign out admin.sign_out', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Remove catalog from draft', exact: true }).click()
+  const removal = page.getByRole('region', { name: 'Remove this language and its translations from the draft?', exact: true })
+  await removal.getByText('Polski', { exact: true }).waitFor()
+  await removal.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await language.selectOption('en')
+  await search.fill(sourceText)
+  await search.press('Enter')
+  assert.equal(await page.getByText('Draft saved.', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: sourceText + ' admin.code_help', exact: true }).click()
+  const message = page.getByLabel('Translation', { exact: true })
+  assert.equal(await message.inputValue(), sourceText)
+  assert.equal(await page.getByRole('textbox', { name: 'Translation', exact: true }).count(), 1)
+  assert.ok(await message.evaluate(element => element === document.activeElement))
+  return message
+}
+
 async function signOut(page, context, revokedCookie) {
   const logout = waitForAuth(page, 'logout', 204)
   await page.getByRole('button', { name: 'Sign out', exact: true }).click()
@@ -190,7 +221,7 @@ async function signOut(page, context, revokedCookie) {
 }
 
 async function verifyTypeBuilder(page) {
-  await page.getByRole('button', { name: 'Type Builder', exact: true }).click()
+  await page.getByRole('button', { name: 'Structure', exact: true }).click()
   const renderer = page.getByRole('combobox', { name: 'Renderer and collection', exact: true })
   await renderer.selectOption('event')
   const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
@@ -300,8 +331,27 @@ async function assertPolishDraft(locale, title, expected) {
   assert.equal(await title.inputValue(), expected)
 }
 
+async function selectInterfaceLanguage(page, code) {
+  const switcher = page.getByTestId('language-switcher')
+  const summary = switcher.locator('summary')
+  await summary.press('Enter')
+  await switcher.locator(`button[data-language="${code}"]`).click()
+  await page.waitForFunction(language => document.documentElement.lang === language, code)
+  assert.equal(await summary.getAttribute('data-current-language'), code)
+  assert.ok(await summary.evaluate(element => element === document.activeElement))
+}
+
+async function switchLanguageWithUnsavedDraft(page, title, expected) {
+  await selectInterfaceLanguage(page, 'en')
+  const englishEditor = page.getByRole('region', { name: 'Draft editor', exact: true })
+  assert.equal(await englishEditor.getByLabel('Language', { exact: true }).inputValue(), 'pl')
+  assert.equal(await englishEditor.getByLabel(/^Title/u).inputValue(), expected)
+  await selectInterfaceLanguage(page, 'pl')
+  assert.equal(await title.inputValue(), expected)
+}
+
 async function verifyEditorialNavigation(page) {
-  await page.locator('#admin-language').selectOption('pl')
+  await selectInterfaceLanguage(page, 'pl')
   await page.getByRole('button', { name: 'Materiały', exact: true }).click()
   const collection = page.getByRole('combobox', { name: 'Kolekcja', exact: true })
   await collection.selectOption('article')
@@ -327,6 +377,7 @@ async function verifyEditorialNavigation(page) {
 
   await page.setViewportSize({ width: 390, height: 844 })
   await title.fill(updated)
+  await switchLanguageWithUnsavedDraft(page, title, updated)
   const settings = page.getByRole('button', { name: 'Ustawienia portalu', exact: true })
   await settings.click()
   const leave = page.getByRole('dialog')
@@ -347,7 +398,7 @@ async function verifyEditorialNavigation(page) {
   await settings.click()
   await leave.getByRole('button', { name: 'Odrzuć zmiany', exact: true }).click()
   await page.getByRole('heading', { name: 'Ustawienia portalu', level: 1, exact: true }).waitFor()
-  await page.locator('#admin-language').selectOption('en')
+  await selectInterfaceLanguage(page, 'en')
   await heading(page, 'Portal settings').first().waitFor()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 }
@@ -355,22 +406,29 @@ async function verifyEditorialNavigation(page) {
 async function assertPublishedLocales(page) {
   await heading(page, 'Sign in').waitFor()
   await page.waitForFunction(() => document.documentElement.lang === 'en')
-  const language = page.getByRole('combobox', { name: 'Language', exact: true })
-  assert.deepEqual(await language.getByRole('option').evaluateAll(options => options.map(option => option.value)), ['en', 'kk', 'pl', 'ru'])
+  const language = page.getByTestId('language-switcher')
+  const summary = language.locator('summary')
+  await summary.press('Enter')
+  assert.deepEqual(await language.locator('button[data-language]').evaluateAll(options => options.map(option => option.dataset.language)), ['en', 'kk', 'pl', 'ru'])
+  await language.locator('button[data-language="kk"]').press('Escape')
+  assert.equal(await language.getAttribute('open'), null)
+  assert.ok(await summary.evaluate(element => element === document.activeElement))
   await eachInOrder([['kk', 'Кіру'], ['ru', 'Вход'], ['pl', 'Zaloguj się']], async ([locale, name]) => {
-    await page.locator('#admin-language').selectOption(locale)
+    await selectInterfaceLanguage(page, locale)
     await heading(page, name).waitFor()
-    await page.waitForFunction(value => document.documentElement.lang === value, locale)
   })
   const localized = await page.reload()
   assert.equal(localized.status(), 200)
   assert.match(await localized.text(), /<html[^>]+lang="pl"/u)
   await heading(page, 'Zaloguj się').waitFor()
-  const polish = page.getByRole('combobox', { name: 'Język', exact: true })
-  assert.equal(await polish.inputValue(), 'pl')
-  await polish.selectOption('en')
+  assert.equal(await summary.getAttribute('data-current-language'), 'pl')
+  await page.goto(origin)
+  await page.waitForURL(`${origin}/pl/articles`)
+  assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'pl')
+  await page.goto(admin)
+  await heading(page, 'Zaloguj się').waitFor()
+  await selectInterfaceLanguage(page, 'en')
   await heading(page, 'Sign in').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'en')
 }
 
 const browser = await chromium.launch()
@@ -383,6 +441,8 @@ try {
   const document = await page.goto(admin)
   assert.equal(document.status(), 200)
   assert.match(document.headers()['cache-control'], /no-store/u)
+  const negotiated = await context.request.get(admin, { headers: { 'Accept-Language': 'kk-KZ, en;q=0.5' } })
+  assert.match(await negotiated.text(), /<html[^>]+lang="kk"/u)
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifySettingsPublication(page, context)

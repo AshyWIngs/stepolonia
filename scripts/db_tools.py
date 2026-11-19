@@ -82,7 +82,6 @@ def main():
     migrate.add_argument("action", choices=("up", "down", "status"))
     migrate.add_argument("--disposable", action="store_true",
                          help="allow Down for a marked disposable installation")
-    commands.add_parser("seed")
     commands.add_parser("prepare-roles")
     initializer = commands.add_parser("initialize-site")
     initializer.add_argument("title")

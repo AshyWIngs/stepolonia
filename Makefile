@@ -3,7 +3,7 @@ SITE ?= example.test
 COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 
-.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate seed import-languages db-test publishing-test auth-test resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
+.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate import-languages db-test publishing-test auth-test resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
 swagger:
 	python3 scripts/dev-swagger.py
@@ -146,7 +146,7 @@ lifecycle: setup
 isolation: setup
 	python3 scripts/check-isolation.py --site "$(SITE)"
 
-migrate seed import-languages:
+migrate import-languages:
 	@test "$(origin SITE)" = "command line" || { echo 'Specify SITE on the command line for database maintenance'; exit 2; }
 	python3 scripts/db_tools.py --site "$(SITE)" $@ $(if $(filter migrate,$@),$(or $(ACTION),up)) $(if $(filter import-languages,$@),"$(FILE)") $(if $(and $(filter migrate,$@),$(filter down,$(ACTION)),$(filter 1,$(DISPOSABLE))),--disposable)
 

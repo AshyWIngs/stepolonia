@@ -26,7 +26,7 @@ const (
 
 var settingsRoutes = map[string][]route{
 	settingsPath: {
-		{kind: fullKind, method: http.MethodGet, operationID: readSettingsOperation, summary: "Read editable portal settings", response: "EditablePortalSettings", description: "Requires the settings.manage grant and a verified editor database login. Returns the draft, or the current publication if there is no draft, along with the enabled language directory."},
+		{kind: fullKind, method: http.MethodGet, operationID: readSettingsOperation, summary: "Read editable portal settings", response: editableSettingsSchemaName, description: "Requires the settings.manage grant and a verified editor database login. Returns the draft, or the current publication if there is no draft, along with the enabled language directory."},
 		{kind: fullKind, method: http.MethodPut, operationID: saveSettingsOperation, summary: "Save a portal settings draft", response: "SettingsVersion", description: "Requires settings.manage, CSRF and fresh strong authentication. Replaces the full draft, with all selected interface catalogs, at the expected version. Public readers keep the previous publication."},
 	},
 	publishSettingsPath: {

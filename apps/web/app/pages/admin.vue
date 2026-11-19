@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { useAsyncData, useCookie, useHeadSafe, useI18n, useResponseHeader } from '#imports'
+import { useAsyncData, useHeadSafe, useI18n, useResponseHeader } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
 import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
 import { usePublicApi } from '~/composables/usePublicApi'
+import { usePortalAcceptLanguage, usePortalLanguagePreference } from '~/composables/usePortalLanguagePreference'
+import { preferredLanguage } from '~/utils/language'
 import { publicError } from '~/utils/public-content'
 
 defineOptions({ name: 'AdminSignInPage' })
 
-const preferredLanguage = useCookie<string | null>('admin-language', { sameSite: 'lax', secure: true, maxAge: 31536000 })
+const savedLanguage = usePortalLanguagePreference()
+const acceptedLanguage = usePortalAcceptLanguage()
 const { client, request } = usePublicApi()
 
 async function loadCatalog(language?: string | null) {
@@ -18,7 +21,13 @@ async function loadCatalog(language?: string | null) {
   return result.data
 }
 
-const { data: initialCatalog, error } = await useAsyncData('admin-ui-catalog', () => loadCatalog(preferredLanguage.value))
+const { data: initialCatalog, error } = await useAsyncData('admin-ui-catalog', async () => {
+  const saved = savedLanguage.value
+  const catalog = await loadCatalog(saved)
+  if (saved && catalog.language.code === saved) return catalog
+  const chosen = preferredLanguage(catalog.languages.map(item => item.code), catalog.language.code, saved, acceptedLanguage.value)
+  return chosen === catalog.language.code ? catalog : loadCatalog(chosen)
+})
 if (error.value || !initialCatalog.value) throw publicError(503)
 const catalog = ref(initialCatalog.value)
 const { t, locale, setLocaleMessage } = useI18n({
@@ -26,28 +35,34 @@ const { t, locale, setLocaleMessage } = useI18n({
   flatJson: true, messages: { [catalog.value.language.code]: catalog.value.messages },
 })
 
-async function selectLanguage(event: Event) {
-  const select = event.currentTarget
-  if (!(select instanceof HTMLSelectElement) || changingLanguage.value) return
-  if (!catalog.value.languages.some(language => language.code === select.value)) return
-  changingLanguage.value = true
+let catalogRequest = 0
+let languageChoice: string | undefined
+
+async function updateCatalog(language: string, remember: boolean) {
+  const requestID = ++catalogRequest
   catalogFailure.value = false
   try {
-    const next = await loadCatalog(select.value)
-    if (!active) return
+    const next = await loadCatalog(language)
+    if (!active || requestID !== catalogRequest) return
     setLocaleMessage(next.language.code, next.messages)
     locale.value = next.language.code
     catalog.value = next
-    preferredLanguage.value = next.language.code
+    if (remember && next.language.code === language) savedLanguage.value = language
   }
   catch {
-    if (!active) return
-    select.value = locale.value
-    catalogFailure.value = true
+    if (active && requestID === catalogRequest) catalogFailure.value = true
   }
   finally {
-    changingLanguage.value = false
+    if (requestID === catalogRequest) languageChoice = undefined
   }
+}
+
+async function selectLanguage(language: string) {
+  if (changingLanguage.value || !catalog.value.languages.some(choice => choice.code === language)) return
+  changingLanguage.value = true
+  languageChoice = language
+  try { await updateCatalog(language, true) }
+  finally { changingLanguage.value = false }
 }
 
 const themes = ['system', 'light', 'dark'] as const
@@ -57,10 +72,6 @@ const catalogFailure = ref(false)
 const phase = ref<AdminSessionKind | null>(null)
 const pending = ref(true)
 const notice = ref('')
-const settingsOpen = ref(false)
-const contentOpen = ref(false)
-const builderOpen = ref(false)
-const accessView = ref<'account' | 'access' | null>(null)
 const restrictedEntry = ref<RestrictedEntryMode | null>(null)
 const accessSection = ref<'users' | 'roles' | 'audit'>('users')
 const confirmingIdentity = ref(false)
@@ -74,8 +85,10 @@ const csrf = ref('')
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let active = true
 
-const tools = ['content', 'registry', 'settings', 'account', 'access'] as const
-type AdminTool = typeof tools[number]
+const domains = ['content', 'registry', 'settings', 'access'] as const
+type AdminTool = typeof domains[number] | 'account' | 'signed_in'
+const activeTool = ref<AdminTool>('signed_in')
+const workspaceOpen = computed(() => phase.value === 'full' && !confirmingIdentity.value)
 const editingState = ref({ dirty: false, busy: false })
 const leaveDialog = ref<HTMLDialogElement>()
 let leaveAction: (() => void) | undefined
@@ -89,12 +102,6 @@ watch(() => editingState.value.dirty, dirty => {
   else window.removeEventListener('beforeunload', warnBeforeLeaving)
 })
 
-const activeTool = computed(() => {
-  if (settingsOpen.value) return 'settings'
-  if (contentOpen.value) return 'content'
-  if (builderOpen.value) return 'registry'
-  return accessView.value ?? 'signed_in'
-})
 const title = computed(() => {
   if (restrictedEntry.value) return restrictedEntry.value === 'enrollment' ? 'entry_enrollment' : 'entry_recovery'
   switch (phase.value) {
@@ -159,10 +166,7 @@ async function refresh(moveFocus = false) {
     phase.value = restored.kind
     if (restored.kind === 'enrollment' || restored.kind === 'recovery') restrictedEntry.value = restored.kind
     if (restored.kind !== 'full') {
-      settingsOpen.value = false
-      contentOpen.value = false
-      builderOpen.value = false
-      accessView.value = null
+      activeTool.value = 'signed_in'
       editingState.value = { dirty: false, busy: false }
       confirmingIdentity.value = false
     }
@@ -209,10 +213,7 @@ async function afterAuthAction(action: AdminAuthAction) {
     notice.value = 'signed_out'
     phase.value = null
     login.value = ''
-    settingsOpen.value = false
-    contentOpen.value = false
-    builderOpen.value = false
-    accessView.value = null
+    activeTool.value = 'signed_in'
     editingState.value = { dirty: false, busy: false }
     confirmingIdentity.value = false
     await refresh()
@@ -241,14 +242,11 @@ function completeNavigation() {
   action?.()
 }
 
-function selectTool(tool?: AdminTool) {
+function selectTool(tool: AdminTool = 'signed_in') {
   if (tool === activeTool.value) return
   navigate(() => {
     editingState.value = { dirty: false, busy: false }
-    settingsOpen.value = tool === 'settings'
-    contentOpen.value = tool === 'content'
-    builderOpen.value = tool === 'registry'
-    accessView.value = tool === 'account' || tool === 'access' ? tool : null
+    activeTool.value = tool
     if (tool === 'access') accessSection.value = 'users'
     failure.value = ''
     void focusHeading()
@@ -292,18 +290,7 @@ async function confirmActionIdentity() {
 }
 
 async function refreshPublishedCatalog() {
-  try {
-    const next = await loadCatalog(locale.value)
-    if (!active) return
-    setLocaleMessage(next.language.code, next.messages)
-    locale.value = next.language.code
-    catalog.value = next
-    preferredLanguage.value = next.language.code
-    catalogFailure.value = false
-  }
-  catch {
-    if (active) catalogFailure.value = true
-  }
+  await updateCatalog(languageChoice ?? locale.value, languageChoice !== undefined)
 }
 
 onMounted(() => {
@@ -323,14 +310,10 @@ onBeforeUnmount(() => {
     <header class="admin-header">
       <span class="admin-name">{{ catalog.settings.title }} · {{ t('admin.name') }}</span>
       <div class="admin-preferences">
-        <div>
-          <label for="admin-language">{{ t('admin.language') }}</label>
-          <select id="admin-language" :value="locale" :disabled="changingLanguage" @change="selectLanguage">
-            <option v-for="language in catalog.languages" :key="language.code" :value="language.code" :lang="language.code" :dir="language.direction">
-              {{ language.native_name }}
-            </option>
-          </select>
-        </div>
+        <LanguageSwitcher
+          :label="t('admin.language')" :current="catalog.language" :choices="catalog.languages"
+          :busy="changingLanguage" @select="selectLanguage"
+        />
         <div>
           <label for="admin-theme">{{ t('admin.theme') }}</label>
           <select id="admin-theme" v-model="theme" @change="savePreference('admin-theme', theme)">
@@ -338,17 +321,16 @@ onBeforeUnmount(() => {
           </select>
         </div>
       </div>
+      <div v-if="workspaceOpen" class="admin-identity-actions">
+        <button
+type="button" :aria-current="activeTool === 'account' ? 'page' : undefined" :disabled="blocked || editingState.busy"
+          @click="selectTool('account')">{{ t('admin.account') }}</button>
+        <button type="button" :disabled="blocked || editingState.busy" @click="navigate(() => { void submit('logout') })">
+          {{ t('admin.sign_out') }}
+        </button>
+      </div>
     </header>
 
-    <nav v-if="phase === 'full' && !confirmingIdentity" class="admin-navigation" :aria-label="t('admin.name')">
-      <button
-        v-for="tool in tools" :key="tool" type="button" :aria-current="activeTool === tool ? 'page' : undefined"
-        :disabled="blocked || editingState.busy" @click="selectTool(tool)"
-      >{{ t(`admin.${tool}`) }}</button>
-      <button type="button" class="admin-sign-out" :disabled="blocked || editingState.busy" @click="navigate(() => { void submit('logout') })">
-        {{ t('admin.sign_out') }}
-      </button>
-    </nav>
     <dialog ref="leaveDialog" class="admin-leave" aria-labelledby="admin-leave-title" @close="leaveAction = undefined">
       <h2 id="admin-leave-title">{{ t('admin.leave_unsaved') }}</h2>
       <form method="dialog">
@@ -356,87 +338,93 @@ onBeforeUnmount(() => {
         <button type="button" @click="completeNavigation">{{ t('admin.discard_changes') }}</button>
       </form>
     </dialog>
-    <section
-      class="admin-card"
-      :class="{ 'admin-card--signed-in': phase === 'full' && !confirmingIdentity, 'admin-card--wide': (settingsOpen || builderOpen || accessView) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
-      aria-labelledby="admin-heading"
-    >
-      <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
-      <output v-if="notice" class="admin-status">{{ t(`admin.${notice}`) }}</output>
-      <p v-if="failure" id="admin-auth-error" class="admin-error" role="alert">{{ t(`admin.${failure}`) }}</p>
-      <p v-if="catalogFailure" class="admin-error" role="alert">{{ t('admin.unavailable') }}</p>
-      <output v-if="pending && phase !== null" class="admin-status">{{ t('admin.working') }}</output>
+    <div :class="{ 'admin-workspace': workspaceOpen }">
+      <nav v-if="workspaceOpen" class="admin-navigation" :aria-label="t('admin.name')">
+        <button
+          v-for="tool in domains" :key="tool" type="button" :aria-current="activeTool === tool ? 'page' : undefined"
+          :disabled="blocked || editingState.busy" @click="selectTool(tool)"
+        >{{ t(tool === 'registry' ? 'admin.workspace_structure' : `admin.${tool}`) }}</button>
+      </nav>
+      <section
+        class="admin-card" :class="{ 'admin-card--workspace': workspaceOpen }" aria-labelledby="admin-heading"
+      >
+        <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
+        <output v-if="notice" class="admin-status">{{ t(`admin.${notice}`) }}</output>
+        <p v-if="failure" id="admin-auth-error" class="admin-error" role="alert">{{ t(`admin.${failure}`) }}</p>
+        <p v-if="catalogFailure" class="admin-error" role="alert">{{ t('admin.unavailable') }}</p>
+        <output v-if="pending && phase !== null" class="admin-status">{{ t('admin.working') }}</output>
 
-      <AdminRestrictedEntry
-        v-if="restrictedEntry" :mode="restrictedEntry" :phase="phase" :csrf="csrf" :translate="t"
-        @started="receiveRestrictedCSRF" @finished="completeRestrictedEntry" @restart="changeRestrictedEntry(null)"
-      />
-      <form v-else-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'admin-auth-error' : undefined" @submit.prevent="submit('login')">
-        <label for="admin-login">{{ t('admin.login') }}</label>
-        <input id="admin-login" v-model="login" type="text" required autocomplete="username" spellcheck="false">
-        <label for="admin-password">{{ t('admin.password') }}</label>
-        <input id="admin-password" v-model="password" type="password" required autocomplete="current-password">
-        <button type="submit" :disabled="blocked">{{ t('admin.continue') }}</button>
-        <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('enrollment')">{{ t('admin.entry_enrollment') }}</button>
-        <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('recovery')">{{ t('admin.entry_recovery') }}</button>
-      </form>
-
-      <form v-else-if="phase === 'login'" :aria-busy="pending" @submit.prevent="submit('mfa/verify')">
-        <p id="admin-code-help">{{ t('admin.code_help') }}</p>
-        <label for="admin-code">{{ t('admin.code') }}</label>
-        <input
-          id="admin-code" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required
-          :aria-describedby="failure ? 'admin-code-help admin-auth-error' : 'admin-code-help'"
-        >
-        <button type="submit" :disabled="blocked">{{ t('admin.verify') }}</button>
-        <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.restart') }}</button>
-      </form>
-
-      <template v-else-if="phase === 'full'">
-        <form v-if="confirmingIdentity" :aria-busy="pending" @submit.prevent="submit('step-up')">
-          <label for="admin-step-up-password">{{ t('admin.password') }}</label>
-          <input id="admin-step-up-password" v-model="password" type="password" required autocomplete="current-password">
-          <label for="admin-step-up-code">{{ t('admin.code') }}</label>
-          <input id="admin-step-up-code" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
-          <button type="submit" :disabled="blocked">{{ t('admin.unlock') }}</button>
-          <button type="button" class="admin-secondary" :disabled="pending" @click="confirmingIdentity = false">{{ t('admin.cancel') }}</button>
+        <AdminRestrictedEntry
+          v-if="restrictedEntry" :mode="restrictedEntry" :phase="phase" :csrf="csrf" :translate="t"
+          @started="receiveRestrictedCSRF" @finished="completeRestrictedEntry" @restart="changeRestrictedEntry(null)"
+        />
+        <form v-else-if="phase === 'preauth'" :aria-busy="pending" :aria-describedby="failure ? 'admin-auth-error' : undefined" @submit.prevent="submit('login')">
+          <label for="admin-login">{{ t('admin.login') }}</label>
+          <input id="admin-login" v-model="login" type="text" required autocomplete="username" spellcheck="false">
+          <label for="admin-password">{{ t('admin.password') }}</label>
+          <input id="admin-password" v-model="password" type="password" required autocomplete="current-password">
+          <button type="submit" :disabled="blocked">{{ t('admin.continue') }}</button>
+          <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('enrollment')">{{ t('admin.entry_enrollment') }}</button>
+          <button type="button" class="admin-secondary" :disabled="blocked" @click="changeRestrictedEntry('recovery')">{{ t('admin.entry_recovery') }}</button>
         </form>
-        <PortalSettings
-          v-if="settingsOpen" v-show="!confirmingIdentity"
-          :csrf="csrf" :translate="t" @published="refreshPublishedCatalog"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
-        />
-        <AdminContentWorkspace
-          v-if="contentOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          :default-language="catalog.settings.default_language"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
-        />
-        <AdminTypeBuilder
-          v-if="builderOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
-        />
-        <AdminAccount
-          v-if="accessView === 'account'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
-        />
-        <section v-if="accessView === 'access'" v-show="!confirmingIdentity" class="access-navigation">
-          <nav :aria-label="t('admin.access')" class="access-navigation">
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'users'" @click="selectAccessSection('users')">{{ t('admin.users') }}</button>
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'roles'" @click="selectAccessSection('roles')">{{ t('admin.roles') }}</button>
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'audit'" @click="selectAccessSection('audit')">{{ t('admin.audit') }}</button>
-            <button type="button" class="admin-secondary" @click="selectTool()">{{ t('admin.close') }}</button>
-          </nav>
-          <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
-          <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
-          <AdminAudit v-else :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
-        </section>
-      </template>
-      <template v-else-if="phase">
-        <p>{{ t('admin.restricted') }}</p>
-        <button type="button" :disabled="blocked" @click="submit('logout')">{{ t('admin.restart') }}</button>
-      </template>
-      <button v-else-if="!pending" type="button" :disabled="limited" @click="refresh(true)">{{ t('admin.retry') }}</button>
-    </section>
+
+        <form v-else-if="phase === 'login'" :aria-busy="pending" @submit.prevent="submit('mfa/verify')">
+          <p id="admin-code-help">{{ t('admin.code_help') }}</p>
+          <label for="admin-code">{{ t('admin.code') }}</label>
+          <input
+            id="admin-code" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required
+            :aria-describedby="failure ? 'admin-code-help admin-auth-error' : 'admin-code-help'"
+          >
+          <button type="submit" :disabled="blocked">{{ t('admin.verify') }}</button>
+          <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.restart') }}</button>
+        </form>
+
+        <template v-else-if="phase === 'full'">
+          <form v-if="confirmingIdentity" :aria-busy="pending" @submit.prevent="submit('step-up')">
+            <label for="admin-step-up-password">{{ t('admin.password') }}</label>
+            <input id="admin-step-up-password" v-model="password" type="password" required autocomplete="current-password">
+            <label for="admin-step-up-code">{{ t('admin.code') }}</label>
+            <input id="admin-step-up-code" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+            <button type="submit" :disabled="blocked">{{ t('admin.unlock') }}</button>
+            <button type="button" class="admin-secondary" :disabled="pending" @click="confirmingIdentity = false">{{ t('admin.cancel') }}</button>
+          </form>
+          <PortalSettings
+            v-if="activeTool === 'settings'" v-show="!confirmingIdentity"
+            :csrf="csrf" :ui-language="locale" :ui-messages="catalog.messages" :translate="t" @published="refreshPublishedCatalog"
+            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
+          />
+          <AdminContentWorkspace
+            v-if="activeTool === 'content'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+            :default-language="catalog.settings.default_language"
+            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
+          />
+          <AdminTypeBuilder
+            v-if="activeTool === 'registry'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
+          />
+          <AdminAccount
+            v-if="activeTool === 'account'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
+            @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
+          />
+          <section v-if="activeTool === 'access'" v-show="!confirmingIdentity" class="access-navigation">
+            <nav :aria-label="t('admin.access')" class="access-navigation">
+              <button type="button" class="admin-secondary" :disabled="blocked || editingState.busy" :aria-pressed="accessSection === 'users'" @click="selectAccessSection('users')">{{ t('admin.users') }}</button>
+              <button type="button" class="admin-secondary" :disabled="blocked || editingState.busy" :aria-pressed="accessSection === 'roles'" @click="selectAccessSection('roles')">{{ t('admin.roles') }}</button>
+              <button type="button" class="admin-secondary" :disabled="blocked || editingState.busy" :aria-pressed="accessSection === 'audit'" @click="selectAccessSection('audit')">{{ t('admin.audit') }}</button>
+              <button type="button" class="admin-secondary" :disabled="blocked || editingState.busy" @click="selectTool()">{{ t('admin.close') }}</button>
+            </nav>
+            <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
+            <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
+            <AdminAudit v-else :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
+          </section>
+        </template>
+        <template v-else-if="phase">
+          <p>{{ t('admin.restricted') }}</p>
+          <button type="button" :disabled="blocked" @click="submit('logout')">{{ t('admin.restart') }}</button>
+        </template>
+        <button v-else-if="!pending" type="button" :disabled="limited" @click="refresh(true)">{{ t('admin.retry') }}</button>
+      </section>
+    </div>
   </main>
 </template>
 

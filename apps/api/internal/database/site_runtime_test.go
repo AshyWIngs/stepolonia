@@ -42,7 +42,7 @@ func writeSiteRuntimeFixture(t *testing.T, ctx context.Context, cfg *pgx.ConnCon
 	}
 	var version int64
 	requireNoError(t, owner.QueryRowContext(ctx, "SELECT version FROM public.site_state WHERE singleton").Scan(&version))
-	draft := runtimeSiteDraft(mode)
+	draft := runtimeSiteDraft(registeredFixtureKeys(t, ctx, owner), mode)
 	editor := siteconfig.NewService(applicationDatabase(t, cfg, publisherTestRole, "site-runtime-publisher"))
 	version, err := editor.SaveDraft(ctx, version, draft)
 	requireNoError(t, err)
@@ -52,8 +52,8 @@ func writeSiteRuntimeFixture(t *testing.T, ctx context.Context, cfg *pgx.ConnCon
 	}
 }
 
-func runtimeSiteDraft(mode string) siteconfig.Draft {
-	draft := siteFixture()
+func runtimeSiteDraft(keys []string, mode string) siteconfig.Draft {
+	draft := siteFixture(keys)
 	draft.Settings.Title = "Fixture secondary"
 	if mode == runtimePrimary {
 		draft.Settings.Title = "Fixture primary"

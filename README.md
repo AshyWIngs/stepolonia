@@ -30,15 +30,14 @@ make python-version-check
 make up
 ```
 
-The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until the operator applies the schema and publishes the first site settings revision. Seed the language directory, then initialize the selected installation with its own title and initial language.
+The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until the operator applies the schema and publishes the first site settings revision. Initialize the selected installation with its own title and initial language.
 
 ```sh
 make SITE=example.test migrate
-make SITE=example.test seed
 python3 scripts/db_tools.py --site example.test initialize-site "Polacy w Kazachstanie" pl
 ```
 
-The command publishes the bundled interface catalogs for `en`, `kk`, `pl` and `ru` once. Later edits are available in Administration at `/admin` for an account with `settings.manage`. Saving a draft preserves the public revision until publication. Run `make SITE=example.test smoke` after the initial publication. The example installation serves local HTTP.
+The command publishes the initial PostgreSQL interface catalogs for `en`, `kk`, `pl` and `ru` once. Later edits are available in Administration at `/admin` for an account with `settings.manage`. Saving a draft preserves the public revision until publication. Run `make SITE=example.test smoke` after the initial publication. The example installation serves local HTTP.
 
 Administration requires the configured HTTPS origin. For a different installation:
 
@@ -75,7 +74,6 @@ Run migrations separately from the API and pass the target `SITE` explicitly. Us
 python3 scripts/setup-local.py --site sandbox.test
 python3 scripts/site_config.py --site sandbox.test up -d --wait postgres
 make SITE=sandbox.test migrate
-make SITE=sandbox.test seed
 make SITE=sandbox.test migrate ACTION=status
 ```
 
@@ -83,7 +81,7 @@ The one-shot `db-tools` container uses the target database's owner secret. The r
 
 `ACTION=down` removes the application schema and its data. It requires `DISPOSABLE=1` and the test harness's ownership marker. The project, database, volume, `stage12_` database prefix, and database metadata token must agree. Recover persistent data from a separately managed backup.
 
-Seed adds `en`, `ru`, `pl`, and `kk` as initially disabled language entries. Seed and import preserve the enabled state of existing languages. Enabling a language is a separate administrative action.
+Migrations install `en`, `ru`, `pl` and `kk` as disabled language entries. Import preserves the enabled state of existing languages. Initialization enables the starter catalogs together with the first publication.
 
 The importer accepts UTF-8 CSV up to 8 MiB with this exact header:
 
