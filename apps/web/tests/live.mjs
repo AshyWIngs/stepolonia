@@ -264,16 +264,17 @@ async function selectContentLanguage(page, language) {
 
 async function holdRequest(page, pattern) {
   const releaseRequest = Promise.withResolvers()
+  let first = true
   await page.route(pattern, async route => {
-    await releaseRequest.promise
+    if (first) {
+      first = false
+      await releaseRequest.promise
+    }
     await route.continue()
   })
   return {
     pending: page.waitForRequest(pattern, { timeout: 10000 }),
-    async release() {
-      releaseRequest.resolve()
-      await page.unroute(pattern)
-    },
+    release: releaseRequest.resolve,
   }
 }
 
@@ -292,20 +293,18 @@ async function checkPendingLanguageChange(page) {
     const catalog = await holdRequest(page, '**/api/v1/site?lang=fr')
     try {
       await Promise.all([catalog.pending, selectContentLanguage(page, 'fr')])
-      const articles = page.waitForResponse(response => {
-        const url = new URL(response.url())
-        return url.pathname === '/api/v1/content/article' && url.searchParams.get('language') === 'en'
-      }, { timeout: 10000 })
-      await languages.release()
-      await articles
+      languages.release()
+      await page.getByRole('heading', { name: 'Fixture en articles', level: 1, exact: true }).waitFor({ timeout: 10000 })
+      await page.waitForFunction(() => document.documentElement.lang === 'en')
       assert.equal(await page.getByRole('heading', { name: '503', level: 1, exact: true }).count(), 0)
     }
     finally {
-      await catalog.release()
+      catalog.release()
     }
   }
   finally {
-    await languages.release()
+    languages.release()
+    await page.unrouteAll({ behavior: 'wait' })
   }
   await page.waitForURL(`${base}/fr/articles`)
   await page.waitForFunction(() => document.documentElement.lang === 'ru' &&
