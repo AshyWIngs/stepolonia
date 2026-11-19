@@ -20,6 +20,35 @@ export function contentFields(item: PublicContent) {
   }
   return fields.filter(([key]) => !['title', 'slug'].includes(key)).map(([key, field]) => ({ key, field }))
 }
+
+export function publishedLabel(item: PublicContent, key: string): string | undefined {
+  return item.field_labels && Object.hasOwn(item.field_labels, key) ? item.field_labels[key] : undefined
+}
+
+export function readableContentKey(key: string): string {
+  return key.replace(/[-_]+/gu, ' ').replace(/^\p{L}/u, letter => letter.toUpperCase())
+}
+
+function formattingLocale(language: string): string {
+  try { return Intl.getCanonicalLocales(language)[0] ?? 'en' }
+  catch { return 'en' }
+}
+
+export function formatContentValue(field: Exclude<PublicField, { kind: 'boolean' }>, language: string): string {
+  if (field.kind === 'integer' || field.kind === 'decimal') {
+    const digits = /^-?\d+(?:\.(\d+))?$/u.exec(field.value)
+    if (!digits) throw publicError(503)
+    return new Intl.NumberFormat(formattingLocale(language), { maximumFractionDigits: digits[1]?.length ?? 0 })
+      .format(field.value as Intl.StringNumericLiteral)
+  }
+  if (field.kind === 'datetime') {
+    const date = new Date(field.value)
+    if (Number.isNaN(date.getTime())) throw publicError(503)
+    return new Intl.DateTimeFormat(formattingLocale(language), { dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC' }).format(date)
+  }
+  return field.kind === 'enum' ? readableContentKey(field.value) : field.value
+}
+
 export function relationPath(path: string): string {
   if (!/^\/[a-z]{2,8}(?:-[a-z0-9]{1,8})*\/(?:articles|events)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(path)) throw publicError(503)
   return path

@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Get published content or its canonical address
-         * @description Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.
+         * @description Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return public scalar fields, resolvable same-language relations and their available labels from the sealed publication. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.
          */
         get: operations["getContent"];
         put?: never;
@@ -233,7 +233,7 @@ export interface components {
             native_name: string;
         };
         /**
-         * @description A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Optional absent scalar values are omitted from maps, and values never use JSON null.
+         * @description A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Detail responses may include their sealed display labels. Optional absent scalar values are omitted from maps, and values never use JSON null.
          * @example {
          *       "item_id": "11111111-1111-4111-8111-111111111111",
          *       "type_key": "article",
@@ -253,7 +253,7 @@ export interface components {
          *       "localized": {
          *         "body": {
          *           "kind": "markdown",
-         *           "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
+         *           "value": "Historie polskiej społeczności i zapowiedzi **wydarzeń**."
          *         },
          *         "slug": {
          *           "kind": "string",
@@ -261,7 +261,7 @@ export interface components {
          *         },
          *         "title": {
          *           "kind": "string",
-         *           "value": "Witaj w Stepolonii"
+         *           "value": "Polska społeczność w Kazachstanie"
          *         }
          *       },
          *       "relations": []
@@ -270,6 +270,10 @@ export interface components {
         PublicItem: {
             /** @description Relative public website path, including language and route namespace. */
             canonical_url: string;
+            /** @description Detail only. Nonblank labels copied from the sealed publication for returned public values and relations in this exact language. */
+            field_labels?: {
+                [key: string]: string;
+            };
             /**
              * Format: uuid
              * @description Stable item UUID shared by all translations.
@@ -477,7 +481,7 @@ export interface components {
          *           "localized": {
          *             "body": {
          *               "kind": "markdown",
-         *               "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
+         *               "value": "Historie polskiej społeczności i zapowiedzi **wydarzeń**."
          *             },
          *             "slug": {
          *               "kind": "string",
@@ -485,7 +489,7 @@ export interface components {
          *             },
          *             "title": {
          *               "kind": "string",
-         *               "value": "Witaj w Stepolonii"
+         *               "value": "Polska społeczność w Kazachstanie"
          *             }
          *           },
          *           "relations": []

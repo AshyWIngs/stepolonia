@@ -93,7 +93,7 @@ func registerContent(api huma.API, reader *content.PublicReader, logger *slog.Lo
 	responses["301"] = &huma.Response{Description: "Historical slug; direct canonical API address in the same language.", Headers: map[string]*huma.Param{locationHeader: {Required: true, Description: "Direct canonical API address in the same language.", Schema: &huma.Schema{Type: huma.TypeString, Examples: []any{canonicalAPI}}}}, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: &huma.Schema{Type: huma.TypeNull}, Examples: map[string]*huma.Example{"redirect": {Summary: "Historical slug resolved by the Location header", Value: json.RawMessage(`null`)}}}}}
 	huma.Register(api, huma.Operation{
 		Tags: []string{publishedContentTag}, OperationID: "getContent", Method: http.MethodGet, Path: "/api/v1/content/{type_key}/{slug}", Summary: "Get published content or its canonical address",
-		Description: "Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.",
+		Description: "Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return public scalar fields, resolvable same-language relations and their available labels from the sealed publication. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.",
 		Responses:   responses, Middlewares: huma.Middlewares{publicQuery(api, languageQueryKey)},
 	}, func(ctx context.Context, input *contentInput) (*contentOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -216,6 +216,7 @@ func contentResponses(api huma.API, list bool) map[string]*huma.Response {
 		"event":   {Summary: "Published Event with boolean, exact decimal and same-language Article relation", Value: event},
 	}
 	if list {
+		event.FieldLabels = nil
 		next := 1
 		examples = map[string]*huma.Example{
 			"page":           {Summary: "First page with limit=1 and another item available", Value: content.PublicPage{Items: []content.PublicItem{apiexamples.SecondArticle()}, NextOffset: &next}},

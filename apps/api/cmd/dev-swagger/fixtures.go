@@ -75,7 +75,7 @@ func seedEventSchema(ctx context.Context, tx *sql.Tx, schema content.TypeSchema)
 		return err
 	}
 	for _, field := range schema.Fields {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_fields(type_id,field_id,key) VALUES($1,$2,$3)`, schema.TypeID, field.ID, field.Key); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_fields(type_id,field_id,key,display_labels) VALUES($1,$2,$3,coalesce($4::jsonb,'{}'::jsonb))`, schema.TypeID, field.ID, field.Key, []byte(field.DisplayLabels)); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_field_definitions(type_id,schema_no,field_id,kind,scope,visibility,required,target_type_id,config) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,$9)`, schema.TypeID, schema.SchemaNo, field.ID, field.Kind, field.Scope, field.Visibility, field.Required, field.TargetTypeID, []byte(field.Config)); err != nil {
@@ -119,10 +119,14 @@ func insertPublication(ctx context.Context, tx *sql.Tx, fixture publicationFixtu
 	if err != nil {
 		return err
 	}
+	metadata, err := json.Marshal(apiexamples.DisplayMetadata(item))
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO public.content_items(id,type_id) VALUES($1,$2)`, item.ItemID, fixture.typeID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq,shared_values) VALUES($1,$2,$3,$4,1,1,$5)`, item.PublicationID, item.ItemID, fixture.typeID, schemaNo, shared); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq,shared_values,display_metadata) VALUES($1,$2,$3,$4,1,1,$5,$6)`, item.PublicationID, item.ItemID, fixture.typeID, schemaNo, shared, metadata); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO public.content_routes(namespace,locale_code,slug,type_id,item_id) VALUES($1,$2,$3,$4,$5)`, fixture.namespace, item.Language, item.Slug, fixture.typeID, item.ItemID); err != nil {

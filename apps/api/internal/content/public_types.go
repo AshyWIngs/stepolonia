@@ -56,6 +56,7 @@ type PublicItem struct {
 	Shared        map[string]PublicFieldValue `json:"shared" doc:"Public scalar values shared across languages, keyed by pinned Registry field key. Absent optional values have no entry. An empty map is {}."`
 	Localized     map[string]PublicFieldValue `json:"localized" doc:"Public scalar values for this exact language, keyed by pinned Registry field key. No language fallback. Absent optional values have no entry."`
 	Relations     []PublicRelation            `json:"relations" nullable:"false" doc:"Public relations with a published target in this language, ordered by field key. Unavailable targets are omitted. Empty arrays are serialized as []."`
+	FieldLabels   map[string]string           `json:"field_labels,omitempty" doc:"Detail only. Nonblank labels copied from the sealed publication for returned public values and relations in this exact language."`
 }
 type PublicPage struct {
 	Items      []PublicItem `json:"items" nullable:"false" doc:"Published items ordered by publication time descending, then item UUID descending. An empty collection is []."`
@@ -86,7 +87,7 @@ func (PublicRelation) TransformSchema(_ huma.Registry, schema *huma.Schema) *hum
 
 // TransformSchema documents the public PublicItem contract without changing validation.
 func (PublicItem) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Description = "A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Optional absent scalar values are omitted from maps, and values never use JSON null."
+	schema.Description = "A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Detail responses may include their sealed display labels. Optional absent scalar values are omitted from maps, and values never use JSON null."
 	return schema
 }
 

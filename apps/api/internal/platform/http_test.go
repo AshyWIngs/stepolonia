@@ -72,7 +72,12 @@ func TestPublishingOpenAPI(t *testing.T) {
 	}
 	registry := spec.Components.Schemas
 	item := registry.SchemaFromRef(detail.Responses["200"].Content["application/json"].Schema.Ref)
-	assertPublicFields(t, registry, item, "canonical_url", "item_id", "language", "localized", "publication_id", "relations", "schema_no", "shared", "slug", "translations", "type_key")
+	assertPublicFields(t, registry, item, "canonical_url", "field_labels", "item_id", "language", "localized", "publication_id", "relations", "schema_no", "shared", "slug", "translations", "type_key")
+	labels := item.Properties["field_labels"]
+	labelType, ok := labels.AdditionalProperties.(*huma.Schema)
+	if slices.Contains(item.Required, "field_labels") || labels.Type != "object" || !ok || labelType.Type != "string" {
+		t.Fatal("field_labels must be an optional map of plain text")
+	}
 	field := item.Properties["shared"].AdditionalProperties.(*huma.Schema)
 	if field.Ref != "" {
 		field = registry.SchemaFromRef(field.Ref)

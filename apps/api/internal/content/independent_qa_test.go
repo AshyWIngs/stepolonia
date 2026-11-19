@@ -85,6 +85,8 @@ func TestContentIndependentDisplayAndSemanticIntegration(t *testing.T) {
 func qaDisplayAndSemantic(t *testing.T, s *Service, runtime *sql.DB, schema TypeSchema) {
 	t.Helper()
 	ctx := context.Background()
+	labelKey := schema.Fields[0].Key
+	schema = qaDisplayEdit(t, s, schema, `{"ru":{"label":"Published label"}}`)
 	state := createTestDraft(t, s, schema.TypeID, map[string]ValuePatch{qaLocale: fullLocale("qa-display")})
 	state = qaPublish(t, s, state, qaLocale)
 	first := state.PublicationID
@@ -97,9 +99,11 @@ func qaDisplayAndSemantic(t *testing.T, s *Service, runtime *sql.DB, schema Type
 		if !reflect.DeepEqual(before, after) {
 			t.Fatal("display-only change modified draft counters or readiness")
 		}
+		assertPublicDisplayLabel(t, runtime, schema.Key, labelKey, "Published label")
 	}
 	state, err := s.Publish(ctx, Actor{}, state.ItemID, state.Version, state.SchemaNo, []string{qaLocale})
 	must(t, err)
+	assertPublicDisplayLabel(t, runtime, schema.Key, labelKey, "New label")
 	var oldLabels, newLabels string
 	must(t, s.db.QueryRow(`SELECT display_metadata::text FROM public.content_publications WHERE id=$1`, first).Scan(&oldLabels))
 	must(t, s.db.QueryRow(`SELECT display_metadata::text FROM public.content_publications WHERE id=$1`, state.PublicationID).Scan(&newLabels))
@@ -126,6 +130,15 @@ func qaDisplayAndSemantic(t *testing.T, s *Service, runtime *sql.DB, schema Type
 	}
 	qaRawImmutability(t, s, state)
 	qaUnsealedCommits(t, s.db, state)
+}
+
+func assertPublicDisplayLabel(t *testing.T, runtime *sql.DB, typeKey, fieldKey, expected string) {
+	t.Helper()
+	resolved, err := NewPublicReader(runtime).Resolve(context.Background(), typeKey, qaLocale, "qa-display")
+	must(t, err)
+	if len(resolved.Item.FieldLabels) != 1 || resolved.Item.FieldLabels[fieldKey] != expected {
+		t.Fatalf("unexpected public labels: %v", resolved.Item.FieldLabels)
+	}
 }
 
 func qaDisplayEdit(t *testing.T, s *Service, schema TypeSchema, metadata string) TypeSchema {

@@ -9,7 +9,7 @@ CREATE TABLE public.ui_message_keys (
 
 INSERT INTO public.ui_message_keys (message_key) VALUES
 ('articles'), ('events'), ('empty'), ('pagination'), ('previous'), ('next'),
-('navigation'),
+('navigation'), ('related_content'),
 ('all'), ('languages'), ('errors.400'), ('errors.404'), ('errors.503'),
 ('errors.other'), ('errors.retry'), ('errors.home'),
 ('admin.name'), ('admin.language'), ('admin.theme'),

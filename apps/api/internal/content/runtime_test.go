@@ -60,7 +60,14 @@ func createEventRuntimeFixture(t *testing.T, s *Service) {
 	input := initialType()
 	input.Key = eventTypeKey
 	input.RouteNamespace = eventsNamespace
-	input.Fields = append(input.Fields, Definition{Key: fixtureFeaturedFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "price", Kind: kindDecimal, Scope: scopeShared, Visibility: visibilityPublic}, Definition{Key: "secret", Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate})
+	input.Fields = append(input.Fields,
+		Definition{Key: fixtureFeaturedFieldKey, Kind: kindBoolean, Scope: scopeShared, Visibility: visibilityPublic,
+			DisplayLabels: json.RawMessage(`{"fr":{"label":"À la une"},"ru":{"label":"Другой язык"}}`)},
+		Definition{Key: "price", Kind: kindDecimal, Scope: scopeShared, Visibility: visibilityPublic,
+			DisplayLabels: json.RawMessage(`{"fr":{"label":"Prix","help":"Event price help marker"}}`)},
+		Definition{Key: "secret", Kind: kindString, Scope: scopeShared, Visibility: visibilityPrivate,
+			DisplayLabels: json.RawMessage(`{"fr":{"label":"Private event label marker"}}`)},
+	)
 	schema, err := s.CreateType(ctx, Actor{}, input)
 	must(t, err)
 	state := createTestDraft(t, s, schema.TypeID, map[string]ValuePatch{"fr": fullLocale("stage32-event")})

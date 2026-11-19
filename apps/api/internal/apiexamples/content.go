@@ -21,7 +21,7 @@ func Article() content.PublicItem {
 		PublicationID: "22222222-2222-4222-8222-222222222222",
 		Language:      "pl", Slug: "welcome-to-stepolonia",
 		Shared: map[string]content.PublicFieldValue{}, Relations: []content.PublicRelation{},
-	}, articleRouteNamespace, "Witaj w Stepolonii", "Historie naszej społeczności i zapowiedzi **wydarzeń**.")
+	}, articleRouteNamespace, "Polska społeczność w Kazachstanie", "Historie polskiej społeczności i zapowiedzi **wydarzeń**.")
 }
 
 // SecondArticle provides a second published item for offset pagination examples.
@@ -48,12 +48,26 @@ func Event() content.PublicItem {
 			"featured": {Kind: "boolean", Value: json.RawMessage(`true`)},
 			"price":    {Kind: "decimal", Value: json.RawMessage(`"12.5"`)},
 		},
+		FieldLabels: map[string]string{
+			"featured": "Polecane",
+			"price":    "Cena",
+			"related":  "O polskiej społeczności w Kazachstanie",
+		},
 		Relations: []content.PublicRelation{
 			{FieldKey: "related", Targets: []content.PublicTarget{
 				{ItemID: article.ItemID, CanonicalURL: article.CanonicalURL},
 			}},
 		},
-	}, eventRouteNamespace, "Spotkanie społeczności", "Poznaj społeczność **Stepolonii**.")
+	}, eventRouteNamespace, "Spotkanie społeczności", "Porozmawiamy o historii polskiej społeczności w Kazachstanie.")
+}
+
+// DisplayMetadata expands the example's labels into the stored publication format.
+func DisplayMetadata(item content.PublicItem) map[string]map[string]map[string]string {
+	metadata := make(map[string]map[string]map[string]string, len(item.FieldLabels))
+	for key, label := range item.FieldLabels {
+		metadata[key] = map[string]map[string]string{item.Language: {"label": label}}
+	}
+	return metadata
 }
 
 // EventSchema defines the pinned Registry schema used by the synthetic Event.
@@ -79,8 +93,13 @@ func EventSchema(articleTypeID string) content.TypeSchema {
 			{Key: "related", Kind: "relation", Scope: sharedScope, Visibility: publicVisibility, TargetTypeID: articleTypeID, Config: json.RawMessage(`{}`)},
 		},
 	}
+	metadata := DisplayMetadata(event)
 	for i := range schema.Fields {
-		schema.Fields[i].ID = fmt.Sprintf("77777777-7777-4777-8777-%012d", i+1)
+		field := &schema.Fields[i]
+		field.ID = fmt.Sprintf("77777777-7777-4777-8777-%012d", i+1)
+		if labels, exists := metadata[field.Key]; exists {
+			field.DisplayLabels, _ = json.Marshal(labels)
+		}
 	}
 	return schema
 }
