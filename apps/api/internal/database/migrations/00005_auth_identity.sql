@@ -284,9 +284,15 @@ CREATE TABLE public.auth_rate_policies (
     installation_attempts integer NOT NULL DEFAULT 100,
     hash_jobs integer,
     CONSTRAINT auth_rate_policies_scope_check CHECK (
-        scope IN ('credentials', 'preauth', 'step_up', 'denial_audit')
-        AND (subject_attempts IS null) = (scope = 'preauth')
-        AND (hash_jobs IS NOT null) = (scope = 'credentials')
+        CASE
+            WHEN scope = 'credentials'
+                THEN subject_attempts IS NOT null AND hash_jobs IS NOT null
+            WHEN scope = 'preauth'
+                THEN subject_attempts IS null AND hash_jobs IS null
+            WHEN scope IN ('step_up', 'denial_audit')
+                THEN subject_attempts IS NOT null AND hash_jobs IS null
+            ELSE false
+        END
     ),
     CONSTRAINT auth_rate_policies_bounds_check CHECK (
         version > 0

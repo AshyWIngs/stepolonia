@@ -36,8 +36,6 @@ type RatePolicy struct {
 	HashJobs             *int   `json:"hash_jobs,omitempty"`
 }
 
-const ratePolicyColumns = "scope, version, window_seconds, subject_attempts, ip_attempts, installation_attempts, hash_jobs"
-
 type ratePolicyRow interface{ Scan(...any) error }
 
 func scanRatePolicy(row ratePolicyRow) (RatePolicy, error) {
@@ -52,7 +50,8 @@ func scanRatePolicy(row ratePolicyRow) (RatePolicy, error) {
 }
 
 func readRatePolicy(ctx context.Context, tx *sql.Tx, scope string) (RatePolicy, error) {
-	return scanRatePolicy(tx.QueryRowContext(ctx, "SELECT "+ratePolicyColumns+" FROM public.auth_rate_policies WHERE scope=$1", scope))
+	return scanRatePolicy(tx.QueryRowContext(ctx, `SELECT scope, version, window_seconds, subject_attempts,
+ ip_attempts, installation_attempts, hash_jobs FROM public.auth_rate_policies WHERE scope=$1`, scope))
 }
 
 func validRatePolicy(policy RatePolicy) bool {
@@ -119,7 +118,9 @@ func (s *AuthService) ReplaceRatePolicy(ctx context.Context, req AuthRequest, de
 		var err error
 		updated, err = scanRatePolicy(tx.QueryRowContext(ctx, `UPDATE public.auth_rate_policies
  SET window_seconds=$1,subject_attempts=$2,ip_attempts=$3,installation_attempts=$4,hash_jobs=$5,version=version+1
- WHERE scope=$6 AND version=$7 RETURNING `+ratePolicyColumns, desired.WindowSeconds, desired.SubjectAttempts,
+ WHERE scope=$6 AND version=$7
+ RETURNING scope, version, window_seconds, subject_attempts, ip_attempts, installation_attempts, hash_jobs`,
+			desired.WindowSeconds, desired.SubjectAttempts,
 			desired.IPAttempts, desired.InstallationAttempts, desired.HashJobs, desired.Scope, desired.Version))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrVersionConflict
