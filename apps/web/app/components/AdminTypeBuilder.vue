@@ -167,9 +167,9 @@ onBeforeUnmount(() => { active = false })
     <div class="builder-actions">
       <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
     </div>
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
-    <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
+    <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
     <details v-if="collection?.applied_access">
       <summary>{{ translate('admin.registry_access_applied') }}</summary>
       <ul>

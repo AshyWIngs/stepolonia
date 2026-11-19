@@ -276,8 +276,8 @@ onBeforeUnmount(() => { active = false })
         {{ translate('admin.content_back') }}
       </button>
     </header>
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
-    <p v-else-if="feedback" role="status">{{ translate(feedback) }}</p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
+    <p v-else-if="feedback"><output>{{ translate(feedback) }}</output></p>
     <p v-if="failure" role="alert" class="draft-error">{{ translate(failure) }}</p>
     <button v-if="conflict || (!draft && failure)" type="button" :disabled="busy" @click="edits.size ? ask('reload') : run(refresh)">
       {{ translate('admin.content_reload') }}
@@ -304,7 +304,7 @@ onBeforeUnmount(() => { active = false })
           </li>
         </ul>
       </section>
-      <p v-if="outdated" role="status">{{ translate('admin.content_schema_outdated') }}</p>
+      <p v-if="outdated"><output>{{ translate('admin.content_schema_outdated') }}</output></p>
 
       <form ref="form" @submit.prevent="save">
         <fieldset v-if="sharedFields.length" :disabled="busy || confirmation !== null">

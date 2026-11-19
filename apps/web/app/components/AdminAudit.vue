@@ -43,8 +43,8 @@ onBeforeUnmount(() => { active = false })
   <section class="access-panel" :aria-busy="busy">
     <h2>{{ translate('admin.audit') }}</h2>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
-    <p v-else-if="busy" role="status">{{ translate('admin.working') }}</p>
-    <p v-else-if="!items.length" role="status">{{ translate('admin.audit_empty') }}</p>
+    <p v-else-if="busy"><output>{{ translate('admin.working') }}</output></p>
+    <p v-else-if="!items.length"><output>{{ translate('admin.audit_empty') }}</output></p>
     <button v-if="failure === 'admin.unavailable'" type="button" @click="load(offset)">{{ translate('admin.retry') }}</button>
     <ol class="access-rows">
       <li v-for="item in items" :key="item.id">

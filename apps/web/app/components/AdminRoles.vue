@@ -115,10 +115,11 @@ function save() {
   const action = mode.value
   const role = selected.value
   if (!action || (action !== 'create' && !role)) return
+  const roleToUpdate = action === 'edit' ? role : undefined
   return run(async () => {
     const saved = action === 'copy' && role
       ? await copyAccessRole(role, name.value, props.csrf)
-      : await saveAccessRole(action === 'edit' ? role : undefined, name.value, staged.value, props.csrf)
+      : await saveAccessRole(roleToUpdate, name.value, staged.value, props.csrf)
     if (!active.value) return
     selected.value = saved
     mode.value = undefined
@@ -155,8 +156,8 @@ onMounted(() => { void run(() => load()) })
   <section class="access-panel" :aria-busy="busy">
     <h2>{{ translate('admin.roles') }}</h2>
     <p v-if="error" role="alert">{{ translate(error) }}</p>
-    <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <div class="access-actions">
       <button type="button" :disabled="busy || Boolean(mode)" @click="startEdit('create')">{{ translate('admin.roles_create') }}</button>
       <button type="button" :disabled="busy" @click="reload">{{ translate('admin.access_reload') }}</button>

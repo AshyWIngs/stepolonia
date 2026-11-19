@@ -53,7 +53,7 @@ function publishedHTML(html) {
 async function checkSSR() {
   const event = await documentResponse('/fr/events/stage32-event', 200)
   assert.ok(event.html.includes('Stage 3.2 Event'))
-  assert.match(event.html, /role="img"[^>]+data-current-language="fr"/u)
+  assert.match(event.html, /aria-hidden="true"[^>]+data-current-language="fr"/u)
   assert.ok(!event.html.includes('data-testid="language-switcher"'))
   assert.ok(event.html.includes('>À la une</dt>'))
   const eventFields = event.html.replaceAll('<!--[-->', '').replaceAll('<!--]-->', '')

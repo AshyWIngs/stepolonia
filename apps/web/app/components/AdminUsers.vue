@@ -4,6 +4,8 @@ import { changeUserState, createAccessUser, issueInvitation, listAccessUsers, re
 import type { AccessUser, MembershipSet } from '~/utils/admin-access'
 import { useAccessActions } from '~/utils/admin-access-feedback'
 
+type UserAction = 'activate' | 'disable' | 'invite' | 'memberships'
+
 const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
 const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const users = ref<AccessUser[]>([])
@@ -17,7 +19,7 @@ const sessionsBusy = ref(false)
 const name = ref('')
 const issue = ref<{ token: string, expires_at: string }>()
 const panel = ref<HTMLElement>()
-const confirmation = ref<'disable' | 'activate' | 'invite' | 'memberships'>()
+const confirmation = ref<UserAction>()
 const { active, busy, error, feedback, run } = useAccessActions(() => { emit('step-up') }, () => { emit('session-changed') })
 const additions = computed(() => chosen.value.filter(id => !membership.value?.role_ids.includes(id)).length)
 const removals = computed(() => membership.value?.role_ids.filter(id => !chosen.value.includes(id)).length ?? 0)
@@ -74,7 +76,7 @@ async function loadMembership(user: AccessUser) {
   chosen.value = found.role_ids.slice()
 }
 
-function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 'memberships') {
+function saveUser(user: AccessUser, action: UserAction) {
   return run(async () => {
     await applyUserCommand(user, action)
     if (!active.value) return
@@ -83,7 +85,7 @@ function saveUser(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 
   })
 }
 
-function applyUserCommand(user: AccessUser, action: 'activate' | 'disable' | 'invite' | 'memberships') {
+function applyUserCommand(user: AccessUser, action: UserAction) {
   switch (action) {
     case 'invite': return issueInvitation(user, props.csrf).then(result => {
       if (!active.value) return
@@ -141,7 +143,7 @@ onBeforeUnmount(() => { issue.value = undefined })
   <section class="access-panel" :aria-busy="usersBusy">
     <h2>{{ translate('admin.users') }}</h2>
     <p v-if="error" role="alert">{{ translate(error) }}</p>
-    <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
+    <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
     <form @submit.prevent="create">
       <label for="access-new-login">{{ translate('admin.login') }}</label>
       <input id="access-new-login" v-model="name" :disabled="usersBusy" required maxlength="256">
@@ -192,8 +194,8 @@ onBeforeUnmount(() => { issue.value = undefined })
           <button type="button" :disabled="usersBusy" @click="confirmation = undefined">{{ translate('admin.cancel') }}</button>
         </div>
       </div>
-      <div v-if="issue" role="status" class="access-confirm">
-        <p>{{ translate('admin.users_invite_delivery') }}</p>
+      <div v-if="issue" class="access-confirm">
+        <p><output>{{ translate('admin.users_invite_delivery') }}</output></p>
         <code>{{ issue.token }}</code>
         <p>{{ translate('admin.account_expires') }} {{ date(issue.expires_at) }}</p>
         <button type="button" @click="issue = undefined">{{ translate('admin.account_done') }}</button>

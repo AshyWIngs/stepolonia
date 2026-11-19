@@ -11,17 +11,17 @@ const sessions = ref<AccountSession[]>([])
 const offset = ref(0)
 const busy = ref(false)
 watch(busy, value => emit('busy', value))
-const error = ref('')
+const failure = ref('')
 let active = true
 
 async function run(work: () => Promise<void>) {
   if (busy.value) return
   busy.value = true
-  error.value = ''
+  failure.value = ''
   try { await work() }
-  catch (problem: unknown) {
+  catch (error: unknown) {
     if (!active) return
-    error.value = accessNotice(problem, () => { emit('step-up') }, () => { emit('session-changed') })
+    failure.value = accessNotice(error, () => { emit('step-up') }, () => { emit('session-changed') })
   } finally { busy.value = false }
 }
 
@@ -55,10 +55,10 @@ onBeforeUnmount(() => { active = false })
 
 <template>
   <section class="access-panel" :aria-busy="busy">
-    <p v-if="error" role="alert">{{ translate(error) }}</p>
-    <p v-else-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="failure" role="alert">{{ translate(failure) }}</p>
+    <p v-else-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <p v-else-if="!sessions.length">{{ translate('admin.account_no_sessions') }}</p>
-    <ul v-if="!error || selected" class="access-rows">
+    <ul v-if="!failure || selected" class="access-rows">
       <li v-for="session in sessions" :key="session.id">
         <strong v-if="session.current">{{ translate('admin.account_current_session') }}</strong>
         <dl>
@@ -77,7 +77,7 @@ onBeforeUnmount(() => { active = false })
       </div>
     </div>
     <div class="access-actions">
-      <button v-if="error" type="button" :disabled="busy" @click="run(() => load(offset))">{{ translate('admin.access_reload') }}</button>
+      <button v-if="failure" type="button" :disabled="busy" @click="run(() => load(offset))">{{ translate('admin.access_reload') }}</button>
       <button v-if="offset" type="button" :disabled="busy" @click="run(() => load(offset - accountPageLimit))">{{ translate('previous') }}</button>
       <button v-if="hasLaterAccountPage(offset, sessions.length)" type="button" :disabled="busy" @click="run(() => load(offset + accountPageLimit))">{{ translate('next') }}</button>
     </div>

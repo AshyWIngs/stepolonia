@@ -60,7 +60,7 @@ onBeforeUnmount(() => { active = false })
   <section class="access-panel" aria-labelledby="draft-assignee-heading" :aria-busy="busy">
     <h3 id="draft-assignee-heading" ref="heading" tabindex="-1">{{ translate('admin.assignees') }}</h3>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <fieldset v-if="set" :disabled="busy || confirm">
       <legend>{{ translate('admin.assignees_choose') }}</legend>
       <label v-for="account in set.options" :key="account.id" class="access-check">

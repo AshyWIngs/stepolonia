@@ -25,20 +25,20 @@ export function accessNotice(error: unknown, stepUp: () => void, sessionChanged:
 export function useAccessActions(stepUp: () => void, sessionChanged: () => void) {
   const active = ref(true)
   const busy = ref(false)
-  const error = ref('')
+  const failure = ref('')
   const feedback = ref('')
 
   async function run(action: () => Promise<void>) {
     if (busy.value) return
     busy.value = true
-    error.value = ''
+    failure.value = ''
     feedback.value = ''
     try { await action() }
-    catch (problem: unknown) {
-      if (active.value) error.value = accessNotice(problem, stepUp, sessionChanged)
+    catch (error: unknown) {
+      if (active.value) failure.value = accessNotice(error, stepUp, sessionChanged)
     } finally { busy.value = false }
   }
 
   onBeforeUnmount(() => { active.value = false })
-  return { active, busy, error, feedback, run }
+  return { active, busy, error: failure, feedback, run }
 }

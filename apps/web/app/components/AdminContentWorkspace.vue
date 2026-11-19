@@ -192,7 +192,7 @@ onBeforeUnmount(() => { active.value = false })
           {{ translate('admin.close') }}
         </button>
       </header>
-      <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+      <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
       <p v-if="failure" role="alert">{{ translate(failure) }}</p>
       <button v-if="failure && !selectedItem" type="button" :disabled="busy" @click="loadWorkspace">{{ translate('admin.retry') }}</button>
       <p v-if="loaded && !collections.length">{{ translate('admin.content_no_collections') }}</p>

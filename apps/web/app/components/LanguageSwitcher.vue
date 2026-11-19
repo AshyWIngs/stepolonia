@@ -7,6 +7,7 @@ defineProps<{
   label: string
   current: LanguageChoice
   choices: LanguageChoice[]
+  staticLabelVisible?: boolean
   busy?: boolean
 }>()
 const emit = defineEmits<{ select: [code: string] }>()
@@ -22,7 +23,8 @@ function select(code: string, event: MouseEvent, close: () => void) {
   <HeaderPreference
     :label="label" :current="current.native_name" :current-language="current.code"
     :current-direction="current.direction" icon="language" test-id="language-switcher"
-    :interactive="choices.some(choice => choice.code !== current.code)" :busy="busy"
+    :interactive="choices.some(choice => choice.code !== current.code)"
+    :static-label-visible="staticLabelVisible" :busy="busy"
     :trigger-attrs="{ 'data-current-language': current.code }"
   >
     <template #default="{ close }">

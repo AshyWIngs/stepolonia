@@ -212,7 +212,7 @@ func listAccountResource(w http.ResponseWriter, r *http.Request, req identity.Au
 func executeAccountWrite(w http.ResponseWriter, r *http.Request, service accountService, req identity.AuthRequest, operation, id, password string) {
 	ctx := r.Context()
 	var err error
-	clear := true
+	clearSessionCookies := true
 	switch operation {
 	case accountPasswordOperation:
 		err = service.ChangeAccountPassword(ctx, req, password)
@@ -221,7 +221,7 @@ func executeAccountWrite(w http.ResponseWriter, r *http.Request, service account
 		replyNewCodes(w, codes, err)
 		return
 	case revokeSessionOperation:
-		clear, err = service.RevokeAccountSession(ctx, req, id)
+		clearSessionCookies, err = service.RevokeAccountSession(ctx, req, id)
 	case revokeAllSessionsOperation:
 		err = service.RevokeAll(ctx, req)
 	}
@@ -229,7 +229,7 @@ func executeAccountWrite(w http.ResponseWriter, r *http.Request, service account
 		writeError(w, err)
 		return
 	}
-	if clear {
+	if clearSessionCookies {
 		clearCookies(w)
 	}
 	w.WriteHeader(http.StatusNoContent)

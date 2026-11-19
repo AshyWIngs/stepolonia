@@ -116,7 +116,7 @@ func TestContentRelationsIntegration(t *testing.T) {
 
 func assertRelationProjection(t *testing.T, s *Service, source, target DraftState) {
 	t.Helper()
-	s.authorize = func(_ context.Context, _ *sql.Tx, _ Actor, _ string, _ string, item string, _ []string) error {
+	s.authorize = func(_ context.Context, _ *sql.Tx, _ Actor, _, _, item string, _ []string) error {
 		if item == target.ItemID {
 			return problem(Forbidden, string(Forbidden))
 		}

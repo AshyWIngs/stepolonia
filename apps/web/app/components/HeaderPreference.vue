@@ -10,6 +10,7 @@ defineProps<{
   testId: string
   triggerAttrs?: Record<string, string>
   interactive?: boolean
+  staticLabelVisible?: boolean
   busy?: boolean
 }>()
 
@@ -38,8 +39,6 @@ function focusout(event: FocusEvent) {
 
 <template>
   <div class="header-preference">
-    <span :id="labelId" class="header-preference-label">{{ label }}</span>
-    <span :id="currentId" class="header-preference-label" :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
     <details
       v-if="interactive" ref="details" :data-testid="testId"
       :aria-busy="busy || undefined" @keydown.esc="handleEscape" @focusout="focusout"
@@ -48,6 +47,8 @@ function focusout(event: FocusEvent) {
         ref="summary" class="header-preference-trigger"
         :aria-labelledby="`${labelId} ${currentId}`" :title="`${label} · ${current}`" v-bind="triggerAttrs"
       >
+        <span :id="labelId" class="header-preference-label">{{ label }}</span>
+        <span :id="currentId" class="header-preference-label" :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
         <PreferenceIcon :name="icon" />
       </summary>
       <ul class="header-preference-options">
@@ -55,10 +56,13 @@ function focusout(event: FocusEvent) {
       </ul>
     </details>
     <span
-      v-else class="header-preference-trigger" role="img"
-      :aria-labelledby="`${labelId} ${currentId}`" :title="`${label} · ${current}`" v-bind="triggerAttrs"
+      v-else class="header-preference-trigger" :aria-hidden="staticLabelVisible || undefined"
+      :title="staticLabelVisible ? undefined : `${label} · ${current}`" v-bind="triggerAttrs"
     >
       <PreferenceIcon :name="icon" />
+      <span v-if="!staticLabelVisible" class="header-preference-label">
+        {{ label }} · <span :lang="currentLanguage" :dir="currentDirection">{{ current }}</span>
+      </span>
     </span>
   </div>
 </template>

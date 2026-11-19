@@ -13,19 +13,19 @@ func TestDomainMigrationsInitialSiteSettingsIntegration(t *testing.T) {
 	ctx := context.Background()
 	provider, err := Provider(db)
 	requireNoError(t, err)
-	_, err = provider.UpTo(ctx, 2)
+	_, err = provider.UpTo(ctx, 6)
 	requireNoError(t, err)
 	assertInitialSiteSettings(t, db, false)
 
-	_, err = provider.UpTo(ctx, 3)
+	_, err = provider.UpTo(ctx, 7)
 	requireNoError(t, err)
 	assertInitialSiteSettings(t, db, true)
 
-	_, err = provider.DownTo(ctx, 2)
+	_, err = provider.DownTo(ctx, 6)
 	requireNoError(t, err)
 	assertInitialSiteSettings(t, db, false)
 
-	_, err = provider.UpTo(ctx, 3)
+	_, err = provider.UpTo(ctx, 7)
 	requireNoError(t, err)
 	assertInitialSiteSettings(t, db, true)
 }
@@ -57,23 +57,26 @@ func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	ctx := context.Background()
 	provider, err := Provider(db)
 	requireNoError(t, err)
-	_, err = provider.UpTo(ctx, 4)
+	_, err = provider.UpTo(ctx, 3)
 	requireNoError(t, err)
 
 	testDomainRegistryStep(t, ctx, db)
 
-	_, err = provider.UpTo(ctx, 5)
+	_, err = provider.UpTo(ctx, 4)
 	requireNoError(t, err)
 	testDomainEngineStep(t, ctx, db)
 
-	_, err = provider.UpTo(ctx, 6)
+	_, err = provider.UpTo(ctx, 5)
 	requireNoError(t, err)
 	testDomainIdentityStep(t, ctx, db)
+
+	_, err = provider.UpTo(ctx, 6)
+	requireNoError(t, err)
+	testDomainAssigneeStep(t, ctx, db)
 
 	_, err = provider.Up(ctx)
 	requireNoError(t, err)
 	requireNoError(t, CheckSchema(ctx, db))
-	testDomainAssigneeStep(t, ctx, db)
 }
 
 func testDomainRegistryStep(t *testing.T, ctx context.Context, db *sql.DB) {

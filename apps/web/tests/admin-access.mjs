@@ -82,7 +82,8 @@ async function provision(page, userPage, login, role) {
   await button(page, 'Create account').click()
   await heading(page, login).waitFor()
   await button(page, 'Issue invitation').click()
-  const issued = page.waitForResponse(r => r.request().method() === 'POST' && /\/onboarding-token$/u.test(new URL(r.url()).pathname) && r.ok())
+  const issued = page.waitForResponse(r =>
+    r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/onboarding-token') && r.ok())
   await button(page, 'Verify').click()
   const { token } = await (await issued).json()
   await page.getByText('Send this one-time token through a verified channel.', { exact: true }).waitFor()

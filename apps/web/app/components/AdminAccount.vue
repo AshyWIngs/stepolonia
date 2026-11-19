@@ -173,7 +173,7 @@ onMounted(() => { void load() })
     <template v-else>
       <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
       <p v-if="errorKey" role="alert">{{ translate(errorKey) }}</p>
-      <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+      <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
       <button v-if="!profile && errorKey" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
       <template v-if="profile">
         <h2>{{ profile.login }}</h2>
