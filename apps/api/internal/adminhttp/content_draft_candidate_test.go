@@ -32,8 +32,8 @@ func (f *fakeCandidateDraftEditor) MarkReadyForType(_ context.Context, req ident
 	return f.recordCandidate(req, key, item, readyLocaleOperation, draftCandidateInput{ExpectedVersion: expected, SchemaNo: schema, Locale: locale})
 }
 
-func (f *fakeCandidateDraftEditor) PublishForType(_ context.Context, req identity.AuthRequest, key, item string, expected, schema int64, intended []string) (content.DraftState, error) {
-	return f.recordCandidate(req, key, item, publishOperation, draftCandidateInput{ExpectedVersion: expected, SchemaNo: schema, IntendedLocales: intended})
+func (f *fakeCandidateDraftEditor) PublishForType(_ context.Context, req identity.AuthRequest, key, item string, expected, schema int64, options content.PublicationOptions) (content.DraftState, error) {
+	return f.recordCandidate(req, key, item, publishOperation, draftCandidateInput{ExpectedVersion: expected, SchemaNo: schema, IntendedLocales: options.Locales, AllocateSlug: options.AllocateSlug})
 }
 
 func (f *fakeDraftEditor) MarkSharedReadyForType(context.Context, identity.AuthRequest, string, string, int64, int64) (content.DraftState, error) {
@@ -44,7 +44,7 @@ func (f *fakeDraftEditor) MarkReadyForType(context.Context, identity.AuthRequest
 	panic("unexpected mark locale ready")
 }
 
-func (f *fakeDraftEditor) PublishForType(context.Context, identity.AuthRequest, string, string, int64, int64, []string) (content.DraftState, error) {
+func (f *fakeDraftEditor) PublishForType(context.Context, identity.AuthRequest, string, string, int64, int64, content.PublicationOptions) (content.DraftState, error) {
 	panic("unexpected publish")
 }
 
@@ -57,7 +57,8 @@ func TestDraftCandidateRoutesDispatchExpectedInputs(t *testing.T) {
 	}{
 		{"/ready-shared", "contentMarkSharedReady", minimumDraftBody, draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1}},
 		{"/ready", "contentMarkReady", `{"expected_version":"2","schema_no":"1","locale":"pl"}`, draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1, Locale: "pl"}},
-		{"/publish", "contentPublish", validPublishRequest, draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1, IntendedLocales: []string{"pl", "en"}}},
+		{"/publish", publishOperation, validPublishRequest, draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1, IntendedLocales: []string{"pl", "en"}}},
+		{"/publish", publishOperation, `{"expected_version":"2","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`, draftCandidateInput{ExpectedVersion: 2, SchemaNo: 1, IntendedLocales: []string{"pl"}, AllocateSlug: true}},
 	} {
 		t.Run(tc.operation, func(t *testing.T) {
 			editor := &fakeCandidateDraftEditor{}
@@ -88,6 +89,8 @@ func TestDraftCandidateRejectsInvalidPublishInput(t *testing.T) {
 		`{"expected_version":"2","schema_no":"1","intended_locales":["pl","pl"]}`,
 		`{"expected_version":"2","schema_no":"1","intended_locales":[null]}`,
 		`{"expected_version":"2","schema_no":"1","intended_locales":["pl"],"locale":"pl"}`,
+		`{"expected_version":"2","schema_no":"1","intended_locales":["pl"],"allocate_slug":"true"}`,
+		`{"expected_version":"2","schema_no":"1","intended_locales":["pl"],"allocate_slug":null}`,
 		`{"expected_version":"2","schema_no":"1","intended_locales":["pl"],"intended_locales":["en"]}`,
 		validPublishRequest + " {}",
 	} {

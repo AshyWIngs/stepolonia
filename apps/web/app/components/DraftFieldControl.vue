@@ -17,7 +17,11 @@ const describedBy = computed(() => [
   props.invalid && `${id.value}-error`,
 ].filter(Boolean).join(' ') || undefined)
 const isTextArea = computed(() => ['text', 'markdown'].includes(props.field.kind))
-const inputMode = computed(() => props.field.kind === 'integer' ? 'numeric' : props.field.kind === 'decimal' ? 'decimal' : 'text')
+const inputMode = computed(() => {
+  if (props.field.kind === 'integer') return 'numeric'
+  if (props.field.kind === 'decimal') return 'decimal'
+  return 'text'
+})
 
 function change(event: Event) {
   const control = event.currentTarget

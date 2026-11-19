@@ -7,199 +7,29 @@ CREATE TABLE public.ui_message_keys (
     )
 );
 
-INSERT INTO public.ui_message_keys (message_key) VALUES
-('articles'), ('events'), ('empty'), ('pagination'), ('previous'), ('next'),
-('navigation'),
-('all'), ('languages'), ('errors.400'), ('errors.404'), ('errors.503'),
-('errors.other'), ('errors.retry'), ('errors.home'),
-('admin.name'), ('admin.language'), ('admin.theme'),
-('admin.system'), ('admin.light'), ('admin.dark'),
-('admin.sign_in'), ('admin.login'), ('admin.password'),
-('admin.continue'), ('admin.two_step'), ('admin.code_help'),
-('admin.code'), ('admin.verify'), ('admin.restart'),
-('admin.signed_in'), ('admin.sign_out'), ('admin.checking'),
-('admin.working'), ('admin.retry'), ('admin.invalid_credentials'),
-('admin.invalid_code'), ('admin.unavailable'), ('admin.limited'),
-('admin.changed'), ('admin.restricted'), ('admin.signed_out'),
-('admin.settings'), ('admin.portal_name'),
-('admin.tagline'), ('admin.description'),
-('admin.notice'), ('admin.accent'),
-('admin.default_language'), ('admin.fallback_language'),
-('admin.interface_texts'), ('admin.save_draft'),
-('admin.publish_draft'), ('admin.confirm_publish'),
-('admin.draft_saved'), ('admin.published'),
-('admin.access_denied'), ('admin.settings_conflict'),
-('admin.settings_invalid'), ('admin.reload_settings'),
-('admin.cancel'), ('admin.close'),
-('admin.remove_catalog'), ('admin.fresh_auth'),
-('admin.unlock'), ('admin.add_catalog'), ('admin.step_up_required'),
-('admin.content'),
-('admin.content_collections'),
-('admin.content_collection'),
-('admin.content_no_collections'),
-('admin.content_more_collections'),
-('admin.content_create'),
-('admin.content_no_drafts'),
-('admin.content_more_drafts'),
-('admin.content_editor'),
-('admin.content_back'),
-('admin.content_shared'),
-('admin.content_translation'),
-('admin.content_required'),
-('admin.content_empty_value'),
-('admin.content_yes'),
-('admin.content_no'),
-('admin.content_relation_help'),
-('admin.content_conflict'),
-('admin.content_invalid'),
-('admin.content_transition_failed'),
-('admin.content_required_missing'),
-('admin.content_ready_saved'),
-('admin.content_shared_ready'),
-('admin.content_locale_ready'),
-('admin.content_mark_shared'),
-('admin.content_mark_locale'),
-('admin.content_language_disabled'),
-('admin.content_public_links'),
-('admin.content_not_published'),
-('admin.content_publish'),
-('admin.content_unpublish'),
-('admin.content_published'),
-('admin.content_unpublished'),
-('admin.content_adopt_schema'),
-('admin.content_schema_adopted'),
-('admin.content_schema_outdated'),
-('admin.content_reload'),
-('admin.content_confirm'),
-('admin.content_confirm_publish'),
-('admin.content_confirm_unpublish'),
-('admin.content_confirm_reload'),
-('admin.content_confirm_close'),
-('admin.content_publish_languages'),
-('admin.content_clear_relation'), ('admin.content_links_new_tab'),
-('admin.registry'),
-('admin.registry_choose'),
-('admin.registry_schema'),
-('admin.registry_field_key'),
-('admin.registry_kind'),
-('admin.registry_scope'),
-('admin.registry_visibility'),
-('admin.registry_private'),
-('admin.registry_public'),
-('admin.registry_codes'),
-('admin.registry_target'),
-('admin.registry_new_field'),
-('admin.registry_remove_field'),
-('admin.registry_label'),
-('admin.registry_help'),
-('admin.registry_add_field'),
-('admin.registry_initial_access'),
-('admin.registry_new_field_access'),
-('admin.registry_save'),
-('admin.registry_create'),
-('admin.registry_created'),
-('admin.registry_revised'),
-('admin.registry_access_applied'),
-('admin.registry_reload'),
-('admin.registry_conflict'),
-('admin.registry_invalid'),
-('admin.account'),
-('admin.account_codes'),
-('admin.account_codes_help'),
-('admin.account_done'),
-('admin.account_codes_remaining'),
-('admin.account_change_password'),
-('admin.account_replace_factor'),
-('admin.account_regenerate_codes'),
-('admin.account_replace_codes_warning'),
-('admin.account_logout_warning'),
-('admin.account_new_password'),
-('admin.account_factor_help'),
-('admin.account_revoke_confirmation'),
-('admin.account_sessions'),
-('admin.account_current_session'),
-('admin.account_started'),
-('admin.account_last_seen'),
-('admin.account_expires'),
-('admin.account_revoke_session'),
-('admin.account_revoke_all'),
-('admin.account_validation'),
-('admin.audit'),
-('admin.audit_empty'),
-('admin.audit_success'),
-('admin.audit_denied'),
-('admin.audit_failure'),
-('admin.audit_actor'),
-('admin.audit_target'),
-('admin.audit_request'),
-('admin.audit_reason'),
-('admin.entry_enrollment'),
-('admin.entry_recovery'),
-('admin.entry_invitation'),
-('admin.entry_recovery_code'),
-('admin.entry_invalid'),
-('admin.entry_interrupted'),
-('admin.entry_activation'),
-('admin.access'),
-('admin.access_saved'),
-('admin.access_reload'),
-('admin.access_version_conflict'),
-('admin.access_last_admin'),
-('admin.access_transition'),
-('admin.access_role_in_use'),
-('admin.access_unavailable_target'),
-('admin.access_input'),
-('admin.access_state_pending'),
-('admin.access_state_disabled'),
-('admin.access_state_active'),
-('admin.access_state_archived'),
-('admin.access_enable'),
-('admin.access_disable'),
-('admin.access_archive'),
-('admin.access_restore'),
-('admin.access_delete'),
-('admin.users'),
-('admin.users_create'),
-('admin.users_created'),
-('admin.users_issue_invite'),
-('admin.users_manage_memberships'),
-('admin.users_activate'),
-('admin.users_memberships'),
-('admin.users_save_memberships'),
-('admin.users_confirm_invite'),
-('admin.users_confirm_memberships'),
-('admin.users_confirm_activate'),
-('admin.users_confirm_disable'),
-('admin.users_invite_delivery'),
-('admin.roles'),
-('admin.roles_create'),
-('admin.roles_edit'),
-('admin.roles_copy'),
-('admin.roles_name'),
-('admin.roles_grants'),
-('admin.roles_remove_grant'),
-('admin.roles_operation'),
-('admin.roles_choose_operation'),
-('admin.roles_fields'),
-('admin.roles_delegated_operations'),
-('admin.roles_allow_delegation'),
-('admin.roles_add_grant'),
-('admin.roles_save'),
-('admin.roles_duplicate'),
-('admin.roles_confirm_enable'),
-('admin.roles_confirm_disable'),
-('admin.roles_confirm_archive'),
-('admin.roles_confirm_restore'),
-('admin.roles_confirm_delete'),
-('admin.assignees'),
-('admin.assignees_choose'),
-('admin.assignees_confirm'),
-('admin.assignees_save'),
-('admin.account_no_sessions'),
-('admin.roles_allow_delegable_content'),
-('admin.roles_delegation_scope'),
-('admin.roles_scope_assigned'),
-('admin.roles_scope_any');
+CREATE TABLE public.initial_ui_messages (
+    language_code text NOT NULL,
+    message_key text NOT NULL,
+    message_value text NOT NULL,
+    CONSTRAINT initial_ui_messages_pkey PRIMARY KEY (
+        language_code, message_key
+    ),
+    CONSTRAINT initial_ui_messages_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code),
+    CONSTRAINT initial_ui_messages_key_fkey FOREIGN KEY (
+        message_key
+    ) REFERENCES public.ui_message_keys (message_key)
+);
+
+CREATE TABLE public.initial_site_defaults (
+    singleton boolean CONSTRAINT initial_site_defaults_pkey PRIMARY KEY,
+    accent text NOT NULL,
+    CONSTRAINT initial_site_defaults_singleton_check CHECK (singleton),
+    CONSTRAINT initial_site_defaults_accent_check CHECK (
+        accent ~ '^#[0-9a-fA-F]{6}$'
+    )
+);
 
 CREATE TABLE public.site_revisions (
     tagline text NOT NULL,
@@ -214,16 +44,6 @@ CREATE TABLE public.site_revisions (
     default_language text NOT NULL,
     fallback_language text NOT NULL,
     sealed boolean NOT NULL DEFAULT false,
-    CONSTRAINT site_revisions_title_check CHECK (
-        length(title) <= 200
-        AND btrim(
-            title,
-            E' \t\n\r\f\u000b\u0085\u00a0\u1680\u2000\u2001'
-            '\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009'
-            '\u200a\u2028\u2029\u202f\u205f\u3000'
-        )
-        <> ''
-    ),
     CONSTRAINT site_revisions_description_check CHECK (
         length(description) <= 2000
     ),
@@ -268,6 +88,7 @@ CREATE TABLE public.site_revision_languages (
     name text NOT NULL,
     native_name text NOT NULL,
     direction text NOT NULL,
+    catalog_revision_id uuid,
     CONSTRAINT site_revision_languages_pkey PRIMARY KEY (
         revision_id, language_code
     ),
@@ -277,8 +98,23 @@ CREATE TABLE public.site_revision_languages (
     CONSTRAINT site_revision_languages_language_fkey FOREIGN KEY (
         language_code
     ) REFERENCES public.languages (code),
+    CONSTRAINT site_revision_languages_catalog_fkey FOREIGN KEY (
+        catalog_revision_id, language_code
+    ) REFERENCES public.site_revision_languages (revision_id, language_code),
     CONSTRAINT site_revision_languages_direction_check CHECK (
         direction IN ('ltr', 'rtl')
+    )
+);
+
+CREATE TABLE public.site_revision_language_flags (
+    revision_id uuid NOT NULL REFERENCES public.site_revisions (id),
+    language_code text COLLATE "C" NOT NULL REFERENCES public.languages (code),
+    svg text NOT NULL,
+    CONSTRAINT site_revision_language_flags_pkey PRIMARY KEY (
+        revision_id, language_code
+    ),
+    CONSTRAINT site_revision_language_flags_size_check CHECK (
+        octet_length(svg) <= 4096
     )
 );
 
@@ -295,18 +131,86 @@ CREATE TABLE public.site_revision_messages (
     ) REFERENCES public.site_revision_languages (revision_id, language_code),
     CONSTRAINT site_revision_messages_key_fkey FOREIGN KEY (
         revision_id, message_key
-    ) REFERENCES public.site_revision_keys (revision_id, message_key),
-    CONSTRAINT site_revision_messages_value_check CHECK (
-        length(message_value) <= 4000
-        AND btrim(
-            message_value,
-            E' \t\n\r\f\u000b\u0085\u00a0\u1680\u2000\u2001'
-            '\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009'
-            '\u200a\u2028\u2029\u202f\u205f\u3000'
-        )
-        <> ''
+    ) REFERENCES public.site_revision_keys (revision_id, message_key)
+);
+
+-- +goose StatementBegin
+CREATE FUNCTION public.valid_slug_rule(source_character text, replacement text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp AS $$
+ SELECT length(source_character) = 1 AND ascii(source_character) > 127
+  AND source_character = normalize(source_character)
+  AND source_character = lower(source_character COLLATE pg_catalog.pg_unicode_fast)
+  AND source_character COLLATE pg_catalog.unicode ~ '^[[:graph:]]$'
+  -- ICU's graphical class includes Unicode private-use areas.
+  AND ascii(source_character) NOT BETWEEN 57344 AND 63743
+  AND ascii(source_character) NOT BETWEEN 983040 AND 1048573
+  AND ascii(source_character) NOT BETWEEN 1048576 AND 1114109
+  AND length(replacement) <= 16 AND replacement COLLATE "C" !~ '[^a-z0-9-]'
+$$;
+-- +goose StatementEnd
+
+CREATE TABLE public.initial_slug_rules (
+    language_code text COLLATE "C" NOT NULL,
+    source_character text COLLATE "C" NOT NULL,
+    replacement text NOT NULL,
+    CONSTRAINT initial_slug_rules_pkey PRIMARY KEY (
+        language_code, source_character
+    ),
+    CONSTRAINT initial_slug_rules_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code),
+    CONSTRAINT initial_slug_rules_rule_check CHECK (
+        public.valid_slug_rule(source_character, replacement)
     )
 );
+
+CREATE TABLE public.site_revision_slug_rules (
+    revision_id uuid NOT NULL,
+    language_code text COLLATE "C" NOT NULL,
+    source_character text COLLATE "C" NOT NULL,
+    replacement text NOT NULL,
+    CONSTRAINT site_revision_slug_rules_pkey PRIMARY KEY (
+        revision_id, language_code, source_character
+    ),
+    CONSTRAINT site_revision_slug_rules_revision_fkey FOREIGN KEY (
+        revision_id
+    ) REFERENCES public.site_revisions (id),
+    CONSTRAINT site_revision_slug_rules_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code),
+    CONSTRAINT site_revision_slug_rules_rule_check CHECK (
+        public.valid_slug_rule(source_character, replacement)
+    )
+);
+
+-- +goose StatementBegin
+DO $$
+DECLARE
+    -- Match Go strings.TrimSpace independently of the database locale.
+    whitespace CONSTANT text := E' \t\n\r\f\u000b\u0085\u00a0\u1680\u2000\u2001'
+        '\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009'
+        '\u200a\u2028\u2029\u202f\u205f\u3000';
+    field record;
+BEGIN
+    FOR field IN
+        SELECT *
+        FROM (VALUES
+            ('initial_ui_messages', 'initial_ui_messages_value_check', 'message_value', 4000),
+            ('site_revisions', 'site_revisions_title_check', 'title', 200),
+            ('site_revision_messages', 'site_revision_messages_value_check', 'message_value', 4000)
+        ) AS checks (table_name, constraint_name, column_name, max_chars)
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE public.%1$I ADD CONSTRAINT %2$I CHECK '
+            '(length(%3$I) <= %4$s AND btrim(%3$I, %5$L) <> '''')',
+            field.table_name, field.constraint_name, field.column_name,
+            field.max_chars, whitespace
+        );
+    END LOOP;
+END;
+$$;
+-- +goose StatementEnd
 
 -- +goose StatementBegin
 CREATE FUNCTION public.ui_placeholders(
@@ -340,6 +244,7 @@ $$;
 -- +goose StatementBegin
 CREATE FUNCTION public.guard_site_revision() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp AS $$
+DECLARE catalog_base uuid;
 BEGIN
  IF TG_OP='INSERT' THEN
   IF NEW.sealed THEN RAISE EXCEPTION 'new snapshot must be a draft' USING ERRCODE='23514'; END IF;
@@ -350,6 +255,23 @@ BEGIN
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  IF NEW.sealed THEN
+  IF EXISTS(SELECT 1 FROM public.site_revision_languages WHERE revision_id=NEW.id AND catalog_revision_id IS NOT NULL) THEN
+   SELECT published_id INTO catalog_base FROM public.site_state WHERE singleton FOR UPDATE;
+   IF catalog_base IS NULL
+    OR EXISTS(SELECT language_code,catalog_revision_id,name,native_name,direction FROM public.site_revision_languages
+     WHERE revision_id=NEW.id AND catalog_revision_id IS NOT NULL
+     EXCEPT SELECT language_code,COALESCE(catalog_revision_id,revision_id),name,native_name,direction
+     FROM public.site_revision_languages WHERE revision_id=catalog_base)
+    OR EXISTS((SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id
+     EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=catalog_base)
+     UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=catalog_base
+     EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)) THEN
+    RAISE EXCEPTION 'reused catalog differs from current publication' USING ERRCODE='23514';
+   END IF;
+  END IF;
+  IF (SELECT count(*) FROM public.site_revision_slug_rules WHERE revision_id=NEW.id)>512 THEN
+   RAISE EXCEPTION 'too many slug rules to publish' USING ERRCODE='23514';
+  END IF;
   -- Hold language locks through publication so eligible languages cannot change.
   PERFORM public.lock_languages(ARRAY(SELECT code FROM public.languages
    WHERE code IN (NEW.default_language,NEW.fallback_language)
@@ -359,11 +281,19 @@ BEGIN
    OR EXISTS(SELECT 1 FROM public.site_revision_languages c JOIN public.languages l ON l.code=c.language_code
     WHERE c.revision_id=NEW.id AND (NOT l.is_enabled OR (c.name,c.native_name,c.direction) IS DISTINCT FROM (l.name,l.native_name,l.direction)))
    OR NOT EXISTS(SELECT 1 FROM public.site_revision_keys WHERE revision_id=NEW.id)
-   OR EXISTS((SELECT message_key,placeholders FROM public.ui_message_keys EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)
-    UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id EXCEPT SELECT message_key,placeholders FROM public.ui_message_keys))
+   OR (catalog_base IS NULL AND EXISTS((SELECT message_key,placeholders FROM public.ui_message_keys EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)
+    UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id EXCEPT SELECT message_key,placeholders FROM public.ui_message_keys)))
+   OR EXISTS(SELECT 1 FROM public.site_revision_languages c
+    LEFT JOIN public.site_revisions r ON r.id=c.catalog_revision_id AND r.sealed
+    LEFT JOIN public.site_revision_languages source ON source.revision_id=r.id AND source.language_code=c.language_code
+    WHERE c.revision_id=NEW.id AND c.catalog_revision_id IS NOT NULL
+    AND (source.revision_id IS NULL OR source.catalog_revision_id IS NOT NULL
+     OR EXISTS(SELECT 1 FROM public.site_revision_messages own
+      WHERE own.revision_id=c.revision_id AND own.language_code=c.language_code)))
    OR EXISTS(SELECT 1 FROM public.site_revision_languages c CROSS JOIN public.site_revision_keys k
-    LEFT JOIN public.site_revision_messages m ON m.revision_id=c.revision_id AND m.language_code=c.language_code AND m.message_key=k.message_key
-    WHERE c.revision_id=NEW.id AND k.revision_id=NEW.id AND (m.message_key IS NULL
+    LEFT JOIN public.site_revision_messages m ON m.revision_id=c.revision_id
+    AND m.language_code=c.language_code AND m.message_key=k.message_key
+    WHERE c.revision_id=NEW.id AND c.catalog_revision_id IS NULL AND k.revision_id=NEW.id AND (m.message_key IS NULL
      OR public.ui_placeholders(m.message_value)<>k.placeholders
      OR regexp_replace(m.message_value,'\{[a-z][a-z0-9_]*\}','','g') ~ '[{}]')) THEN
    RAISE EXCEPTION 'incomplete or invalid UI publication' USING ERRCODE='23514';
@@ -412,9 +342,19 @@ BEFORE INSERT OR UPDATE OR DELETE
 ON public.site_revision_languages
 FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
 
+CREATE TRIGGER site_revision_language_flags_guard
+BEFORE INSERT OR UPDATE OR DELETE
+ON public.site_revision_language_flags
+FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
+
 CREATE TRIGGER site_revision_messages_guard
 BEFORE INSERT OR UPDATE OR DELETE
 ON public.site_revision_messages
+FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
+
+CREATE TRIGGER site_revision_slug_rules_guard
+BEFORE INSERT OR UPDATE OR DELETE
+ON public.site_revision_slug_rules
 FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
 
 CREATE VIEW public.public_site WITH (security_barrier = true) AS
@@ -447,14 +387,40 @@ INNER JOIN public.languages AS l ON c.language_code = l.code AND l.is_enabled;
 
 CREATE VIEW public.public_ui_messages WITH (security_barrier = true) AS
 SELECT
-    m.revision_id,
+    c.revision_id,
     m.language_code,
     m.message_key,
     m.message_value
-FROM public.site_revision_messages AS m
+FROM public.public_ui_languages AS c
 INNER JOIN
-    public.public_ui_languages AS c
-    ON m.revision_id = c.revision_id AND m.language_code = c.language_code;
+    public.site_revision_languages AS l
+    ON c.revision_id = l.revision_id AND c.language_code = l.language_code
+INNER JOIN
+    public.site_revision_messages AS m
+    ON
+        coalesce(l.catalog_revision_id, l.revision_id) = m.revision_id
+        AND l.language_code = m.language_code
+INNER JOIN public.site_revision_keys AS k
+    ON c.revision_id = k.revision_id AND m.message_key = k.message_key;
+
+CREATE VIEW public.public_slug_rules WITH (security_barrier = true) AS
+SELECT
+    r.revision_id,
+    r.language_code,
+    r.source_character,
+    r.replacement
+FROM public.site_revision_slug_rules AS r
+INNER JOIN public.public_site AS s ON r.revision_id = s.id;
+
+CREATE VIEW public.public_language_flags WITH (security_barrier = true) AS
+SELECT
+    f.revision_id,
+    f.language_code,
+    f.svg
+FROM public.site_revision_language_flags AS f
+INNER JOIN public.public_site AS s ON f.revision_id = s.id
+INNER JOIN public.languages AS l ON f.language_code = l.code AND l.is_enabled
+WHERE f.svg <> '';
 
 COMMENT ON TABLE public.ui_message_keys IS
 'Application-required message keys with their placeholder signatures.';
@@ -495,8 +461,29 @@ COMMENT ON TABLE public.site_revision_keys IS
 COMMENT ON TABLE public.site_revision_languages IS
 'UI language metadata captured for this revision.';
 
+COMMENT ON COLUMN public.site_revision_languages.catalog_revision_id IS
+'Sealed revision supplying this locale catalog. Null owns the messages.';
+
+COMMENT ON TABLE public.site_revision_language_flags IS
+'Language flags captured for one settings revision.';
+
+COMMENT ON COLUMN public.site_revision_language_flags.svg IS
+'Static SVG image. An empty value uses the standard globe.';
+
+COMMENT ON VIEW public.public_language_flags IS
+'Flags for enabled languages in the active publication.';
+
 COMMENT ON TABLE public.site_revision_messages IS
 'Editor-authored messages for a draft or sealed UI catalog.';
+
+COMMENT ON TABLE public.site_revision_slug_rules IS
+'Character replacement for slug suggestions in one settings revision.';
+
+COMMENT ON COLUMN public.site_revision_slug_rules.source_character IS
+'Source stored as one lowercase NFC Unicode character.';
+
+COMMENT ON COLUMN public.site_revision_slug_rules.replacement IS
+'An empty replacement removes the source character from the suggestion.';
 
 COMMENT ON COLUMN public.site_revision_messages.message_value IS
 'Plain text with optional {name} placeholders.';
@@ -510,6 +497,16 @@ COMMENT ON VIEW public.public_ui_languages IS
 COMMENT ON VIEW public.public_ui_messages IS
 'Messages for enabled UI languages in the current publication.';
 
+COMMENT ON VIEW public.public_slug_rules IS
+'Language-specific rules from the current sealed settings publication.';
+
+COMMENT ON FUNCTION public.valid_slug_rule(text, text) IS
+'Validates a canonical Unicode source character and its ASCII replacement.';
+
+REVOKE ALL ON FUNCTION public.valid_slug_rule(text, text) FROM public;
+
+GRANT EXECUTE ON FUNCTION public.valid_slug_rule(text, text) TO sp_publisher;
+
 COMMENT ON FUNCTION public.ui_placeholders(
     text
 ) IS
@@ -520,14 +517,14 @@ REVOKE ALL ON FUNCTION public.ui_placeholders(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.ui_placeholders(text) TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_child() IS
-'Locks the parent revision and prevents changes to sealed catalogs.';
+'Locks the parent revision and prevents changes to sealed settings data.';
 
 REVOKE ALL ON FUNCTION public.guard_site_child() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_child() TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_revision() IS
-'Validates the complete catalog at sealing and protects sealed revisions.';
+'Validates the catalog and slug rule limit and protects sealed revisions.';
 
 REVOKE ALL ON FUNCTION public.guard_site_revision() FROM public;
 
@@ -540,14 +537,21 @@ REVOKE ALL ON FUNCTION public.guard_site_state() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_state() TO sp_publisher;
 
-REVOKE ALL ON public.ui_message_keys,
+REVOKE ALL ON public.initial_site_defaults,
+public.initial_ui_messages,
+public.initial_slug_rules,
+public.ui_message_keys,
 public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
-public.site_revision_messages FROM public;
+public.site_revision_language_flags,
+public.site_revision_messages,
+public.site_revision_slug_rules FROM public;
 
 GRANT SELECT ON public.ui_message_keys TO sp_publisher;
+
+GRANT SELECT ON public.initial_slug_rules TO sp_publisher;
 
 GRANT SELECT,
 INSERT,
@@ -556,11 +560,24 @@ DELETE ON public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
-public.site_revision_messages TO sp_publisher;
+public.site_revision_language_flags,
+public.site_revision_messages,
+public.site_revision_slug_rules TO sp_publisher;
 
 REVOKE ALL ON public.public_site,
 public.public_ui_languages,
-public.public_ui_messages FROM public;
+public.public_ui_messages,
+public.public_language_flags,
+public.public_slug_rules FROM public;
+
+COMMENT ON TABLE public.initial_site_defaults IS
+'Portal settings defaults used before the first site publication.';
+
+COMMENT ON TABLE public.initial_ui_messages IS
+'UI messages for the initial site publication, readable only by the owner.';
+
+COMMENT ON TABLE public.initial_slug_rules IS
+'Language-specific slug rules for the first settings revision.';
 
 COMMENT ON COLUMN public.site_revisions.notice IS
 'An empty value hides the public notice.';
@@ -569,16 +586,24 @@ COMMENT ON COLUMN public.site_revisions.accent IS
 'Theme accent as a hexadecimal RGB color (#RRGGBB).';
 
 -- +goose Down
+DROP VIEW public.public_language_flags;
+DROP VIEW public.public_slug_rules;
 DROP VIEW public.public_ui_messages;
 DROP VIEW public.public_ui_languages;
 DROP VIEW public.public_site;
 DROP TABLE public.site_state;
+DROP TABLE public.site_revision_slug_rules;
 DROP TABLE public.site_revision_messages;
+DROP TABLE public.site_revision_language_flags;
 DROP TABLE public.site_revision_languages;
 DROP TABLE public.site_revision_keys;
 DROP TABLE public.site_revisions;
+DROP TABLE public.initial_site_defaults;
+DROP TABLE public.initial_ui_messages;
+DROP TABLE public.initial_slug_rules;
 DROP TABLE public.ui_message_keys;
 DROP FUNCTION public.guard_site_state();
 DROP FUNCTION public.guard_site_revision();
 DROP FUNCTION public.guard_site_child();
 DROP FUNCTION public.ui_placeholders(text);
+DROP FUNCTION public.valid_slug_rule(text, text);

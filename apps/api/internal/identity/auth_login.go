@@ -4,70 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 )
 
 const authLoginSQL = `SELECT login_key FROM public.users WHERE id=$1`
 
-type authBudget struct {
-	at                time.Time
-	account, ip, site string
-}
 type authSnapshot struct {
 	bootstrapSnapshot
 	budget authBudget
 }
 
-// limit reserves persistent budgets before expensive work. Success releases the
-// exact reservation; failed or interrupted commands retain it for 15 minutes.
-func (s *AuthService) limit(ctx context.Context, req AuthRequest, account string) (authBudget, error) {
-	b := authBudget{account: account, ip: req.ClientIP.Unmap().String(), site: s.config.Site}
-	if !req.ClientIP.IsValid() {
-		return b, ErrInvalidCredentials
-	}
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		return b.reserve(ctx, tx)
-	})
-	return b, err
-}
-func (b *authBudget) reserve(ctx context.Context, tx *sql.Tx) error {
-	keys := []struct {
-		kind, key string
-		max       int
-	}{{"account", b.account, 5}, {"ip", b.ip, 30}, {"site", b.site, 100}}
-	if err := tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&b.at); err != nil {
-		return err
-	}
-	for _, k := range keys {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind=$1 AND key_digest=$2 AND bucket_start>$3::timestamptz-interval '15 minutes'`, k.kind, digest(k.key), b.at).Scan(&n); err != nil {
-			return err
-		}
-		if n >= k.max {
-			return ErrRateLimited
-		}
-	}
-	for _, k := range keys {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempt_buckets(bucket_start,kind,key_digest,count) VALUES($3,$1,$2,1)`, k.kind, digest(k.key), b.at); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (b authBudget) success(ctx context.Context, tx *sql.Tx) error {
-	for _, k := range []struct{ kind, key string }{{"account", b.account}, {"ip", b.ip}, {"site", b.site}} {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempt_buckets WHERE bucket_start=$1 AND kind=$2 AND key_digest=$3`, b.at, k.kind, digest(k.key)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (s *AuthService) password(ctx context.Context, req AuthRequest, login, password string) (authSnapshot, error) {
+func (s *AuthService) password(ctx context.Context, req AuthRequest, login, password, scope string) (authSnapshot, error) {
 	key, err := normalizeLogin(login)
 	if err != nil {
 		key = "!invalid"
 	}
-	budget, err := s.limit(ctx, req, key)
+	budget, err := s.limitScope(ctx, req, scope, key)
 	if err != nil {
 		return authSnapshot{}, err
 	}
@@ -81,22 +32,29 @@ func (s *AuthService) password(ctx context.Context, req AuthRequest, login, pass
 	if snap.id == "" || state != "active" || hash == "" {
 		hash = s.dummyHash
 	}
-	release, err := bootstrapHashSlot(ctx)
+	valid, err := s.verifyBudgetPassword(ctx, budget, password, hash)
 	if err != nil {
-		if ctx.Err() != nil {
-			return snap, ctx.Err()
-		}
-		return snap, ErrRateLimited
-	}
-	valid := verifyPassword(password, hash)
-	release()
-	if ctx.Err() != nil {
-		return snap, ctx.Err()
+		return snap, err
 	}
 	if !valid || snap.id == "" || state != "active" {
 		return snap, s.denied(ctx, snap.id)
 	}
 	return snap, nil
+}
+
+func (s *AuthService) verifyBudgetPassword(ctx context.Context, budget authBudget, password, hash string) (bool, error) {
+	release, err := passwordHashSlot(ctx, budget.hashJobs)
+	if errors.Is(err, ErrRateLimited) {
+		if releaseErr := s.releaseBudget(ctx, budget); releaseErr != nil {
+			return false, releaseErr
+		}
+	}
+	if err != nil {
+		return false, err
+	}
+	valid := verifyPassword(password, hash)
+	release()
+	return valid, ctx.Err()
 }
 func (s *AuthService) denied(ctx context.Context, user string) error {
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error { return authAudit(ctx, tx, auditAuthDenied, user, true) })
@@ -123,7 +81,7 @@ func (s *AuthService) Login(ctx context.Context, req AuthRequest, login, passwor
 	}); err != nil {
 		return SessionTokens{}, err
 	}
-	snap, err := s.password(ctx, req, login, password)
+	snap, err := s.password(ctx, req, login, password, RateCredentials)
 	if err != nil {
 		return SessionTokens{}, err
 	}
@@ -265,15 +223,19 @@ func (s *AuthService) rotateFull(ctx context.Context, tx *sql.Tx, x Session, ste
 		return err
 	}
 	var err error
-	*out, err = s.issue(ctx, tx, x.user, sessionFull, x.version, true)
+	// Step-up rotates credentials without extending the original session lifetime.
+	if step {
+		lifetime := sessionLifetime{
+			idleTimeoutMinutes: x.idleTimeoutMinutes,
+			createdAt:          sql.NullTime{Time: x.created, Valid: true},
+			expiresAt:          sql.NullTime{Time: x.expires, Valid: true},
+		}
+		*out, err = issueSession(ctx, tx, x.user, sessionFull, x.version, true, lifetime)
+	} else {
+		*out, err = s.issue(ctx, tx, x.user, sessionFull, x.version, true)
+	}
 	if err != nil {
 		return err
-	}
-	if step { // Rotation must not restart the original absolute lifetime.
-		if _, err = tx.ExecContext(ctx, `UPDATE public.sessions SET created_at=$2,expires_at=$3 WHERE token_digest=$1`, digest(out.Token), x.created, x.expires); err != nil {
-			return err
-		}
-		out.ExpiresAt = x.expires
 	}
 	if err = budget.success(ctx, tx); err != nil {
 		return err
@@ -292,7 +254,7 @@ func (s *AuthService) StepUp(ctx context.Context, req AuthRequest, password, cod
 	if err != nil {
 		return SessionTokens{}, err
 	}
-	snap, err := s.password(ctx, req, login, password)
+	snap, err := s.password(ctx, req, login, password, RateStepUp)
 	if err != nil {
 		return SessionTokens{}, err
 	}
@@ -364,55 +326,32 @@ func (s *AuthService) NewPreauthFor(ctx context.Context, req AuthRequest) (Sessi
 		return SessionTokens{}, ErrInvalidCredentials
 	}
 	var out SessionTokens
-	var limited bool
+	var throttle error
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if err := cleanupAuth(ctx, tx); err != nil {
 			return err
 		}
-		return s.preauthTx(ctx, tx, req, &out, &limited)
+		_, err := reserveAuthBudget(ctx, tx, RatePreauth, "", req.ClientIP.Unmap().String(), s.config.Site)
+		if errors.Is(err, ErrRateLimited) {
+			throttle = err
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		out, err = s.issue(ctx, tx, "", sessionPreauth, 0, false)
+		return err
 	})
 	if err != nil {
 		return SessionTokens{}, err
 	}
-	if limited {
-		return SessionTokens{}, ErrRateLimited
-	}
-	return out, nil
+	return out, throttle
 }
 
 func cleanupAuth(ctx context.Context, tx *sql.Tx) error {
-	// Each maintenance batch is bounded; historical full/recovery sessions and
-	// immutable audit remain under the separately defined retention policy.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM public.auth_attempt_buckets WHERE (bucket_start,kind,key_digest) IN (SELECT bucket_start,kind,key_digest FROM public.auth_attempt_buckets WHERE bucket_start<=clock_timestamp()-interval '15 minutes' ORDER BY bucket_start LIMIT 1000)`); err != nil {
-		return err
-	}
+	// Historical full/recovery sessions and immutable audit have separate retention.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM public.sessions WHERE id IN (SELECT id FROM public.sessions WHERE kind IN ('preauth','login') AND (expires_at<=clock_timestamp() OR revoked_at IS NOT NULL) ORDER BY expires_at LIMIT 100)`); err != nil {
 		return err
 	}
 	return nil
-}
-
-func (s *AuthService) preauthTx(ctx context.Context, tx *sql.Tx, req AuthRequest, out *SessionTokens, limited *bool) error {
-	keys := []struct {
-		kind, key string
-		max       int
-	}{{"preauth_ip", req.ClientIP.Unmap().String(), 30}, {"preauth_site", s.config.Site, 100}}
-	for _, k := range keys {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind=$1 AND key_digest=$2 AND bucket_start>clock_timestamp()-interval '15 minutes'`, k.kind, digest(k.key)).Scan(&n); err != nil {
-			return err
-		}
-		if n >= k.max {
-			*limited = true
-			return nil
-		}
-	}
-	for _, k := range keys {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.auth_attempt_buckets(bucket_start,kind,key_digest,count) VALUES(clock_timestamp(),$1,$2,1)`, k.kind, digest(k.key)); err != nil {
-			return err
-		}
-	}
-	var err error
-	*out, err = s.issue(ctx, tx, "", sessionPreauth, 0, false)
-	return err
 }

@@ -42,9 +42,9 @@ func TestAdminDraftRelationChangeHTTPSIntegration(t *testing.T) {
 	// clearing the slot or reveal whether it previously held a target.
 	_, err = f.owner.Exec(`DELETE FROM public.content_item_assignments WHERE item_id=$1 AND user_id=$2`, draftOtherItem, f.userID)
 	requireNoError(t, err)
-	clear := fmt.Sprintf(`{"field_id":%q}`, linkedDraftField)
-	post(set(2, clear), http.StatusOK)
-	post(set(3, clear), http.StatusOK)
+	clearRelation := fmt.Sprintf(`{"field_id":%q}`, linkedDraftField)
+	post(set(2, clearRelation), http.StatusOK)
+	post(set(3, clearRelation), http.StatusOK)
 	assertDraftEditState(t, f.owner, draftEditItem, 4, initialDraftHeadline, initialDraftNote)
 	var count int
 	requireNoError(t, f.owner.QueryRow(`SELECT count(*) FROM public.content_draft_relations WHERE item_id=$1`, draftEditItem).Scan(&count))

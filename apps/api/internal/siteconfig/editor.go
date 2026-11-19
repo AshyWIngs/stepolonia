@@ -97,6 +97,41 @@ func saveNormalizedDraft(ctx context.Context, tx *sql.Tx, expected int64, input 
 	return expected + 1, nil
 }
 
+type AppliedRevision struct {
+	PublicationID string
+	Version       int64
+	LanguageFlags map[string]string
+}
+
+// ApplyTx validates and activates a complete settings revision. The caller
+// owns account authorization, audit and commit.
+func ApplyTx(ctx context.Context, tx *sql.Tx, expected int64, input Draft) (AppliedRevision, error) {
+	input, err := normalizeDraft(input)
+	if err != nil {
+		return AppliedRevision{}, err
+	}
+	old, err := lockDraft(ctx, tx, expected)
+	if err != nil {
+		return AppliedRevision{}, err
+	}
+	id, err := identifier()
+	if err != nil {
+		return AppliedRevision{}, err
+	}
+	if err := storeDraft(ctx, tx, id, input); err != nil {
+		return AppliedRevision{}, err
+	}
+	if err := activateRevision(ctx, tx, id); err != nil {
+		return AppliedRevision{}, err
+	}
+	if old.Valid {
+		if err := deleteDraft(ctx, tx, old.String); err != nil {
+			return AppliedRevision{}, err
+		}
+	}
+	return AppliedRevision{PublicationID: id, Version: expected + 1, LanguageFlags: input.LanguageFlags}, nil
+}
+
 func (s *Service) Publish(ctx context.Context, expected int64) (string, int64, error) {
 	if expected < 1 {
 		return "", 0, failure(400, invalidVersionCode)
@@ -126,23 +161,30 @@ func PublishTx(ctx context.Context, tx *sql.Tx, expected int64) (string, int64, 
 	if !draft.Valid {
 		return "", 0, failure(409, "site_draft_missing")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_revisions SET sealed=true WHERE id=$1`, draft.String); err != nil {
-		return "", 0, dbError(err)
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_state SET published_id=$1,draft_id=NULL,version=version+1 WHERE singleton`, draft.String); err != nil {
-		return "", 0, dbError(err)
+	if err := activateRevision(ctx, tx, draft.String); err != nil {
+		return "", 0, err
 	}
 	return draft.String, expected + 1, nil
 }
 
+func activateRevision(ctx context.Context, tx *sql.Tx, id string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.site_revisions SET sealed=true WHERE id=$1`, id); err != nil {
+		return dbError(err)
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE public.site_state SET published_id=$1,draft_id=NULL,version=version+1 WHERE singleton`, id)
+	return dbError(err)
+}
+
 type Editable struct {
-	Version     int64                        `json:"version"`
-	HasDraft    bool                         `json:"has_draft"`
-	PublishedID string                       `json:"published_id"`
-	Settings    Settings                     `json:"settings"`
-	Catalogs    map[string]map[string]string `json:"catalogs"`
-	Languages   []Language                   `json:"languages"`
-	MessageKeys []string                     `json:"message_keys"`
+	Version       int64                        `json:"version"`
+	HasDraft      bool                         `json:"has_draft"`
+	PublishedID   string                       `json:"published_id"`
+	Settings      Settings                     `json:"settings"`
+	Catalogs      map[string]map[string]string `json:"catalogs"`
+	Languages     []Language                   `json:"languages"`
+	MessageKeys   []string                     `json:"message_keys"`
+	SlugRules     []SlugRule                   `json:"slug_rules"`
+	LanguageFlags map[string]string            `json:"language_flags"`
 }
 
 // ReadEditable returns the current draft, or the current publication if there
@@ -172,8 +214,17 @@ func ReadEditable(ctx context.Context, tx *sql.Tx) (Editable, error) {
 	if draft.Valid {
 		revision = draft
 	}
+	result.LanguageFlags, err = readLanguageFlags(ctx, tx, editableLanguageFlagsQuery, revision)
+	if err != nil {
+		return Editable{}, err
+	}
 	if !revision.Valid {
-		return result, nil
+		result.SlugRules, err = readSlugRules(ctx, tx, initialSlugRulesQuery)
+		return result, dbError(err)
+	}
+	result.SlugRules, err = readSlugRules(ctx, tx, editableSlugRulesQuery, revision.String)
+	if err != nil {
+		return Editable{}, dbError(err)
 	}
 	if err := readEditorRevision(ctx, tx, revision.String, &result); err != nil {
 		return Editable{}, err
@@ -225,7 +276,9 @@ func readEditorRevision(ctx context.Context, tx *sql.Tx, revision string, result
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT l.language_code,m.message_key,m.message_value
  FROM public.site_revision_languages l
- LEFT JOIN public.site_revision_messages m USING (revision_id,language_code)
+ LEFT JOIN public.site_revision_messages m
+ ON m.revision_id=COALESCE(l.catalog_revision_id,l.revision_id) AND m.language_code=l.language_code
+ AND EXISTS (SELECT 1 FROM public.ui_message_keys k WHERE k.message_key=m.message_key)
  WHERE l.revision_id=$1`, revision)
 	if err != nil {
 		return dbError(err)

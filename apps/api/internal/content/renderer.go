@@ -1,13 +1,18 @@
 package content
 
+import "strings"
+
 const (
 	articleTypeKey = "article"
 	eventTypeKey   = "event"
 )
 
 const (
-	articlesNamespace = "articles"
-	eventsNamespace   = "events"
+	articlesNamespace         = "articles"
+	eventsNamespace           = "events"
+	collectionTemplate        = "collection"
+	collectionNamespacePrefix = collectionTemplate + "-"
+	maxRouteNamespaceLength   = 64
 )
 
 const (
@@ -26,6 +31,14 @@ func rendererTypeKey(namespace string) string {
 	for _, renderer := range rendererChoices {
 		if renderer.Namespace == namespace {
 			return renderer.Key
+		}
+	}
+	remainder, generic := strings.CutPrefix(namespace, collectionNamespacePrefix)
+	if generic && len(namespace) <= maxRouteNamespaceLength {
+		key := strings.ReplaceAll(remainder, "-", "_")
+		if typeKeyPattern.MatchString(key) && key != articleTypeKey && key != eventTypeKey && key != "renderers" &&
+			namespace == collectionNamespacePrefix+strings.ReplaceAll(key, "_", "-") {
+			return key
 		}
 	}
 	return ""

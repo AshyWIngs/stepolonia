@@ -62,7 +62,7 @@ function lookup(preference: Preference, codes: string[], codeSet: Set<string>, e
   return undefined
 }
 
-export function preferredContentLanguage(codes: string[], fallback: string, saved: string | null | undefined, header: string): string {
+export function preferredLanguage(codes: string[], fallback: string, saved: string | null | undefined, header: string): string {
   if (saved && codes.includes(saved)) return saved
   const preferences = header.split(',').map(parsePreference).filter((item): item is Preference => item !== undefined)
   // Index the untrusted header once to avoid quadratic scans.

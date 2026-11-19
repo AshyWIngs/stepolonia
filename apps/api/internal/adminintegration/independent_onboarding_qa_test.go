@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/platform"
@@ -343,10 +344,11 @@ func TestAuthOnboardingIndependentHTTPDenialBudgetIntegration(t *testing.T) {
 		}
 	}
 	var bounded bool
-	requireNoError(t, f.state.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied' AND actor_id IS NULL)=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='qa-no-flood-write') AND (SELECT coalesce(sum(count),0) FROM public.auth_attempt_buckets WHERE kind='account')=5`).Scan(&bounded))
+	requireNoError(t, f.state.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied' AND actor_id IS NULL)=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='qa-no-flood-write')`).Scan(&bounded))
 	if !bounded {
 		t.Fatal("anonymous HTTP attempts bypassed persistent audit aggregation")
 	}
+	assertOnboardingDenialBuckets(t, f.state, f.server.Listener.Addr().(*net.TCPAddr).AddrPort().Addr().Unmap().String())
 	full := authFull(t, f.state)
 	reply := qaOnboardingHTTP(t, f, onboardingUsersPath, `{"login":"qa-authorized-after-flood"}`, full)
 	if reply.status != 200 {

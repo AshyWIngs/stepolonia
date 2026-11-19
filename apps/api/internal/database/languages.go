@@ -80,13 +80,6 @@ func readLanguageRecord(record []string, line int, seen map[string]bool) (Langua
 	return Language{code, record[1], record[2], record[3]}, nil
 }
 
-func Seed(ctx context.Context, db *sql.DB) error {
-	return ImportLanguages(ctx, db, []Language{
-		{"ru", "Russian", "Русский", directionLTR}, {"pl", "Polish", "Polski", directionLTR},
-		{"kk", "Kazakh", "Қазақша", directionLTR}, {"en", "English", "English", directionLTR},
-	})
-}
-
 // ImportLanguages writes a validated file atomically. Sorting the upserts
 // matches the row lock order in lock_languages.
 func ImportLanguages(ctx context.Context, db *sql.DB, rows []Language) error {

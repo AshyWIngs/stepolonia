@@ -26,12 +26,12 @@ func validateRoleInput(ctx context.Context, tx *sql.Tx, input RoleInput) ([]acce
 	if input.Grants == nil || len(input.Grants) > MaxRoleGrants {
 		return nil, ErrValidation
 	}
-	seen := map[string]bool{}
+	seen := make(map[RoleGrantKey]bool, len(input.Grants))
 	for _, grant := range input.Grants {
 		if err := grant.validate(); err != nil {
 			return nil, err
 		}
-		key := strings.Join([]string{grant.Operation, grant.TypeID, grant.ObjectScope}, "\x00")
+		key := grant.key()
 		if seen[key] {
 			return nil, ErrValidation
 		}
@@ -138,7 +138,12 @@ func validateGrantReferences(ctx context.Context, tx *sql.Tx, g RoleGrant) error
 
 func queryRoleGrants(ctx context.Context, tx *sql.Tx, role string) ([]RoleGrant, error) {
 	out := []RoleGrant{}
-	rows, err := tx.QueryContext(ctx, `SELECT g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(g.object_scope,''),g.can_delegate,COALESCE(g.target_scope,''),COALESCE(g.object_ceiling,''),g.may_delegate_content,array_to_json(g.delegate_operations)::text,COALESCE((SELECT json_agg(f.field_id::text ORDER BY f.field_id)::text FROM public.grant_fields f WHERE f.grant_id=g.id),'[]') FROM public.role_grants g WHERE g.role_id=$1 ORDER BY g.operation,g.type_id,g.object_scope,g.id`, role)
+	rows, err := tx.QueryContext(ctx, `SELECT g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(t.key,''),
+ COALESCE(g.object_scope,''),g.can_delegate,COALESCE(g.target_scope,''),COALESCE(g.object_ceiling,''),
+ g.may_delegate_content,array_to_json(g.delegate_operations)::text,
+ COALESCE((SELECT json_agg(f.field_id::text ORDER BY f.field_id)::text FROM public.grant_fields f WHERE f.grant_id=g.id),'[]')
+ FROM public.role_grants g LEFT JOIN public.content_types t ON t.id=g.type_id
+ WHERE g.role_id=$1 ORDER BY g.operation,g.type_id,g.object_scope,g.id`, role)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +151,7 @@ func queryRoleGrants(ctx context.Context, tx *sql.Tx, role string) ([]RoleGrant,
 	for rows.Next() {
 		var g RoleGrant
 		var operations, fields string
-		if err = rows.Scan(&g.Operation, &g.Scope, &g.TypeID, &g.ObjectScope, &g.CanDelegate, &g.TargetScope, &g.ObjectCeiling, &g.MayDelegateContent, &operations, &fields); err != nil {
+		if err = rows.Scan(&g.Operation, &g.Scope, &g.TypeID, &g.collectionKey, &g.ObjectScope, &g.CanDelegate, &g.TargetScope, &g.ObjectCeiling, &g.MayDelegateContent, &operations, &fields); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(operations), &g.DelegateOperations); err != nil {
@@ -170,28 +175,33 @@ func replaceRoleGrants(ctx context.Context, tx *sql.Tx, role string, grants []Ro
 	if _, err := tx.ExecContext(ctx, `DELETE FROM public.role_grants WHERE role_id=$1`, role); err != nil {
 		return err
 	}
-	for _, g := range grants {
-		id, err := randomID()
-		if err != nil {
+	for _, grant := range grants {
+		if err := insertRoleGrant(ctx, tx, role, "", grant); err != nil {
 			return err
-		}
-		operations := g.DelegateOperations
-		if operations == nil {
-			operations = []string{}
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate,delegate_operations,target_scope,object_ceiling,may_delegate_content) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,''),$7,$8,NULLIF($9,''),NULLIF($10,''),$11)`, id, role, g.Operation, g.Scope, g.TypeID, g.ObjectScope, g.CanDelegate, operations, g.TargetScope, g.ObjectCeiling, g.MayDelegateContent)
-		if err != nil {
-			return err
-		}
-		if len(g.FieldIDs) > 0 {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,$2,field_id FROM unnest($3::uuid[]) AS field_id`, id, g.TypeID, g.FieldIDs); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
 }
 
+func insertRoleGrant(ctx context.Context, tx *sql.Tx, role, id string, grant RoleGrant) error {
+	if id == "" {
+		var err error
+		id, err = randomID()
+		if err != nil {
+			return err
+		}
+	}
+	operations := grant.DelegateOperations
+	if operations == nil {
+		operations = []string{}
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope,can_delegate,delegate_operations,target_scope,object_ceiling,may_delegate_content) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,''),$7,$8,NULLIF($9,''),NULLIF($10,''),$11)`, id, role, grant.Operation, grant.Scope, grant.TypeID, grant.ObjectScope, grant.CanDelegate, operations, grant.TargetScope, grant.ObjectCeiling, grant.MayDelegateContent)
+	if err != nil || len(grant.FieldIDs) == 0 {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO public.grant_fields(grant_id,type_id,field_id) SELECT $1,$2,field_id FROM unnest($3::uuid[]) AS field_id`, id, grant.TypeID, grant.FieldIDs)
+	return err
+}
 func roleRecipients(ctx context.Context, tx *sql.Tx, role string) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT user_id::text FROM public.user_roles WHERE role_id=$1 ORDER BY user_id`, role)
 	if err != nil {

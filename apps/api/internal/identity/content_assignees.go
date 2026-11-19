@@ -106,7 +106,7 @@ func findAssignmentItem(ctx context.Context, tx *sql.Tx, actorID, typeKey, itemI
 	item := assigneeItem{id: id}
 	err := tx.QueryRowContext(ctx, `SELECT i.type_id::text, i.version FROM public.content_items i
  JOIN public.content_types t ON t.id=i.type_id
- WHERE i.id=$3 AND t.key=$4 AND i.type_id IN (
+ WHERE i.id=$3 AND t.key=$4 AND t.enabled AND i.type_id IN (
  SELECT g.type_id FROM public.user_roles m
  JOIN public.roles r ON r.id=m.role_id
  JOIN public.role_grants g ON g.role_id=m.role_id

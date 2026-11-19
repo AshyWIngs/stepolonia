@@ -9,6 +9,12 @@ export class AdminAuthError extends Error {
   }
 }
 
+export function isAdminPreauthConflict(error: unknown): boolean {
+  return error instanceof AdminAuthError &&
+    ((error.status === 401 && error.code === 'authentication_required') ||
+      (error.status === 403 && error.code === 'csrf_failed'))
+}
+
 function requestOptions(): RequestInit {
   return {
     credentials: 'same-origin',

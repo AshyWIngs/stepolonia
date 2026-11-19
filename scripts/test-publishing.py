@@ -172,7 +172,6 @@ def check_cli(site, directory, override, compose, config, log):
     log.write("PASS: CLI Down rejected an empty token and preserved the catalog and history\n")
     run_prebuilt_tool(site, ["migrate", "down"], override=override, log=log, allow_disposable_down=True)
     run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
-    run_prebuilt_tool(site, ["seed"], override=override, log=log)
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
     run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
@@ -211,7 +210,6 @@ def check_runtime(site, directory, override, compose, environment, project, toke
     """Check Publishing on the Compose installation."""
     run_prebuilt_tool(site, ["prepare-roles"], override=override, log=log)
     run_prebuilt_tool(site, ["migrate", "up"], override=override, log=log)
-    run_prebuilt_tool(site, ["seed"], override=override, log=log)
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")
     run_prebuilt_tool(site, ["import-languages", "/input/languages.csv"], input_file=csv, override=override, log=log)
@@ -258,7 +256,7 @@ def check_localization(base, images_project, primary_compose, log):
         command([*compose, "up", "-d", "--wait", "--wait-timeout", "120", "postgres"], log)
         query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
         command([*compose, *postgres_sql_args(config, query)], log)
-        for arguments in (["prepare-roles"], ["migrate", "up"], ["seed"]):
+        for arguments in (["prepare-roles"], ["migrate", "up"]):
             run_prebuilt_tool(site, arguments, override=override, log=log)
         languages = directory / "languages.csv"
         languages.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")

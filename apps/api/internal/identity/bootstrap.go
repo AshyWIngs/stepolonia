@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -38,16 +39,29 @@ type BootstrapEnrollment struct {
 var errBootstrapDenied = errors.New("bootstrap credential rejected")
 
 var bootstrapSitePattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
-var bootstrapHashSlots = make(chan struct{}, 4)
+var bootstrapHashSlots = make(chan struct{}, MaxPasswordHashJobs)
+var hashAdmission sync.Mutex
 
 func bootstrapHashSlot(ctx context.Context) (func(), error) {
+	return passwordHashSlot(ctx, MaxPasswordHashJobs)
+}
+
+func passwordHashSlot(ctx context.Context, maximum int) (func(), error) {
+	hashAdmission.Lock()
+	defer hashAdmission.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(bootstrapHashSlots) >= maximum {
+		return nil, rateLimitError{retryAfter: 1}
+	}
 	select {
 	case bootstrapHashSlots <- struct{}{}:
 		return func() { <-bootstrapHashSlots }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
-		return nil, fmt.Errorf("bootstrap password capacity exceeded")
+		return nil, rateLimitError{retryAfter: 1}
 	}
 }
 

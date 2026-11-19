@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"stepolonia/apps/api/internal/identity"
 )
@@ -96,7 +97,7 @@ func writeError(w http.ResponseWriter, err error) {
 		status, code = http.StatusBadRequest, validationCode
 	case errors.Is(err, identity.ErrRateLimited):
 		status, code = http.StatusTooManyRequests, rateLimitedCode
-		w.Header().Set("Retry-After", "900")
+		w.Header().Set("Retry-After", strconv.Itoa(identity.RateRetryAfter(err)))
 	}
 	problem(w, status, code)
 }

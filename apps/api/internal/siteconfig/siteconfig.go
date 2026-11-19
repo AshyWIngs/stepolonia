@@ -36,10 +36,14 @@ type Publication struct {
 	Language          Language          `json:"language" doc:"Language of the complete returned UI catalog, after fallback."`
 	Languages         []Language        `json:"languages" nullable:"false" doc:"Published active UI languages ordered by code. Each has a complete catalog in this publication."`
 	Messages          map[string]string `json:"messages" doc:"Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code."`
+	SlugRules         []SlugRule        `json:"slug_rules" nullable:"false" doc:"Published slug suggestion rules ordered by content language code and source character."`
+	LanguageFlags     map[string]string `json:"language_flags,omitempty" doc:"Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe."`
 }
 type Draft struct {
-	Settings Settings
-	Catalogs map[string]map[string]string
+	Settings      Settings
+	Catalogs      map[string]map[string]string
+	SlugRules     []SlugRule
+	LanguageFlags map[string]string
 }
 
 const (
@@ -104,7 +108,7 @@ type Reader struct{ db *sql.DB }
 
 func NewReader(db *sql.DB) *Reader { return &Reader{db: db} }
 func (r *Reader) Read(ctx context.Context, requested, version string) (Publication, error) {
-	result := Publication{Languages: []Language{}, Messages: map[string]string{}}
+	result := Publication{Languages: []Language{}, Messages: map[string]string{}, SlugRules: []SlugRule{}}
 	if requested != "" {
 		value, err := normalize(requested)
 		if err != nil {
@@ -133,8 +137,12 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 	if version != "" && !strings.EqualFold(version, result.Version) {
 		return result, failure(409, versionConflictCode)
 	}
-	if err = readCatalog(ctx, tx, &result); err != nil {
+	if err = readLocalization(ctx, tx, &result); err != nil {
 		return result, err
+	}
+	result.SlugRules, err = readSlugRules(ctx, tx, publishedSlugRulesQuery, result.Version)
+	if err != nil {
+		return result, dbError(err)
 	}
 	if err = tx.Commit(); err != nil {
 		return result, dbError(err)
@@ -165,6 +173,14 @@ func normalizeDraft(input Draft) (Draft, error) {
 	}
 
 	input.Catalogs = catalogs
+	input.LanguageFlags, err = normalizeLanguageFlags(input.LanguageFlags)
+	if err != nil {
+		return Draft{}, err
+	}
+	input.SlugRules, err = normalizeSlugRules(input.SlugRules)
+	if err != nil {
+		return Draft{}, err
+	}
 	return input, nil
 }
 
@@ -184,11 +200,15 @@ func storeDraft(ctx context.Context, tx *sql.Tx, id string, input Draft) error {
 			return err
 		}
 	}
-	return nil
+	if err = storeLanguageFlags(ctx, tx, id, input.LanguageFlags); err != nil {
+		return err
+	}
+	return storeSlugRules(ctx, tx, id, input.SlugRules)
 }
 
 func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map[string]string) error {
-	result, err := tx.ExecContext(ctx, `INSERT INTO public.site_revision_languages SELECT $1,code,name,native_name,direction FROM public.languages WHERE code=$2`, id, code)
+	result, err := tx.ExecContext(ctx, `INSERT INTO public.site_revision_languages(revision_id,language_code,name,native_name,direction)
+ SELECT $1,code,name,native_name,direction FROM public.languages WHERE code=$2`, id, code)
 	if err != nil {
 		return dbError(err)
 	}
@@ -199,15 +219,20 @@ func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map
 	if count != 1 {
 		return failure(400, "language_unavailable")
 	}
+	keys := make([]string, 0, len(messages))
+	values := make([]string, 0, len(messages))
 	for key, value := range messages {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO public.site_revision_messages VALUES($1,$2,$3,$4)`, id, code, key, value); err != nil {
-			return dbError(err)
-		}
+		keys = append(keys, key)
+		values = append(values, value)
 	}
-	return nil
+	_, err = tx.ExecContext(ctx, `INSERT INTO public.site_revision_messages(revision_id,language_code,message_key,message_value)
+ SELECT $1,$2,message.key,message.value FROM unnest($3::text[],$4::text[]) AS message(key,value)`, id, code, keys, values)
+	return dbError(err)
 }
 func deleteDraft(ctx context.Context, tx *sql.Tx, id string) error {
 	for _, query := range []string{
+		"DELETE FROM public.site_revision_language_flags WHERE revision_id=$1",
+		"DELETE FROM public.site_revision_slug_rules WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_messages WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_languages WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_keys WHERE revision_id=$1",
@@ -239,7 +264,7 @@ func checkPublicRole(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func readCatalog(ctx context.Context, tx *sql.Tx, result *Publication) error {
+func readLocalization(ctx context.Context, tx *sql.Tx, result *Publication) error {
 	languages, err := readLanguages(ctx, tx, result.Version)
 	if err != nil {
 		return err
@@ -257,7 +282,8 @@ func readCatalog(ctx context.Context, tx *sql.Tx, result *Publication) error {
 		return failure(503, unavailableCode)
 	}
 	result.Messages = messages
-	return nil
+	result.LanguageFlags, err = readLanguageFlags(ctx, tx, publishedLanguageFlagsQuery, result.Version)
+	return err
 }
 func selectLanguage(languages []Language, requested, fallback string) Language {
 	var result Language
@@ -318,6 +344,6 @@ func (Language) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sche
 
 // TransformSchema documents the public Publication contract without changing validation.
 func (Publication) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Description = "One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
+	schema.Description = "One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
 	return schema
 }

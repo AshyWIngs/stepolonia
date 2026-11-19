@@ -7,10 +7,11 @@ export function usePublicContent() {
   const { publication } = usePublicSite()
 
   async function listLanguages() {
-    if (!publication.value) throw publicError(503)
+    const defaultLanguage = publication.value?.settings.default_language
+    if (!defaultLanguage) throw publicError(503)
     const { data, response } = await request(() => client.listLanguages())
     if (!data) throw publicError(response.status)
-    if (!data.some(item => item.code === publication.value?.settings.default_language)) throw publicError(503)
+    if (!data.some(item => item.code === defaultLanguage)) throw publicError(503)
     return data
   }
 
@@ -28,6 +29,13 @@ export function usePublicContent() {
     return { items: data.items, nextOffset: data.next_offset, language: selected, languages }
   }
 
+  async function collectionAvailable(namespace: ContentNamespace, language: string) {
+    const { data } = await request(() => client.listContent({
+      path: { type_key: contentType(namespace) }, query: { language, limit: 1 },
+    }))
+    return Boolean(data)
+  }
+
   async function detail(namespace: ContentNamespace, code: string, slug: string) {
     const { selected, languages } = await language(code)
     const result = await request(() => client.getContent({ path: { type_key: contentType(namespace), slug }, query: { language: selected.code } }))
@@ -43,5 +51,5 @@ export function usePublicContent() {
     return { kind: 'content' as const, item: result.data, language: selected, languages }
   }
 
-  return { list, detail, listLanguages }
+  return { list, detail, listLanguages, collectionAvailable }
 }

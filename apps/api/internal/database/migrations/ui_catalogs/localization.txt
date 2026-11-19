@@ -1,0 +1,149 @@
+admin.language
+Language
+Język
+Язык
+Тіл
+
+admin.interface_texts
+Interface texts
+Teksty interfejsu
+Тексты интерфейса
+Интерфейс мәтіндері
+
+admin.slug_rules_title
+URL replacements
+Zamiany znaków w adresie
+Замены для адресов страниц
+Бет мекенжайларындағы алмастырулар
+
+admin.slug_rules_language
+Rule language
+Język reguł
+Язык правил
+Ережелер тілі
+
+admin.slug_rules_search
+Search rules
+Szukaj reguł
+Поиск правил
+Ережелерді іздеу
+
+admin.slug_rules_character
+Character
+Znak
+Символ
+Таңба
+
+admin.slug_rules_replacement
+Replacement
+Zamiana
+Замена
+Алмастыру
+
+admin.slug_rules_add
+Add rule
+Dodaj regułę
+Добавить правило
+Ереже қосу
+
+admin.slug_rules_remove
+Remove rule
+Usuń regułę
+Удалить правило
+Ережені жою
+
+admin.slug_rules_help
+Map one non-ASCII character to lowercase Latin letters, digits or hyphens. An empty replacement removes the character. Saved rules apply to newly generated addresses.
+Zastąp pojedynczy znak spoza ASCII małymi literami łacińskimi, cyframi lub łącznikami. Pusta zamiana pomija znak. Zapisane reguły dotyczą nowo tworzonych adresów.
+Укажите замену для одного символа вне ASCII. В замене допустимы строчные латинские буквы, цифры и дефисы. Пустая замена пропускает символ. Сохранённые правила применяются к новым адресам.
+ASCII-ден тыс бір таңбаны кіші латын әріптерімен, цифрлармен не дефистермен алмастырыңыз. Бос алмастыру таңбаны өткізіп жібереді. Сақталған ережелер жаңадан жасалған мекенжайларға қолданылады.
+
+admin.slug_rules_invalid
+Check the character and replacement. Characters must be unique within each language.
+Sprawdź znak i zamianę. W każdym języku znaki muszą być unikatowe.
+Проверьте символ и замену. В каждом языке символ должен встречаться только один раз.
+Таңба мен алмастыруды тексеріңіз. Әр тілде таңба бір рет қана кездесуі керек.
+
+admin.settings_translation_language
+Language to edit
+Język do edycji
+Язык перевода
+Аударма тілі
+
+admin.settings_catalog_invalid
+Check the edited texts and keep their placeholders.
+Sprawdź edytowane teksty i zachowaj symbole zastępcze.
+Проверьте изменённые тексты и сохраните в них подстановки.
+Өңделген мәтіндерді тексеріп, алмастырылатын белгілерді сақтаңыз.
+
+admin.settings_save_translations
+Save translations
+Zapisz tłumaczenia
+Сохранить переводы
+Аудармаларды сақтау
+
+admin.settings_catalog_registry_changed
+The list of interface texts changed. Reload it before saving the catalogs.
+Lista tekstów interfejsu uległa zmianie. Wczytaj ją ponownie przed zapisaniem katalogów.
+Список текстов интерфейса изменился. Загрузите его заново перед сохранением каталогов.
+Интерфейс мәтіндерінің тізімі өзгерді. Каталогтарды сақтамас бұрын оны қайта жүктеңіз.
+
+admin.settings_catalog_reload_keys
+Reload interface texts
+Wczytaj ponownie teksty interfejsu
+Перезагрузить тексты интерфейса
+Интерфейс мәтіндерін қайта жүктеу
+
+admin.settings_catalog_repair
+Apply updated catalogs
+Zastosuj zaktualizowane katalogi
+Применить обновлённые каталоги
+Жаңартылған каталогтарды қолдану
+
+admin.language_flag_save
+Save flag
+Zapisz flagę
+Сохранить флаг
+Жалауды сақтау
+
+admin.language_flags
+Language flags
+Flagi języków
+Флаги языков
+Тіл жалаулары
+
+admin.language_flag_saved
+Saved flag
+Zapisana flaga
+Сохранённый флаг
+Сақталған жалау
+
+admin.language_flag_svg
+Flag SVG
+Kod SVG flagi
+SVG флага
+Жалаудың SVG коды
+
+admin.language_flag_help
+Paste an SVG with simple shapes, up to 4 KB. Leave empty to use the globe.
+Wklej SVG z prostymi kształtami, do 4 KB. Puste pole wyświetla globus.
+Вставьте SVG с простыми фигурами до 4 КБ. Пустое поле отображает глобус.
+Қарапайым пішіндері бар 4 КБ дейінгі SVG енгізіңіз. Бос өріс глобусты көрсетеді.
+
+admin.language_flag_reset
+Use globe
+Użyj globusa
+Использовать глобус
+Глобусты пайдалану
+
+admin.language_flag_invalid
+This flag could not be saved. Check the SVG and try again.
+Nie można zapisać flagi. Sprawdź SVG i spróbuj ponownie.
+Не удалось сохранить флаг. Проверьте SVG и повторите попытку.
+Жалау сақталмады. SVG кодын тексеріп, қайта көріңіз.
+
+admin.settings_locale_defaults_heading
+Language preferences
+Preferencje językowe
+Языковые предпочтения
+Тіл параметрлері

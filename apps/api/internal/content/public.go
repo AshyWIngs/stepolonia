@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // PublicReader reads only security-barrier views through a dedicated runtime pool.
@@ -131,7 +132,7 @@ func scanPublicItems(rows *sql.Rows) ([]PublicItem, error) {
 	defer func() { _ = rows.Close() }()
 	items := []PublicItem{}
 	for rows.Next() {
-		item, err := scanPublicItem(rows)
+		item, err := scanPublicItem(rows, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -142,12 +143,16 @@ func scanPublicItems(rows *sql.Rows) ([]PublicItem, error) {
 
 type publicScanner interface{ Scan(...any) error }
 
-func scanPublicItem(row publicScanner) (PublicItem, error) {
+func scanPublicItem(row publicScanner, displayMetadata *[]byte) (PublicItem, error) {
 	var item PublicItem
 	var namespace string
 	var schema int64
 	var shared, localized, metadata []byte
-	err := row.Scan(&item.ItemID, &item.TypeKey, &namespace, &schema, &item.PublicationID, &item.Language, &item.Slug, &shared, &localized, &metadata)
+	destinations := []any{&item.ItemID, &item.TypeKey, &namespace, &schema, &item.PublicationID, &item.Language, &item.Slug, &shared, &localized, &metadata}
+	if displayMetadata != nil {
+		destinations = append(destinations, displayMetadata)
+	}
+	err := row.Scan(destinations...)
 	if err != nil {
 		return item, databaseError(err)
 	}
@@ -211,8 +216,9 @@ func (r *PublicReader) Resolve(ctx context.Context, typeKey, language, slug stri
 		return Resolution{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	row := tx.QueryRowContext(ctx, `SELECT i.item_id,i.type_key,i.route_namespace,i.schema_no,i.publication_id,i.language_code,i.slug,i.shared_values,i.localized_values,i.field_metadata FROM public.public_content_routes r JOIN public.public_content_items i ON i.item_id=r.item_id AND i.publication_id=r.publication_id AND i.language_code=r.language_code WHERE r.type_key=$1 AND r.language_code=$2 AND r.requested_slug=$3`, typeKey, code, slug)
-	item, err := scanPublicItem(row)
+	row := tx.QueryRowContext(ctx, `SELECT i.item_id,i.type_key,i.route_namespace,i.schema_no,i.publication_id,i.language_code,i.slug,i.shared_values,i.localized_values,i.field_metadata,i.display_metadata FROM public.public_content_routes r JOIN public.public_content_items i ON i.item_id=r.item_id AND i.publication_id=r.publication_id AND i.language_code=r.language_code WHERE r.type_key=$1 AND r.language_code=$2 AND r.requested_slug=$3`, typeKey, code, slug)
+	var displayMetadata []byte
+	item, err := scanPublicItem(row, &displayMetadata)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Resolution{}, problem(NotFound, "content_not_found")
@@ -222,10 +228,39 @@ func (r *PublicReader) Resolve(ctx context.Context, typeKey, language, slug stri
 	if err = completePublicItem(ctx, tx, &item); err != nil {
 		return Resolution{}, err
 	}
+	item.FieldLabels, err = publicFieldLabels(displayMetadata, item)
+	if err != nil {
+		return Resolution{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return Resolution{}, databaseError(err)
 	}
 	return Resolution{Item: item, Redirect: item.Slug != slug}, nil
+}
+
+func publicFieldLabels(metadata []byte, item PublicItem) (map[string]string, error) {
+	var fields map[string]map[string]struct {
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(metadata, &fields); err != nil {
+		return nil, problem(Unavailable, invalidPublicProjectionCode)
+	}
+	labels := make(map[string]string)
+	add := func(key string) {
+		if label := strings.TrimSpace(fields[key][item.Language].Label); label != "" {
+			labels[key] = label
+		}
+	}
+	for key := range item.Shared {
+		add(key)
+	}
+	for key := range item.Localized {
+		add(key)
+	}
+	for _, relation := range item.Relations {
+		add(relation.FieldKey)
+	}
+	return labels, nil
 }
 func completePublicItem(ctx context.Context, tx *sql.Tx, item *PublicItem) error {
 	item.Translations = []PublicTranslation{}

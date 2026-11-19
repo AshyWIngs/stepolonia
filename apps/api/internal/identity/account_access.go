@@ -77,7 +77,7 @@ func (s *AuthService) ListAccountSessions(ctx context.Context, req AuthRequest, 
 		rows, err := tx.QueryContext(ctx, `SELECT id::text,created_at,last_seen,expires_at,id=$1
  FROM public.sessions s WHERE user_id=$2 AND kind='full' AND revoked_at IS NULL
  AND credential_version=(SELECT credential_version FROM public.users WHERE id=$2)
- AND expires_at>$3 AND last_seen>$3-interval '30 minutes' AND failed_attempts<5
+ AND expires_at>$3 AND last_seen>$3-make_interval(mins=>idle_timeout_minutes) AND failed_attempts<5
  ORDER BY created_at DESC,id DESC LIMIT $4 OFFSET $5`, session.id, owner, session.now, page.Limit, page.Offset)
 		if err != nil {
 			return err
@@ -125,7 +125,7 @@ func (s *AuthService) RevokeAccountSession(ctx context.Context, req AuthRequest,
 		var owner string
 		err := tx.QueryRowContext(ctx, `SELECT s.user_id::text FROM public.sessions s JOIN public.users u ON u.id=s.user_id
  WHERE s.id=$1 AND s.kind='full' AND s.revoked_at IS NULL AND s.credential_version=u.credential_version
- AND u.state='active' AND s.expires_at>$2 AND s.last_seen>$2-interval '30 minutes' AND s.failed_attempts<5`, id, actor.now).Scan(&owner)
+ AND u.state='active' AND s.expires_at>$2 AND s.last_seen>$2-make_interval(mins=>s.idle_timeout_minutes) AND s.failed_attempts<5`, id, actor.now).Scan(&owner)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}

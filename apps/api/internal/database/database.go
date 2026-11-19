@@ -4,17 +4,13 @@ package database
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
-	"io/fs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"stepolonia/apps/api/internal/database/migrations"
 )
-
-//go:embed migrations/*.sql schema_contract.json
-var migrations embed.FS
 
 func Open(cfg *pgx.ConnConfig) *sql.DB {
 	db := stdlib.OpenDB(*cfg)
@@ -24,11 +20,7 @@ func Open(cfg *pgx.ConnConfig) *sql.DB {
 }
 
 func Provider(db *sql.DB) (*goose.Provider, error) {
-	files, err := fs.Sub(migrations, "migrations")
-	if err != nil {
-		return nil, err
-	}
-	return goose.NewProvider(goose.DialectPostgres, db, files)
+	return migrations.Provider(db)
 }
 
 // PrepareRoles is explicit cluster bootstrap. Roles deliberately survive down:
@@ -75,7 +67,7 @@ func CheckRuntime(ctx context.Context, db *sql.DB, name string) error {
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class WHERE relowner=r.oid)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE proowner=r.oid)
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
- WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','guard_site_child','guard_site_revision','guard_site_state')
+ WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('lock_languages','ui_placeholders','valid_slug_rule','guard_site_child','guard_site_revision','guard_site_state')
  AND pg_catalog.has_function_privilege(r.oid,p.oid,'EXECUTE'))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE
  pg_catalog.has_schema_privilege(r.oid,oid,'CREATE') AND nspname NOT LIKE 'pg_temp_%' AND nspname NOT LIKE 'pg_toast_temp_%')
@@ -106,7 +98,7 @@ func GrantRuntime(ctx context.Context, db *sql.DB, name string) error {
 		"GRANT USAGE ON SCHEMA public TO " + role,
 		"REVOKE ALL ON ALL TABLES IN SCHEMA public FROM " + role,
 		"REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM " + role,
-		"GRANT SELECT ON public.public_languages, public.public_content_types, public.public_content_items, public.public_content_routes, public.public_content_relations, public.public_site, public.public_ui_languages, public.public_ui_messages TO " + role,
+		"GRANT SELECT ON public.public_languages, public.public_content_types, public.public_content_items, public.public_content_routes, public.public_content_relations, public.public_site, public.public_ui_languages, public.public_ui_messages, public.public_slug_rules, public.public_language_flags TO " + role,
 	} {
 		if _, err := tx.ExecContext(ctx, query); err != nil {
 			return err

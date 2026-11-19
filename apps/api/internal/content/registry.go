@@ -1,6 +1,7 @@
 package content
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -12,12 +13,18 @@ func (s *Service) CreateType(ctx context.Context, actor Actor, input TypeInput) 
 	var out TypeSchema
 	err := s.withTx(ctx, actor, string(identity.OpContentTypesManage), "", "", nil, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
-		out, err = createType(ctx, tx, input)
+		out, err = createType(ctx, tx, input, collectionMetadata{})
 		return err
 	})
 	return out, err
 }
-func createType(ctx context.Context, tx *sql.Tx, input TypeInput) (TypeSchema, error) {
+
+type collectionMetadata struct {
+	displayName string
+	iconSVG     string
+}
+
+func createType(ctx context.Context, tx *sql.Tx, input TypeInput, metadata collectionMetadata) (TypeSchema, error) {
 	if err := ValidateType(input); err != nil {
 		return TypeSchema{}, err
 	}
@@ -25,7 +32,7 @@ func createType(ctx context.Context, tx *sql.Tx, input TypeInput) (TypeSchema, e
 	if err != nil {
 		return TypeSchema{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_types(id,key,route_namespace,kind,current_schema_no) VALUES($1,$2,$3,'collection',1)`, id, input.Key, input.RouteNamespace); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_types(id,key,route_namespace,display_name,icon_svg) VALUES($1,$2,$3,$4,$5)`, id, input.Key, input.RouteNamespace, metadata.displayName, metadata.iconSVG); err != nil {
 		return TypeSchema{}, err
 	}
 	if err := storeSchema(ctx, tx, id, 1, input.Fields); err != nil {
@@ -67,7 +74,9 @@ func defaultObject(raw json.RawMessage) json.RawMessage {
 }
 func loadSchema(ctx context.Context, tx *sql.Tx, typeID string, number int64) (TypeSchema, error) {
 	var schema TypeSchema
-	err := tx.QueryRowContext(ctx, `SELECT id::text,key,route_namespace,version,CASE WHEN $2::bigint=0 THEN current_schema_no ELSE $2 END FROM public.content_types WHERE id=$1`, typeID, number).Scan(&schema.TypeID, &schema.Key, &schema.RouteNamespace, &schema.Version, &schema.SchemaNo)
+	err := tx.QueryRowContext(ctx, `SELECT id::text,key,route_namespace,display_name,icon_svg,enabled,version,
+ CASE WHEN $2::bigint=0 THEN current_schema_no ELSE $2 END FROM public.content_types WHERE id=$1`, typeID, number).
+		Scan(&schema.TypeID, &schema.Key, &schema.RouteNamespace, &schema.DisplayName, &schema.IconSVG, &schema.Enabled, &schema.Version, &schema.SchemaNo)
 	if err != nil {
 		return schema, err
 	}
@@ -123,7 +132,7 @@ func reviseType(ctx context.Context, tx *sql.Tx, current TypeSchema, input TypeI
 	if err != nil {
 		return TypeSchema{}, err
 	}
-	if err := updateLabels(ctx, tx, current.TypeID, fields); err != nil {
+	if err := updateLabels(ctx, tx, current, fields); err != nil {
 		return TypeSchema{}, err
 	}
 	number := current.SchemaNo
@@ -133,7 +142,7 @@ func reviseType(ctx context.Context, tx *sql.Tx, current TypeSchema, input TypeI
 			return TypeSchema{}, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE public.content_types SET version=version+1,current_schema_no=$2 WHERE id=$1`, current.TypeID, number); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.content_types SET version=version+1,current_schema_no=$2,icon_svg=$3 WHERE id=$1`, current.TypeID, number, current.IconSVG); err != nil {
 		return TypeSchema{}, err
 	}
 	return loadSchema(ctx, tx, current.TypeID, number)
@@ -180,12 +189,18 @@ func canonicalJSON(raw json.RawMessage) json.RawMessage {
 	out, _ := json.Marshal(value)
 	return out
 }
-func updateLabels(ctx context.Context, tx *sql.Tx, typeID string, fields []Definition) error {
+func updateLabels(ctx context.Context, tx *sql.Tx, current TypeSchema, fields []Definition) error {
+	before := make(map[string]json.RawMessage, len(current.Fields))
+	for _, field := range current.Fields {
+		before[field.ID] = defaultObject(field.DisplayLabels)
+	}
 	for _, field := range fields {
-		if field.ID == "" {
+		labels := defaultObject(field.DisplayLabels)
+		if field.ID == "" || bytes.Equal(before[field.ID], labels) {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE public.content_fields SET display_labels=$3 WHERE type_id=$1 AND field_id=$2`, typeID, field.ID, defaultObject(field.DisplayLabels)); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE public.content_fields SET display_labels=$3 WHERE type_id=$1 AND field_id=$2
+ AND display_labels IS DISTINCT FROM $3`, current.TypeID, field.ID, labels); err != nil {
 			return err
 		}
 	}

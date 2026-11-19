@@ -39,6 +39,7 @@ func draftCandidateSchema(example draftCandidateInput) *huma.Schema {
 	case len(example.IntendedLocales) != 0:
 		required = append(required, intendedLocalesField)
 		properties[intendedLocalesField] = &huma.Schema{Type: huma.TypeArray, Items: locale, UniqueItems: true, MinItems: new(1), MaxItems: new(content.MaxDraftLocales), Description: "Enabled draft locales to update in the published snapshot."}
+		properties[allocateSlugField] = &huma.Schema{Type: huma.TypeBoolean, Description: "Allocate a readable address from the draft slug, using a numbered suffix when the base is already reserved. The default preserves the exact draft slug and rejects conflicts."}
 	}
 	schema := closedObjectSchema("Item version and current semantic schema required to authorize this draft command.", properties, required, example)
 	schema.PrecomputeMessages()

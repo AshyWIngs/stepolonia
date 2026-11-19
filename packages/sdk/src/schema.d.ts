@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Get published content or its canonical address
-         * @description Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return a published item with public scalar fields and resolvable same-language relations. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.
+         * @description Resolves the current public translation for type_key, slug and required language. There is no language fallback. Current slugs return public scalar fields, resolvable same-language relations and their available labels from the sealed publication. Historical slugs return 301 with a direct canonical API Location and JSON null body. Unpublished or unavailable translations return 404. Unknown, repeated and empty query parameters return 400. No session is required.
          */
         get: operations["getContent"];
         put?: never;
@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * Read published site settings and one complete UI catalog
-         * @description One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.
+         * @description One atomic publication supplies settings, language-specific slug suggestion rules, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.
          */
         get: operations["getSite"];
         put?: never;
@@ -233,7 +233,7 @@ export interface components {
             native_name: string;
         };
         /**
-         * @description A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Optional absent scalar values are omitted from maps, and values never use JSON null.
+         * @description A published content snapshot for one exact language and pinned Registry schema. Only public fields and publicly resolvable relations are returned. Detail responses may include their sealed display labels. Optional absent scalar values are omitted from maps, and values never use JSON null.
          * @example {
          *       "item_id": "11111111-1111-4111-8111-111111111111",
          *       "type_key": "article",
@@ -253,7 +253,7 @@ export interface components {
          *       "localized": {
          *         "body": {
          *           "kind": "markdown",
-         *           "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
+         *           "value": "Historie polskiej społeczności i zapowiedzi **wydarzeń**."
          *         },
          *         "slug": {
          *           "kind": "string",
@@ -261,7 +261,7 @@ export interface components {
          *         },
          *         "title": {
          *           "kind": "string",
-         *           "value": "Witaj w Stepolonii"
+         *           "value": "Polska społeczność w Kazachstanie"
          *         }
          *       },
          *       "relations": []
@@ -270,6 +270,10 @@ export interface components {
         PublicItem: {
             /** @description Relative public website path, including language and route namespace. */
             canonical_url: string;
+            /** @description Detail only. Nonblank labels copied from the sealed publication for returned public values and relations in this exact language. */
+            field_labels?: {
+                [key: string]: string;
+            };
             /**
              * Format: uuid
              * @description Stable item UUID shared by all translations.
@@ -477,7 +481,7 @@ export interface components {
          *           "localized": {
          *             "body": {
          *               "kind": "markdown",
-         *               "value": "Historie naszej społeczności i zapowiedzi **wydarzeń**."
+         *               "value": "Historie polskiej społeczności i zapowiedzi **wydarzeń**."
          *             },
          *             "slug": {
          *               "kind": "string",
@@ -485,7 +489,7 @@ export interface components {
          *             },
          *             "title": {
          *               "kind": "string",
-         *               "value": "Witaj w Stepolonii"
+         *               "value": "Polska społeczność w Kazachstanie"
          *             }
          *           },
          *           "relations": []
@@ -588,10 +592,14 @@ export interface components {
             /** @description Current canonical slug in this language. */
             slug: string;
         };
-        /** @description One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed. */
+        /** @description One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed. */
         Publication: {
             /** @description Language of the complete returned UI catalog, after fallback. */
             language: components["schemas"]["Language"];
+            /** @description Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe. */
+            language_flags?: {
+                [key: string]: string;
+            };
             /** @description Published active UI languages ordered by code. Each has a complete catalog in this publication. */
             languages: components["schemas"]["Language"][];
             /** @description Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code. */
@@ -602,6 +610,8 @@ export interface components {
             requested_language: string;
             /** @description Site settings from the same atomic publication as messages. */
             settings: components["schemas"]["Settings"];
+            /** @description Published slug suggestion rules ordered by content language code and source character. */
+            slug_rules: components["schemas"]["SlugRule"][];
             /**
              * Format: uuid
              * @description Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes.
@@ -646,6 +656,24 @@ export interface components {
              * @example Portal
              */
             title: string;
+        };
+        /** @description A character replacement for slug suggestions in one content language. The source is canonicalized before matching and an empty replacement removes that character. */
+        SlugRule: {
+            /**
+             * @description One non-ASCII Unicode character in lowercase NFC form.
+             * @example ł
+             */
+            character: string;
+            /**
+             * @description Registered content language code. Rules apply to this language only.
+             * @example pl
+             */
+            language_code: string;
+            /**
+             * @description Lowercase ASCII letters, digits or hyphens. An empty string removes the character from a slug suggestion.
+             * @example l
+             */
+            replacement: string;
         };
     };
     responses: never;
@@ -940,7 +968,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description One atomic publication with settings and a complete UI catalog, possibly using the configured fallback. */
+            /** @description One atomic publication with settings, slug suggestion rules and a complete UI catalog, possibly using the configured fallback. */
             200: {
                 headers: {
                     [name: string]: unknown;

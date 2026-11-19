@@ -1,0 +1,101 @@
+articles
+Articles
+Artykuły
+Статьи
+Мақалалар
+
+events
+Events
+Wydarzenia
+События
+Іс-шаралар
+
+empty
+No results
+Brak wyników
+Нет результатов
+Нәтиже табылмады
+
+pagination
+Pages
+Strony
+Страницы
+Беттер
+
+previous
+Previous
+Poprzednia
+Предыдущая
+Алдыңғы
+
+next
+Next
+Następna
+Следующая
+Келесі
+
+navigation
+Navigation
+Nawigacja
+Навигация
+Навигация
+
+related_content
+Related content
+Powiązane materiały
+Связанные материалы
+Байланысты материалдар
+
+all
+All
+Wszystkie
+Все
+Барлығы
+
+languages
+Languages
+Języki
+Языки
+Тілдер
+
+errors.400
+Invalid request
+Nieprawidłowe żądanie
+Некорректный запрос
+Жарамсыз сұрау
+
+errors.404
+Page not found
+Nie znaleziono
+Страница не найдена
+Бет табылмады
+
+errors.503
+Service unavailable
+Usługa niedostępna
+Сервис недоступен
+Қызмет қолжетімсіз
+
+errors.other
+Something went wrong
+Wystąpił błąd
+Произошла ошибка
+Қате орын алды
+
+errors.retry
+Try again
+Spróbuj ponownie
+Повторить
+Қайталап көру
+
+errors.home
+Home
+Strona główna
+Главная
+Басты бет
+
+collection
+Collection
+Kolekcja
+Коллекция
+Жинақ

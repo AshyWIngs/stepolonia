@@ -61,8 +61,13 @@ func (s *AuthService) StartEnrollment(ctx context.Context, req AuthRequest, toke
 	if err != nil {
 		return out, err
 	}
-	hash, err := enrollmentPassword(ctx, password)
+	hash, err := hashCredentialPassword(ctx, password, budget.hashJobs)
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			if releaseErr := s.releaseBudget(ctx, budget); releaseErr != nil {
+				return out, releaseErr
+			}
+		}
 		return out, err
 	}
 	secret, err := newSecret()
@@ -132,16 +137,13 @@ func endEnrollment(ctx context.Context, tx *sql.Tx, x Session) error {
 	return authAudit(ctx, tx, "auth.enrollment_cancelled", x.user, false)
 }
 
-func enrollmentPassword(ctx context.Context, password string) (string, error) {
+func hashCredentialPassword(ctx context.Context, password string, maximum int) (string, error) {
 	if validatePassword(password) != nil {
 		return "", ErrValidation
 	}
-	release, err := bootstrapHashSlot(ctx)
+	release, err := passwordHashSlot(ctx, maximum)
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return "", ErrRateLimited
+		return "", err
 	}
 	defer release()
 	hash, err := hashPassword(password)

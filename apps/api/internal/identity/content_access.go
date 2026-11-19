@@ -24,9 +24,6 @@ func (s *AuthService) WithDraftCreate(ctx context.Context, req AuthRequest, type
 		return ErrSecurityUnavailable
 	}
 	return s.auditedCommand(ctx, req, draftCreatedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
-		if !session.FreshStepUp() {
-			return ErrStepUpRequired
-		}
 		typeID, schemaNo, err := draftCreateTarget(ctx, tx, session.user, typeKey)
 		if err != nil {
 			return err
@@ -52,7 +49,7 @@ func draftCreateTarget(ctx context.Context, tx *sql.Tx, userID, typeKey string) 
 	var typeID string
 	var schemaNo int64
 	err := tx.QueryRowContext(ctx, `SELECT t.id::text,t.current_schema_no
- FROM public.content_types t WHERE t.key=$1 AND EXISTS (
+ FROM public.content_types t WHERE t.key=$1 AND t.enabled AND EXISTS (
  SELECT 1 FROM public.role_grants g
  JOIN public.permission_operations o ON o.key=g.operation AND o.scope='content'
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
@@ -65,7 +62,7 @@ func draftCreateTarget(ctx context.Context, tx *sql.Tx, userID, typeKey string) 
 	return typeID, schemaNo, err
 }
 
-// WithDraftUpdate checks the full session, CSRF and step-up under the installation
+// WithDraftUpdate checks the full session and CSRF under the installation
 // mutex, and audits a successful Engine update in the same transaction.
 func (s *AuthService) WithDraftUpdate(ctx context.Context, req AuthRequest, itemID string, update func(context.Context, *sql.Tx, Session, string) error) error {
 	return s.withDraftCommand(ctx, req, draftSavedEvent, itemID, update)
@@ -97,9 +94,6 @@ func (s *AuthService) withDraftCommand(ctx context.Context, req AuthRequest, eve
 		return ErrSecurityUnavailable
 	}
 	return s.auditedCommand(ctx, req, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
-		if !session.FreshStepUp() {
-			return ErrStepUpRequired
-		}
 		id, valid := canonicalMembershipID(itemID)
 		if !valid {
 			return ErrNotFound
@@ -152,7 +146,7 @@ func (s Session) LoadContentItemAccess(ctx context.Context, tx *sql.Tx, operatio
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
  JOIN public.user_roles m ON m.role_id=r.id AND m.user_id=$1
  LEFT JOIN public.grant_fields f ON f.grant_id=g.id AND f.type_id=i.type_id
- WHERE i.id=$2 AND g.operation=$3 AND g.scope='content' AND o.scope='content'
+ WHERE i.id=$2 AND t.enabled AND g.operation=$3 AND g.scope='content' AND o.scope='content'
  AND (g.object_scope='any' OR g.object_scope='assigned' AND EXISTS (
  SELECT 1 FROM public.content_item_assignments a WHERE a.item_id=i.id AND a.user_id=m.user_id))`,
 		s.user, id, operation)

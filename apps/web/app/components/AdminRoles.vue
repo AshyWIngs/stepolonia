@@ -1,29 +1,44 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { copyAccessRole, listAccessRoles, roleGrantOptions, saveAccessRole, updateRoleState } from '~/utils/admin-access'
+import { accessRoleChanges, changeAccessRole, copyAccessRole, createAccessRole, listAccessRoles, readAccessRole, roleDisplayName, roleGrantOptions, updateRoleState } from '~/utils/admin-access'
 import type { AccessRole, RoleAction, RoleGrant, RoleGrantOption } from '~/utils/admin-access'
 import { useAccessActions } from '~/utils/admin-access-feedback'
+import { collectionName, groupRules, operationName, ruleDomain, ruleKey, ruleScope } from '~/utils/admin-role-rules'
 
-const props = defineProps<{ csrf: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ 'step-up': [], 'session-changed': [] }>()
+type RoleEditorMode = 'edit' | 'create' | 'copy'
+
+const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'permission-texts': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const roles = ref<AccessRole[]>([])
 const selected = ref<AccessRole>()
 const next = ref<number | null>(null)
 const offset = ref(0)
 const { active, busy, error, feedback, run } = useAccessActions(() => { emit('step-up') }, () => { emit('session-changed') })
 const heading = ref<HTMLElement>()
-const mode = ref<'edit' | 'create' | 'copy'>()
+const mode = ref<RoleEditorMode>()
 const name = ref('')
+const nameField = ref<HTMLInputElement>()
 const staged = ref<RoleGrant[]>([])
 const options = ref<RoleGrantOption[]>([])
-const currentOption = ref<number>()
-const selectedFields = ref<string[]>([])
-const delegateOperations = ref<string[]>([])
-const allowGrantDelegation = ref(false)
-const allowDelegableContent = ref(false)
-const delegationCeiling = ref<'assigned' | 'any'>('assigned')
 const confirmCommand = ref<RoleAction>()
-const option = computed(() => currentOption.value === undefined ? undefined : options.value[currentOption.value])
+const namesOpen = ref(false)
+const namesState = ref({ dirty: false, busy: false })
+const controlsLocked = computed(() => busy.value || Boolean(mode.value) || namesOpen.value)
+watch([() => Boolean(mode.value) || namesState.value.dirty, () => busy.value || namesState.value.busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
+const groupedRoles = computed(() => groupRules(roles.value, (role) => {
+  const domains = new Set(role.grants.map(grant => ruleDomain(grant.operation)))
+  if (domains.size > 1) return 'mixed'
+  return domains.values().next().value ?? 'other'
+}))
+const groupedGrants = computed(() => groupRules(selected.value?.grants ?? [], grant => ruleDomain(grant.operation)))
+const incomplete = computed(() => mode.value !== 'copy' && staged.value.some(grant =>
+  grant.target_scope && !grant.delegate_operations?.length,
+))
+const changes = computed(() => selected.value ? accessRoleChanges(selected.value, name.value, staged.value) : undefined)
+const unchanged = computed(() => mode.value === 'edit' && changes.value &&
+  changes.value.name === undefined && !changes.value.upsert && !changes.value.remove)
 const actions = computed<RoleAction[]>(() => {
   switch (selected.value?.state) {
     case 'active': return ['disable']
@@ -31,14 +46,6 @@ const actions = computed<RoleAction[]>(() => {
     case 'archived': return ['restore', 'delete']
     default: return []
   }
-})
-
-watch(currentOption, () => {
-  selectedFields.value = []
-  delegateOperations.value = []
-  allowGrantDelegation.value = false
-  allowDelegableContent.value = false
-  delegationCeiling.value = 'assigned'
 })
 
 async function load(page = 0) {
@@ -59,69 +66,81 @@ async function select(role: AccessRole) {
   if (active.value) heading.value?.focus()
 }
 
-function startEdit(value: 'edit' | 'create' | 'copy') {
+function updateDisplayNames(updated: AccessRole) {
+  selected.value = updated
+  roles.value = roles.value.map(role => role.id === updated.id ? updated : role)
+}
+
+async function closeNames() {
+  namesOpen.value = false
+  namesState.value = { dirty: false, busy: false }
+  await nextTick()
+  heading.value?.focus()
+}
+
+function startEdit(value: RoleEditorMode) {
   return run(async () => {
     const available = value === 'copy' ? undefined : await roleGrantOptions()
     if (!active.value) return
     options.value = available?.options ?? []
-    currentOption.value = undefined
     staged.value = value === 'edit' ? selected.value?.grants.slice() ?? [] : []
     name.value = value === 'edit' ? selected.value?.name ?? '' : ''
     mode.value = value
   })
+    .then(async () => {
+      if (!active.value || !mode.value) return
+      await nextTick()
+      nameField.value?.focus()
+    })
 }
 
-function label(grant: RoleGrant | RoleGrantOption) {
-  const type = 'type_key' in grant ? grant.type_key : options.value.find(entry => entry.type_id === grant.type_id)?.type_key
-  return [grant.operation, type || grant.type_id, grant.object_scope || grant.target_scope, grant.object_ceiling].filter(Boolean).join(' · ')
-}
-
-function fieldName(id: string) {
-  for (const choice of options.value) {
-    const found = choice.fields?.find(field => field.id === id)
-    if (found) return found.key
-  }
-  return id
-}
-
-function addGrant() {
-  const choice = option.value
-  if (!choice || staged.value.length >= 64 || (choice.delegate_operations?.length && !delegateOperations.value.length)) return
-  const grant: RoleGrant = { operation: choice.operation, scope: choice.scope, can_delegate: choice.can_delegate && allowGrantDelegation.value }
-  if (choice.type_id) grant.type_id = choice.type_id
-  if (choice.object_scope) grant.object_scope = choice.object_scope
-  if (choice.target_scope) {
-    grant.target_scope = choice.target_scope
-    grant.object_ceiling = choice.object_ceiling === 'any' ? delegationCeiling.value : choice.object_ceiling
-    grant.may_delegate_content = Boolean(choice.may_delegate_content && allowDelegableContent.value)
-    grant.delegate_operations = delegateOperations.value.slice()
-  }
-  if (choice.fields && selectedFields.value.length > 0) grant.field_ids = selectedFields.value.slice()
-  const duplicate = staged.value.some(previous => previous.operation === grant.operation && previous.type_id === grant.type_id &&
-    previous.object_scope === grant.object_scope && previous.target_scope === grant.target_scope)
-  if (duplicate) {
-    error.value = 'admin.roles_duplicate'
-    return
-  }
-  staged.value.push(grant)
-  currentOption.value = undefined
-  error.value = ''
+function label(grant: RoleGrant) {
+  const key = grant.type_id && selected.value?.collection_keys?.[grant.type_id]
+  const collection = key ? collectionName(key, props.translate) : grant.type_id
+  return `${operationName(grant.operation, props.translate)} · ${ruleScope(grant, collection, props.translate)}`
 }
 
 function save() {
   const action = mode.value
   const role = selected.value
-  if (!action || (action !== 'create' && !role)) return
+  if (!action || incomplete.value || unchanged.value || (action !== 'create' && !role)) return
+  const change = changes.value
   return run(async () => {
-    const saved = action === 'copy' && role
-      ? await copyAccessRole(role, name.value, props.csrf)
-      : await saveAccessRole(action === 'edit' ? role : undefined, name.value, staged.value, props.csrf)
+    const saved = await saveRoleCommand(action, role, change)
     if (!active.value) return
     selected.value = saved
     mode.value = undefined
-    await load()
-    if (active.value) feedback.value = 'admin.access_saved'
+    feedback.value = 'admin.access_saved'
+    await nextTick()
+    heading.value?.focus()
+    try {
+      await load()
+    } catch {
+      if (active.value) error.value = 'admin.unavailable'
+    }
   })
+}
+
+function reloadEditedRole() {
+  const current = selected.value
+  if (!current) return
+  return run(async () => {
+    const role = await readAccessRole(current)
+    if (active.value) await select(role)
+  })
+}
+
+async function cancelEdit() {
+  mode.value = undefined
+  error.value = ''
+  await nextTick()
+  heading.value?.focus()
+}
+
+function saveRoleCommand(action: RoleEditorMode, role: AccessRole | undefined, change: typeof changes.value) {
+  if (action === 'edit' && role && change) return changeAccessRole(role, change, props.csrf)
+  if (action === 'copy' && role) return copyAccessRole(role, name.value, props.csrf)
+  return createAccessRole(name.value, staged.value, props.csrf)
 }
 
 function transition() {
@@ -131,7 +150,7 @@ function transition() {
   return run(async () => {
     const updated = await updateRoleState(role, action, props.csrf)
     if (!active.value) return
-    selected.value = updated || undefined
+    selected.value = updated ?? undefined
     confirmCommand.value = undefined
     await load(offset.value)
     if (active.value) feedback.value = 'admin.access_saved'
@@ -151,36 +170,53 @@ onMounted(() => { void run(() => load()) })
 <template>
   <section class="access-panel" :aria-busy="busy">
     <h2>{{ translate('admin.roles') }}</h2>
-    <p v-if="error" role="alert">{{ translate(error) }}</p>
-    <p v-if="feedback" role="status">{{ translate(feedback) }}</p>
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="error && !mode" role="alert">{{ translate(error) }}</p>
+    <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <div class="access-actions">
-      <button type="button" :disabled="busy || Boolean(mode)" @click="startEdit('create')">{{ translate('admin.roles_create') }}</button>
-      <button type="button" :disabled="busy" @click="reload">{{ translate('admin.access_reload') }}</button>
+      <button type="button" :disabled="controlsLocked" @click="startEdit('create')">{{ translate('admin.roles_create') }}</button>
+      <button type="button" :disabled="busy || namesOpen" @click="reload">{{ translate('admin.access_reload') }}</button>
+      <button type="button" :disabled="busy || namesState.busy" @click="emit('permission-texts')">{{ translate('admin.role_permission_texts') }}</button>
     </div>
-    <ul class="access-rows">
-      <li v-for="role in roles" :key="role.id">
-        <button type="button" :disabled="busy || Boolean(mode)" :aria-pressed="role.id === selected?.id" @click="select(role)">{{ role.name }}</button>
-        · {{ translate(`admin.access_state_${role.state}`) }}
-      </li>
-    </ul>
+    <section v-for="[domain, entries] in groupedRoles" :key="domain" class="role-directory">
+      <h3>{{ translate(`admin.role_rule_group_${domain}`) }}</h3>
+      <ul>
+        <li v-for="role in entries" :key="role.id">
+          <button type="button" :disabled="controlsLocked" :aria-pressed="role.id === selected?.id" @click="select(role)">
+            <bdi>{{ roleDisplayName(role, uiLanguage, roles) }}</bdi>
+          </button>
+          <small>{{ translate(`admin.access_state_${role.state}`) }}</small>
+        </li>
+      </ul>
+    </section>
     <div class="access-actions">
-      <button v-if="offset" type="button" :disabled="busy || Boolean(mode)" @click="run(() => load(Math.max(0, offset - 20)))">{{ translate('previous') }}</button>
-      <button v-if="next !== null" type="button" :disabled="busy || Boolean(mode)" @click="run(() => load(next ?? 0))">{{ translate('next') }}</button>
+      <button v-if="offset" type="button" :disabled="controlsLocked" @click="run(() => load(Math.max(0, offset - 20)))">{{ translate('previous') }}</button>
+      <button v-if="next !== null" type="button" :disabled="controlsLocked" @click="run(() => load(next ?? 0))">{{ translate('next') }}</button>
     </div>
     <section v-if="selected && mode !== 'create'" aria-labelledby="access-role-title">
-      <h3 id="access-role-title" ref="heading" tabindex="-1">{{ selected.name }}</h3>
+      <h3 id="access-role-title" ref="heading" tabindex="-1"><bdi>{{ roleDisplayName(selected, uiLanguage) }}</bdi></h3>
       <p>{{ translate(`admin.access_state_${selected.state}`) }}</p>
-      <ul v-if="!mode">
-        <li v-for="(grant, index) in selected.grants" :key="index">{{ label(grant) }}</li>
-      </ul>
-      <div v-if="!mode && !confirmCommand" class="access-actions">
+      <div v-if="!mode" class="role-summary">
+        <section v-for="[domain, grants] in groupedGrants" :key="domain">
+          <h4>{{ translate(`admin.role_rule_group_${domain}`) }}</h4>
+          <ul>
+            <li v-for="grant in grants" :key="ruleKey(grant)">{{ label(grant) }}</li>
+          </ul>
+        </section>
+      </div>
+      <div v-if="!mode && !confirmCommand && !namesOpen" class="access-actions">
         <button type="button" :disabled="busy" @click="startEdit('edit')">{{ translate('admin.roles_edit') }}</button>
+        <button type="button" :disabled="busy" @click="namesOpen = true">{{ translate('admin.role_names_title') }}</button>
         <button type="button" :disabled="busy" @click="startEdit('copy')">{{ translate('admin.roles_copy') }}</button>
         <button v-for="action in actions" :key="action" type="button" :disabled="busy" @click="confirmCommand = action">
           {{ translate(`admin.access_${action}`) }}
         </button>
       </div>
+      <AdminRoleNames
+        v-if="namesOpen" :role="selected" :csrf="csrf" :ui-language="uiLanguage" :translate="translate"
+        @saved="updateDisplayNames" @close="closeNames" @editing-state="namesState = $event"
+        @step-up="emit('step-up')" @session-changed="emit('session-changed')"
+      />
       <div v-if="confirmCommand" class="access-confirm">
         <p>{{ translate(`admin.roles_confirm_${confirmCommand}`) }}</p>
         <div class="access-actions">
@@ -189,61 +225,48 @@ onMounted(() => { void run(() => load()) })
         </div>
       </div>
     </section>
-    <form v-if="mode" @submit.prevent="save">
+    <form v-if="mode" class="admin-domain" @submit.prevent="save">
       <label for="access-role-name">{{ translate('admin.roles_name') }}</label>
-      <input id="access-role-name" v-model="name" required maxlength="128" :disabled="busy">
-      <template v-if="mode !== 'copy'">
-        <h3>{{ translate('admin.roles_grants') }}</h3>
-        <ul class="access-rows">
-          <li v-for="(grant, index) in staged" :key="index">
-            {{ label(grant) }}
-            <span v-if="grant.field_ids?.length"> · {{ grant.field_ids.map(fieldName).join(', ') }}</span>
-            <span v-if="grant.delegate_operations?.length"> · {{ grant.delegate_operations.join(', ') }}</span>
-            <span v-if="grant.can_delegate"> · {{ translate('admin.roles_allow_delegation') }}</span>
-            <span v-if="grant.may_delegate_content"> · {{ translate('admin.roles_allow_delegable_content') }}</span>
-            <button type="button" :disabled="busy" @click="staged.splice(index, 1)">{{ translate('admin.roles_remove_grant') }}</button>
-          </li>
-        </ul>
-        <label for="access-grant-option">{{ translate('admin.roles_operation') }}</label>
-        <select id="access-grant-option" v-model="currentOption" :disabled="busy">
-          <option :value="undefined">{{ translate('admin.roles_choose_operation') }}</option>
-          <option v-for="(choice, index) in options" :key="index" :value="index">{{ label(choice) }}</option>
-        </select>
-        <fieldset v-if="option?.fields?.length" :disabled="busy">
-          <legend>{{ translate('admin.roles_fields') }}</legend>
-          <label v-for="field in option.fields" :key="field.id" class="access-check">
-            <input v-model="selectedFields" type="checkbox" :value="field.id"> {{ field.key }}
-          </label>
-        </fieldset>
-        <fieldset v-if="option?.delegate_operations?.length" :disabled="busy">
-          <legend>{{ translate('admin.roles_delegated_operations') }}</legend>
-          <label v-for="operation in option.delegate_operations" :key="operation" class="access-check">
-            <input v-model="delegateOperations" type="checkbox" :value="operation"> {{ operation }}
-          </label>
-        </fieldset>
-        <template v-if="option?.object_ceiling === 'any'">
-          <label for="access-delegation-ceiling">{{ translate('admin.roles_delegation_scope') }}</label>
-          <select id="access-delegation-ceiling" v-model="delegationCeiling" :disabled="busy">
-            <option value="assigned">{{ translate('admin.roles_scope_assigned') }}</option>
-            <option value="any">{{ translate('admin.roles_scope_any') }}</option>
-          </select>
-        </template>
-        <label v-if="option?.can_delegate" class="access-check">
-          <input v-model="allowGrantDelegation" type="checkbox" :disabled="busy"> {{ translate('admin.roles_allow_delegation') }}
-        </label>
-        <label v-if="option?.may_delegate_content" class="access-check">
-          <input v-model="allowDelegableContent" type="checkbox" :disabled="busy"> {{ translate('admin.roles_allow_delegable_content') }}
-        </label>
-        <button v-if="option" type="button" :disabled="busy || staged.length >= 64" @click="addGrant">{{ translate('admin.roles_add_grant') }}</button>
-      </template>
-      <div class="access-actions">
-        <button type="submit" :disabled="busy">{{ translate('admin.roles_save') }}</button>
-        <button type="button" :disabled="busy" @click="mode = undefined">{{ translate('admin.cancel') }}</button>
+      <input id="access-role-name" ref="nameField" v-model="name" required maxlength="128" :disabled="busy">
+      <div class="role-edit-actions">
+        <AdminDomainHeader
+          :title="mode === 'edit' ? translate('admin.roles_grants') : undefined"
+          :save-label="mode === 'edit' ? translate('admin.roles_save') : undefined"
+          :disabled="busy || incomplete || unchanged || error === 'admin.access_version_conflict'"
+        >
+          <template #actions>
+            <button v-if="mode !== 'edit'" type="submit" :disabled="busy || incomplete">{{ translate('admin.roles_save') }}</button>
+            <button v-if="mode === 'edit' && error === 'admin.access_version_conflict'" type="button" :disabled="busy" @click="reloadEditedRole">
+              {{ translate('admin.reload_settings') }}
+            </button>
+            <button type="button" :disabled="busy" @click="cancelEdit">{{ translate('admin.cancel') }}</button>
+          </template>
+        </AdminDomainHeader>
+        <output v-if="incomplete">{{ translate('admin.role_rule_choose_delegated_operation') }}</output>
+        <p v-if="error" role="alert">{{ translate(error) }}</p>
       </div>
+      <template v-if="mode !== 'copy'">
+        <h3 v-if="mode === 'create'">{{ translate('admin.roles_grants') }}</h3>
+        <AdminRoleRules
+          v-model="staged" :options="options" :collection-keys="mode === 'edit' ? selected?.collection_keys : undefined"
+          :original="mode === 'edit' ? selected?.grants ?? [] : []" :busy="busy" :translate="translate"
+        />
+      </template>
     </form>
   </section>
 </template>
 
 <style scoped>
 @import '../assets/admin-access.css';
+
+.role-directory h3, .role-summary h4 { margin-block: .25rem; }
+.role-directory ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.role-directory li { display: grid; gap: .25rem; align-content: start; border: 1px solid var(--admin-border); border-radius: .4rem; padding: .5rem; min-inline-size: 0; }
+.role-directory button { text-align: start; }
+.role-directory [aria-pressed="true"] { color: var(--admin-action-text); background: var(--admin-action); }
+.role-directory small { color: var(--admin-muted); }
+.role-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem; }
+.role-summary ul { margin-block: 0 .5rem; padding-inline-start: 1.25rem; }
+.role-edit-actions { position: sticky; inset-block-start: 0; z-index: 1; padding-block: .5rem; background: var(--admin-card); }
+.role-edit-actions output { margin: 0; }
 </style>

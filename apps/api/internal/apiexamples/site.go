@@ -1,34 +1,26 @@
 package apiexamples
 
-import (
-	_ "embed" // Embeds the demo catalog seed.
-	"encoding/json"
-	"maps"
+import "stepolonia/apps/api/internal/siteconfig"
 
-	"stepolonia/apps/api/internal/siteconfig"
-)
-
-//go:embed site-ui-catalogs.json
-var demoMessagesJSON []byte
-
-var demoMessages = decodeDemoMessages()
-
-func decodeDemoMessages() map[string]map[string]string {
-	var messages map[string]map[string]string
-	if err := json.Unmarshal(demoMessagesJSON, &messages); err != nil {
-		panic("invalid embedded demo UI catalog: " + err.Error())
+// DemoSiteSettings returns the branding for the local demonstration portal.
+func DemoSiteSettings() siteconfig.Settings {
+	return siteconfig.Settings{
+		Title:            "Polacy w Kazachstanie",
+		Tagline:          "Historie naszej społeczności",
+		Description:      "Poznaj historie i wydarzenia naszej społeczności.",
+		DefaultLanguage:  "pl",
+		FallbackLanguage: "pl",
 	}
-	return messages
 }
 
-// DemoSite returns the settings and initial catalogs used in the local demo.
-func DemoSite() siteconfig.Draft {
-	catalogs := make(map[string]map[string]string, len(demoMessages))
-	for code, messages := range demoMessages {
-		catalogs[code] = maps.Clone(messages)
-	}
-	return siteconfig.Draft{
-		Settings: siteconfig.Settings{Title: "Polacy w Kazachstanie", Description: "Poznaj historie i wydarzenia naszej społeczności.", DefaultLanguage: "pl", FallbackLanguage: "pl", Tagline: "Historie naszej społeczności", Accent: "#2563eb"},
-		Catalogs: catalogs,
-	}
+// PortalSettings is a synthetic OpenAPI example.
+func PortalSettings() siteconfig.Settings {
+	settings := DemoSiteSettings()
+	settings.Accent = "#1d4ed8"
+	return settings
+}
+
+// PortalMessageExample illustrates the catalog shape with one message.
+func PortalMessageExample() map[string]string {
+	return map[string]string{"articles": "Materiały"}
 }

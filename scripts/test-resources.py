@@ -182,7 +182,7 @@ def prepare_database(harness, site, directory, override, compose, token, config,
     database = config["services"]["postgres"]["environment"]["POSTGRES_DB"]
     query = f'COMMENT ON DATABASE "{database}" IS \'stepolonia:disposable:{token}\''
     harness.command([*compose, *postgres_sql_args(config, query)], log)
-    for arguments in (["prepare-roles"], ["migrate", "up"], ["seed"]):
+    for arguments in (["prepare-roles"], ["migrate", "up"]):
         harness.run_tool(site, arguments, override=override, log=log)
     csv = directory / "languages.csv"
     csv.write_text("code,name,native_name,direction\nfr,French,Français,ltr\n", encoding="utf-8")

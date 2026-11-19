@@ -38,16 +38,16 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
       const readerCSRF = await login(reader, 'RECIPIENT');
       assert.equal((await put(reader, 403, replacement, readerCSRF)).body.code, 'permission_denied');
       assert.equal((await put(manager, 403, { ...replacement, assignee_ids: [process.env.ASSIGN_MANAGER] }, csrf)).body.code, 'permission_denied');
-      for (const assignee_ids of [undefined, null, ['invalid-id']]) {
+      await Promise.all([undefined, null, ['invalid-id']].map(async assignee_ids => {
         assert.equal((await put(manager, 400, { ...replacement, assignee_ids }, csrf)).body.code, 'validation_failed');
-      }
+      }));
       return;
     }
 
     const csrf = await login(manager, 'MANAGER');
-    for (const expected_version of [1, '01', '0', '9223372036854775808']) {
+    await Promise.all([1, '01', '0', '9223372036854775808'].map(async expected_version => {
       assert.equal((await put(manager, 400, { ...replacement, expected_version }, csrf)).body.code, 'validation_failed');
-    }
+    }));
     const absent = await put(manager, 404, replacement, csrf, route(type, missing));
     const scope = await put(manager, 404, replacement, csrf, route(process.env.ASSIGN_OTHER_TYPE, process.env.ASSIGN_OTHER_ITEM));
     const wrongType = await put(manager, 404, replacement, csrf, route(type, process.env.ASSIGN_OTHER_ITEM));

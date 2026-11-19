@@ -38,6 +38,7 @@ CREATE TABLE public.sessions (
     credential_version bigint,
     step_up_at timestamptz,
     failed_attempts integer NOT NULL DEFAULT 0,
+    idle_timeout_minutes integer NOT NULL DEFAULT 30,
     created_at timestamptz NOT NULL DEFAULT current_timestamp,
     last_seen timestamptz NOT NULL DEFAULT current_timestamp,
     expires_at timestamptz NOT NULL,
@@ -56,6 +57,9 @@ CREATE TABLE public.sessions (
         AND (step_up_at IS null OR kind = 'full')
         AND failed_attempts BETWEEN 0 AND 5
     ),
+    CONSTRAINT sessions_idle_timeout_check CHECK (
+        idle_timeout_minutes BETWEEN 15 AND 60
+    ),
     CONSTRAINT sessions_time_check CHECK (
         last_seen >= created_at AND expires_at > last_seen
         AND expires_at <= created_at + CASE kind
@@ -70,6 +74,40 @@ CREATE TABLE public.sessions (
 );
 
 CREATE INDEX sessions_user_idx ON public.sessions (user_id);
+
+CREATE TABLE public.session_policy (
+    id integer CONSTRAINT session_policy_pkey PRIMARY KEY,
+    version bigint NOT NULL DEFAULT 1,
+    idle_timeout_minutes integer NOT NULL DEFAULT 30,
+    absolute_timeout_hours integer NOT NULL DEFAULT 12,
+    CONSTRAINT session_policy_singleton_check CHECK (id = 1),
+    CONSTRAINT session_policy_version_check CHECK (version > 0),
+    CONSTRAINT session_policy_duration_check CHECK (
+        idle_timeout_minutes BETWEEN 15 AND 60
+        AND absolute_timeout_hours BETWEEN 1 AND 12
+        AND idle_timeout_minutes <= absolute_timeout_hours * 60
+    )
+);
+
+INSERT INTO public.session_policy (id) VALUES (1);
+
+COMMENT ON TABLE public.session_policy IS
+'Installation policy applied when issuing a new full session.';
+
+COMMENT ON COLUMN public.sessions.idle_timeout_minutes IS
+'Idle timeout captured at full-session issuance '
+'and retained on token rotation.';
+
+CREATE TRIGGER session_policy_write_mutex
+BEFORE UPDATE OR INSERT OR DELETE OR TRUNCATE
+ON public.session_policy
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
+
+REVOKE ALL ON public.session_policy FROM
+public, sp_publisher, sp_language_importer;
+GRANT SELECT ON public.session_policy TO sp_security;
+GRANT UPDATE (version, idle_timeout_minutes, absolute_timeout_hours)
+ON public.session_policy TO sp_security;
 
 CREATE TABLE public.security_state (
     id integer CONSTRAINT security_state_pkey PRIMARY KEY,
@@ -237,6 +275,65 @@ COMMENT ON COLUMN public.enrollment_attempts.pending_ciphertext IS
 COMMENT ON COLUMN public.enrollment_attempts.password_hash IS
 'Pending Argon2id PHC; never used by login before enrollment completion.';
 
+CREATE TABLE public.auth_rate_policies (
+    scope text CONSTRAINT auth_rate_policies_pkey PRIMARY KEY,
+    version bigint NOT NULL DEFAULT 1,
+    window_seconds integer NOT NULL DEFAULT 900,
+    subject_attempts integer,
+    ip_attempts integer NOT NULL DEFAULT 30,
+    installation_attempts integer NOT NULL DEFAULT 100,
+    hash_jobs integer,
+    CONSTRAINT auth_rate_policies_scope_check CHECK (
+        CASE
+            WHEN scope = 'credentials'
+                THEN subject_attempts IS NOT null AND hash_jobs IS NOT null
+            WHEN scope = 'preauth'
+                THEN subject_attempts IS null AND hash_jobs IS null
+            WHEN scope IN ('step_up', 'denial_audit')
+                THEN subject_attempts IS NOT null AND hash_jobs IS null
+            ELSE false
+        END
+    ),
+    CONSTRAINT auth_rate_policies_bounds_check CHECK (
+        version > 0
+        AND window_seconds BETWEEN 60 AND 3600
+        AND subject_attempts BETWEEN 1 AND 20
+        AND ip_attempts BETWEEN 1 AND 120
+        AND installation_attempts BETWEEN 1 AND 400
+        AND (hash_jobs IS null OR hash_jobs BETWEEN 1 AND 4)
+    )
+);
+
+COMMENT ON TABLE public.auth_rate_policies IS
+'Rolling limits for credential checks, preauthentication, '
+'authenticated step-up, and denial audits.';
+
+COMMENT ON COLUMN public.auth_rate_policies.subject_attempts IS
+'Limit per account or denied action and client address. '
+'Preauthentication uses only address and installation limits.';
+
+COMMENT ON COLUMN public.auth_rate_policies.hash_jobs IS
+'Per-process admission limit for password work. '
+'Authenticated step-up can use the remaining hard process capacity.';
+
+INSERT INTO public.auth_rate_policies (scope, subject_attempts, hash_jobs)
+VALUES
+('credentials', 5, 4), ('preauth', null, null),
+('step_up', 5, null), ('denial_audit', 5, null);
+
+CREATE TRIGGER auth_rate_policies_write_mutex
+BEFORE UPDATE OR INSERT OR DELETE OR TRUNCATE ON public.auth_rate_policies
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
+
+REVOKE ALL ON public.auth_rate_policies FROM
+public, sp_publisher, sp_language_importer;
+GRANT SELECT ON public.auth_rate_policies TO sp_security;
+GRANT UPDATE (
+    version, window_seconds, subject_attempts, ip_attempts,
+    installation_attempts, hash_jobs
+)
+ON public.auth_rate_policies TO sp_security;
+
 CREATE TABLE public.auth_attempt_buckets (
     bucket_start timestamptz NOT NULL,
     kind text NOT NULL,
@@ -246,14 +343,27 @@ CREATE TABLE public.auth_attempt_buckets (
         bucket_start, kind, key_digest
     ),
     CONSTRAINT auth_attempt_buckets_shape_check CHECK (
-        kind IN ('account', 'ip', 'site', 'preauth_ip', 'preauth_site')
+        kind IN (
+            'account', 'ip', 'site', 'preauth_ip', 'preauth_site',
+            'denial_action', 'denial_ip', 'denial_site',
+            'step_up_account', 'step_up_ip', 'step_up_site'
+        )
         AND octet_length(key_digest) = 32
         AND count BETWEEN 0 AND CASE kind
             WHEN 'account' THEN 5
-            WHEN 'ip' THEN 30 WHEN 'preauth_ip' THEN 30 ELSE 100
+            WHEN 'denial_action' THEN 5
+            WHEN 'step_up_account' THEN 5
+            WHEN 'ip' THEN 30
+            WHEN 'preauth_ip' THEN 30
+            WHEN 'denial_ip' THEN 30
+            WHEN 'step_up_ip' THEN 30
+            ELSE 100
         END
     )
 );
+
+CREATE INDEX auth_attempt_buckets_scope_idx
+ON public.auth_attempt_buckets (kind, key_digest, bucket_start);
 
 COMMENT ON TABLE public.recovery_attempts IS
 'Recovery reservations ended explicitly under the installation write lock.';
@@ -292,10 +402,12 @@ CREATE TABLE public.security_audit (
             'content.draft_published', 'content.draft_unpublished',
             'content.draft_schema_adopted',
             'content.collection_created', 'content.collection_revised',
+            'content.collection_enabled', 'content.collection_disabled',
             'content.initial_access_granted',
             'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
-            'settings.initialized',
+            'settings.initialized', 'security.session_policy_changed',
+            'security.rate_policy_changed',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
@@ -544,11 +656,13 @@ GRANT SELECT (
 DROP TABLE public.enrollment_attempts;
 DROP TABLE public.onboarding_tokens;
 DROP TABLE public.auth_attempt_buckets;
+DROP TABLE public.auth_rate_policies;
 DROP TABLE public.recovery_attempts;
 DROP TABLE public.security_audit;
 DROP TABLE public.recovery_codes;
 DROP TABLE public.mfa_totp;
 DROP TABLE public.security_state;
+DROP TABLE public.session_policy;
 DROP TABLE public.sessions;
 DROP TABLE public.users;
 DROP FUNCTION public.guard_security_state();
