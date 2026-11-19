@@ -30,6 +30,7 @@ const choices = computed(() => {
         ? props.currentPath : contentPath(props.namespace, language.code, slugs.get(language.code)),
     }))
 })
+const hasAlternateLanguage = computed(() => choices.value.some(language => language.code !== props.current.code))
 </script>
 
 <template>
@@ -49,6 +50,10 @@ const choices = computed(() => {
       <p v-if="site.description" class="site-description">{{ site.description }}</p>
       <p v-if="site.notice" class="note">{{ site.notice }}</p>
     </div>
+    <p v-if="!hasAlternateLanguage" class="site-interface-language site-content-language">
+      {{ t('admin.language') }} ·
+      <span :lang="current.code" :dir="current.direction">{{ current.native_name }}</span>
+    </p>
     <p v-if="publication && current.code !== publication.language.code" class="site-interface-language">
       {{ t('admin.interface_texts') }}
       <span :lang="publication.language.code" :dir="publication.language.direction">{{ publication.language.native_name }}</span>

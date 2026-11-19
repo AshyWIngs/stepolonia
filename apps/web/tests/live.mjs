@@ -167,6 +167,7 @@ async function checkCollectionNavigation(page) {
   await page.getByRole('link', { name: 'Stage 3.2 Event', exact: true }).click()
   await page.waitForURL(`${base}/fr/events/stage32-event`)
   await page.getByRole('heading', { name: 'Stage 3.2 Event', level: 1, exact: true }).waitFor()
+  assert.ok(await page.locator('.site-content-language').getByText('Français', { exact: true }).isVisible())
   assert.equal(await events.getAttribute('aria-current'), 'location')
   await articles.click()
   await page.waitForURL(`${base}/fr/articles`)
