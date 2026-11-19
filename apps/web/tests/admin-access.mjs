@@ -203,12 +203,15 @@ async function manageArticleAssignments(page, id) {
 export async function assertEditorMutationBlocksNavigation(page, path, method, send, labels) {
   const held = Promise.withResolvers()
   const pending = Promise.withResolvers()
+  const dispatched = Promise.withResolvers()
+  let observed = false
   const holdMutation = async route => {
-    if (route.request().method() === method) {
-      pending.resolve()
-      await held.promise
-    }
-    await route.continue()
+    if (route.request().method() !== method) return route.continue()
+    observed = true
+    pending.resolve()
+    await held.promise
+    try { await route.continue() }
+    finally { dispatched.resolve() }
   }
   await page.route(path, holdMutation)
   try {
@@ -217,6 +220,7 @@ export async function assertEditorMutationBlocksNavigation(page, path, method, s
     await eachInOrder(labels, async label => { assert.ok(await button(page, label).isDisabled(), label) })
   } finally {
     held.resolve()
+    if (observed) await dispatched.promise
     await page.unroute(path, holdMutation)
   }
 }

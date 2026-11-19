@@ -42,7 +42,7 @@ watch([creating, editorState], ([creatingDraft, state]) => {
 })
 
 function titleLanguage(item: DraftSummary) {
-  const otherLanguages = Object.keys(item.titles ?? {}).sort()
+  const otherLanguages = Object.keys(item.titles ?? {}).sort((left, right) => left.localeCompare(right, 'en'))
   return [props.uiLanguage, props.defaultLanguage, ...otherLanguages]
     .find(code => ownValue(item.titles, code)) ?? ''
 }
@@ -134,6 +134,10 @@ function openDraft(itemID: string, target: EventTarget | null, language = '') {
   initialLanguage.value = language || lastLanguages.get(itemID) || ''
   selectedItem.value = itemID
   opener.value = target instanceof HTMLElement ? target : null
+}
+
+function rememberDraftLanguage(language: string) {
+  lastLanguages.set(selectedItem.value, language)
 }
 
 async function closeDraft() {
@@ -234,7 +238,7 @@ onBeforeUnmount(() => { active.value = false })
       v-if="selectedItem" :key="selectedItem" :type-key="openedType" :item-id="selectedItem" :csrf="csrf"
       :translate="translate" :ui-language="uiLanguage" :languages="languages"
       :initial-language="initialLanguage" :default-language="defaultLanguage"
-      @language-changed="lastLanguages.set(selectedItem, $event)" @changed="draftChanged = true"
+      @language-changed="rememberDraftLanguage" @changed="draftChanged = true"
       @editing-state="editorState = $event"
       @close="closeDraft" @step-up="emit('step-up')" @session-changed="emit('session-changed')"
     />

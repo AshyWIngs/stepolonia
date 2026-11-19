@@ -100,12 +100,12 @@ async function refresh() {
   metadata.value = result.metadata
   if (!activeLanguage(selectedLanguage.value) && !ownValue(result.draft.locales, selectedLanguage.value)) {
     const available = props.languages.map(language => language.code)
-    const populated = Object.keys(result.draft.locales).filter(code => {
+    const populated = new Set(Object.keys(result.draft.locales).filter(code => {
       const locale = ownValue(result.draft.locales, code)
       return locale && Object.keys(locale.values).length > 0
-    })
+    }))
     const preferences = [props.uiLanguage, props.defaultLanguage, ...available, ...hiddenLanguages.value]
-    selectedLanguage.value = [props.initialLanguage, ...preferences.filter(code => populated.includes(code)), ...preferences]
+    selectedLanguage.value = [props.initialLanguage, ...preferences.filter(code => populated.has(code)), ...preferences]
       .find(code => activeLanguage(code) || ownValue(result.draft.locales, code)) ?? ''
   }
   conflict.value = false

@@ -147,7 +147,7 @@ onBeforeUnmount(() => { issue.value = undefined })
       <input id="access-new-login" v-model="name" :disabled="usersBusy" required maxlength="256">
       <button type="submit" :disabled="usersBusy">{{ translate('admin.users_create') }}</button>
     </form>
-    <p v-if="usersBusy" role="status">{{ translate('admin.working') }}</p>
+    <output v-if="usersBusy">{{ translate('admin.working') }}</output>
     <ul class="access-rows">
       <li v-for="user in users" :key="user.id">
         <button type="button" :disabled="usersBusy" :aria-pressed="selected?.id === user.id" @click="select(user)">{{ user.login }}</button>

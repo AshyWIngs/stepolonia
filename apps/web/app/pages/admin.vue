@@ -82,7 +82,6 @@ let leaveAction: (() => void) | undefined
 
 function warnBeforeLeaving(event: BeforeUnloadEvent) {
   event.preventDefault()
-  event.returnValue = true
 }
 
 watch(() => editingState.value.dirty, dirty => {
