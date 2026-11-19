@@ -163,9 +163,10 @@ export interface RegistryCollection {
 
 export interface ManagedCollection extends RegistryCollection {
   route_namespace: string
+  icon_version: string
   version: string
   schema_no: string
-  fields: (RegistryField & { field_id: string })[]
+  fields: (RegistryField & { field_id: string, label_version: string })[]
   applied_access?: {
     role_id: string
     grants: { operation: string, object_scope?: string, field_ids?: string[] }[]
@@ -193,13 +194,25 @@ export function createCollection(renderer: RegistryRenderer, fields: RegistryFie
   })
 }
 
-export function reviseCollection(collection: ManagedCollection, fields: RegistryField[], initialize: boolean, csrf: string, iconSvg?: string) {
-  return administrationRequest<ManagedCollection>(registryPath(collection.type_key), csrf, 'PATCH', {
-    expected_version: collection.version,
-    icon_svg: iconSvg,
-    initialize_new_field_access: initialize,
-    fields,
+interface FieldLabelUpdate {
+  key: string
+  expected_version: string
+  display_labels: NonNullable<RegistryField['display_labels']>
+}
+
+export function changeCollectionFields(collection: ManagedCollection, add: RegistryField[], labels: FieldLabelUpdate[], initialize: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(`${registryPath(collection.type_key)}/fields`, csrf, 'POST', {
+    expected_schema_no: add.length ? collection.schema_no : undefined,
+    add: add.length ? add : undefined,
+    labels: labels.length ? labels : undefined,
+    initialize_new_field_access: add.length && initialize ? true : undefined,
   })
+}
+
+export function saveCollectionIcon(collection: ManagedCollection, svg: string, csrf: string) {
+  return administrationRequest<{ previous_version: string, version: string, icon_svg: string, icon_version: string }>(
+    `${registryPath(collection.type_key)}/icon`, csrf, 'POST', { expected_version: collection.icon_version, icon_svg: svg },
+  )
 }
 
 

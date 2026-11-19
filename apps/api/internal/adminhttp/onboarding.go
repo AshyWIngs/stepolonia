@@ -102,8 +102,11 @@ func staticAdminRoutes(path string) (string, string, []route) {
 	if key, id := accountTarget(path); key != "" {
 		return key, id, []route{accountRoutes[key]}
 	}
-	if path == sessionPolicyPath {
+	switch path {
+	case sessionPolicyPath:
 		return path, "", sessionPolicyRoutes
+	case ratePolicyPath:
+		return path, "", ratePolicyRoutes
 	}
 	if candidates := settingsRoutes[path]; candidates != nil {
 		return path, "", candidates
@@ -243,7 +246,7 @@ func routeMethods(path string) string {
 		return "GET, PUT"
 	case roleGrantOptionsPath, draftMetadataPath, registryRenderersPath:
 		return http.MethodGet
-	case contentCollectionsPath:
+	case contentCollectionsPath, ratePolicyPath:
 		return "GET, POST"
 	case registryCollectionPath:
 		return "GET, PATCH"

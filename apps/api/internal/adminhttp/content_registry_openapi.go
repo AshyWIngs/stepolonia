@@ -10,13 +10,14 @@ import (
 )
 
 const (
-	registryTag               = "content-registry"
-	contentFieldsProperty     = "fields"
-	registryNamespaceProperty = "route_namespace"
-	registryDisplayNameField  = "display_name"
-	registryEnabledField      = "enabled"
-	collectionIconField       = "icon_svg"
-	defaultIconDescription    = "An empty string uses the default icon."
+	registryTag                = "content-registry"
+	contentFieldsProperty      = "fields"
+	registryNamespaceProperty  = "route_namespace"
+	registryDisplayNameField   = "display_name"
+	registryEnabledField       = "enabled"
+	collectionIconField        = "icon_svg"
+	defaultIconDescription     = "An empty string uses the default icon."
+	collectionIconVersionField = "icon_version"
 )
 
 func registryExample() registryRenderer {
@@ -50,10 +51,11 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 	schemas[registryRenderersSchema] = options
 	managedFields := registryFieldsSchema()
 	managedFields.Items.Properties["field_id"] = uuidSchema(exampleUUID)
-	managedFields.Items.Required = append(managedFields.Items.Required, "field_id")
+	managedFields.Items.Properties["label_version"] = registryScopeVersionSchema("Version of the saved display labels.")
+	managedFields.Items.Required = append(managedFields.Items.Required, "field_id", "label_version")
 	exampleFields := make([]managedRegistryField, 0, len(option.Fields))
 	for _, field := range option.Fields {
-		exampleFields = append(exampleFields, managedRegistryField{FieldID: exampleUUID, registryField: field})
+		exampleFields = append(exampleFields, managedRegistryField{FieldID: exampleUUID, LabelVersion: content.FieldLabelVersion(nil), registryField: field})
 	}
 	grantExample := registryAccessGrant{Operation: string(identity.OpContentRead), Scope: roleAssignedObjects, FieldIDs: []string{exampleUUID}}
 	receipt := responseDTOSchema("Exact non-delegable self-access applied by this committed write. Omitted on reads and writes without opt-in.", registryAccessReceipt{
@@ -63,18 +65,39 @@ func addRegistrySchemas(schemas map[string]*huma.Schema) {
 	schemas[registryCollectionSchema] = closedObjectSchema("Current schema and optimistic version for a managed collection.",
 		map[string]*huma.Schema{
 			typeIDField: uuidSchema(exampleUUID), typeKeyField: contentTypeParameter("").Schema,
-			registryNamespaceProperty: stringSchema("Registered public renderer namespace.", option.Namespace),
-			registryDisplayNameField:  collectionDisplayNameSchema(),
-			collectionIconField:       collectionIconSchema(defaultIconDescription),
-			registryEnabledField:      {Type: huma.TypeBoolean, Description: "Whether the collection is available for authoring."},
-			draftVersionField:         contentVersionSchema("Collection version used for the next revision.", "1"),
-			schemaNoField:             contentVersionSchema("Current sealed semantic schema number.", "1"),
-			contentFieldsProperty:     managedFields,
-			"applied_access":          receipt,
+			registryNamespaceProperty:  stringSchema("Registered public renderer namespace.", option.Namespace),
+			registryDisplayNameField:   collectionDisplayNameSchema(),
+			collectionIconField:        collectionIconSchema(defaultIconDescription),
+			collectionIconVersionField: collectionIconVersionSchema(),
+			registryEnabledField:       {Type: huma.TypeBoolean, Description: "Whether the collection is available for authoring."},
+			draftVersionField:          contentVersionSchema("Collection version used for the next revision.", "1"),
+			schemaNoField:              contentVersionSchema("Current sealed semantic schema number.", "1"),
+			contentFieldsProperty:      managedFields,
+			"applied_access":           receipt,
 		},
-		[]string{typeIDField, typeKeyField, registryNamespaceProperty, registryDisplayNameField, collectionIconField, registryEnabledField, draftVersionField, schemaNoField, contentFieldsProperty},
-		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, Enabled: true, Version: 1, SchemaNo: 1, Fields: exampleFields},
+		[]string{typeIDField, typeKeyField, registryNamespaceProperty, registryDisplayNameField, collectionIconField, collectionIconVersionField, registryEnabledField, draftVersionField, schemaNoField, contentFieldsProperty},
+		registryCollectionResponse{TypeID: exampleUUID, TypeKey: option.TypeKey, Namespace: option.Namespace, IconVersion: content.CollectionIconVersion(""), Enabled: true, Version: 1, SchemaNo: 1, Fields: exampleFields},
 	)
+	schemas[registryIconSchema] = collectionIconResponseSchema()
+}
+
+func collectionIconVersionSchema() *huma.Schema {
+	return registryScopeVersionSchema("Version of the saved navigation icon.")
+}
+
+func registryScopeVersionSchema(description string) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeString, Pattern: "^[0-9a-f]{64}$", Description: description}
+}
+
+func collectionIconResponseSchema() *huma.Schema {
+	const previousVersion = "previous_version"
+	return closedObjectSchema("Committed change to the navigation icon.", map[string]*huma.Schema{
+		previousVersion:            contentVersionSchema("Collection version before the change.", "1"),
+		draftVersionField:          contentVersionSchema("Collection version after the change.", "2"),
+		collectionIconField:        collectionIconSchema(defaultIconDescription),
+		collectionIconVersionField: collectionIconVersionSchema(),
+	}, []string{previousVersion, draftVersionField, collectionIconField, collectionIconVersionField},
+		registryIconResponse{PreviousVersion: 1, Version: 2, IconVersion: content.CollectionIconVersion("")})
 }
 
 func collectionDisplayNameSchema() *huma.Schema {
@@ -88,8 +111,13 @@ func collectionIconSchema(description string) *huma.Schema {
 }
 
 var registryWriteContracts = map[string]*huma.Schema{
-	registryCreateOperation: registryWriteSchema(true),
-	registryReviseOperation: registryWriteSchema(false),
+	registryCreateOperation:       registryWriteSchema(true),
+	registryReviseOperation:       registryWriteSchema(false),
+	registryFieldChangesOperation: registryFieldChangesSchema(),
+	registryIconOperation: closedObjectSchema("Set the navigation icon independently of the field schema.", map[string]*huma.Schema{
+		expectedVersionField: collectionIconVersionSchema(),
+		collectionIconField:  collectionIconSchema(defaultIconDescription),
+	}, []string{expectedVersionField, collectionIconField}, registryIconInput{ExpectedVersion: content.CollectionIconVersion("")}),
 	registryAvailabilityOperation: closedObjectSchema("Change collection availability for authoring.", map[string]*huma.Schema{
 		expectedVersionField: contentVersionSchema("Current collection version.", "1"),
 		registryEnabledField: {Type: huma.TypeBoolean, Description: "Whether authors can open or edit drafts in this collection."},
@@ -135,9 +163,13 @@ func registryErrorCodes(rt route) map[int][]string {
 		404: {notFoundCode}, 405: {methodNotAllowedCode}, 503: {securityUnavailableCode},
 	}
 	if rt.method != http.MethodGet {
-		codes[403] = append(codes[403], csrfCode, stepUpRequiredCode)
-		codes[409] = []string{versionConflictCode, "invalid_transition"}
-		if rt.operationID == registryCreateOperation || rt.operationID == registryReviseOperation {
+		codes[403] = append(codes[403], csrfCode)
+		codes[409] = []string{versionConflictCode}
+		if rt.operationID != registryIconOperation {
+			codes[403] = append(codes[403], stepUpRequiredCode)
+			codes[409] = append(codes[409], "invalid_transition")
+		}
+		if rt.operationID == registryCreateOperation || rt.operationID == registryReviseOperation || rt.operationID == registryIconOperation {
 			codes[400] = append(codes[400], content.InvalidCollectionIconCode)
 		}
 		if rt.operationID == registryCreateOperation {

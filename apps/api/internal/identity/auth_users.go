@@ -130,7 +130,7 @@ func (s *AuthService) auditCommandDenial(ctx context.Context, req AuthRequest, o
 	}
 	// The key excludes the bearer: rotating forged cookies cannot reset the
 	// persistent per-command/address failure budget. Failed reservations remain.
-	if _, err := s.limit(ctx, req, operation+":"+req.ClientIP.Unmap().String()); err != nil {
+	if _, err := s.limitScope(ctx, req, RateDenialAudit, operation+":"+req.ClientIP.Unmap().String()); err != nil {
 		return err
 	}
 	auditErr := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {

@@ -275,6 +275,59 @@ COMMENT ON COLUMN public.enrollment_attempts.pending_ciphertext IS
 COMMENT ON COLUMN public.enrollment_attempts.password_hash IS
 'Pending Argon2id PHC; never used by login before enrollment completion.';
 
+CREATE TABLE public.auth_rate_policies (
+    scope text CONSTRAINT auth_rate_policies_pkey PRIMARY KEY,
+    version bigint NOT NULL DEFAULT 1,
+    window_seconds integer NOT NULL DEFAULT 900,
+    subject_attempts integer,
+    ip_attempts integer NOT NULL DEFAULT 30,
+    installation_attempts integer NOT NULL DEFAULT 100,
+    hash_jobs integer,
+    CONSTRAINT auth_rate_policies_scope_check CHECK (
+        scope IN ('credentials', 'preauth', 'step_up', 'denial_audit')
+        AND (subject_attempts IS null) = (scope = 'preauth')
+        AND (hash_jobs IS NOT null) = (scope = 'credentials')
+    ),
+    CONSTRAINT auth_rate_policies_bounds_check CHECK (
+        version > 0
+        AND window_seconds BETWEEN 60 AND 3600
+        AND subject_attempts BETWEEN 1 AND 20
+        AND ip_attempts BETWEEN 1 AND 120
+        AND installation_attempts BETWEEN 1 AND 400
+        AND (hash_jobs IS null OR hash_jobs BETWEEN 1 AND 4)
+    )
+);
+
+COMMENT ON TABLE public.auth_rate_policies IS
+'Rolling limits for credential checks, preauthentication, '
+'authenticated step-up, and denial audits.';
+
+COMMENT ON COLUMN public.auth_rate_policies.subject_attempts IS
+'Limit per account or denied action and client address. '
+'Preauthentication uses only address and installation limits.';
+
+COMMENT ON COLUMN public.auth_rate_policies.hash_jobs IS
+'Per-process admission limit for password work. '
+'Authenticated step-up can use the remaining hard process capacity.';
+
+INSERT INTO public.auth_rate_policies (scope, subject_attempts, hash_jobs)
+VALUES
+('credentials', 5, 4), ('preauth', null, null),
+('step_up', 5, null), ('denial_audit', 5, null);
+
+CREATE TRIGGER auth_rate_policies_write_mutex
+BEFORE UPDATE OR INSERT OR DELETE OR TRUNCATE ON public.auth_rate_policies
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
+
+REVOKE ALL ON public.auth_rate_policies FROM
+public, sp_publisher, sp_language_importer;
+GRANT SELECT ON public.auth_rate_policies TO sp_security;
+GRANT UPDATE (
+    version, window_seconds, subject_attempts, ip_attempts,
+    installation_attempts, hash_jobs
+)
+ON public.auth_rate_policies TO sp_security;
+
 CREATE TABLE public.auth_attempt_buckets (
     bucket_start timestamptz NOT NULL,
     kind text NOT NULL,
@@ -284,14 +337,27 @@ CREATE TABLE public.auth_attempt_buckets (
         bucket_start, kind, key_digest
     ),
     CONSTRAINT auth_attempt_buckets_shape_check CHECK (
-        kind IN ('account', 'ip', 'site', 'preauth_ip', 'preauth_site')
+        kind IN (
+            'account', 'ip', 'site', 'preauth_ip', 'preauth_site',
+            'denial_action', 'denial_ip', 'denial_site',
+            'step_up_account', 'step_up_ip', 'step_up_site'
+        )
         AND octet_length(key_digest) = 32
         AND count BETWEEN 0 AND CASE kind
             WHEN 'account' THEN 5
-            WHEN 'ip' THEN 30 WHEN 'preauth_ip' THEN 30 ELSE 100
+            WHEN 'denial_action' THEN 5
+            WHEN 'step_up_account' THEN 5
+            WHEN 'ip' THEN 30
+            WHEN 'preauth_ip' THEN 30
+            WHEN 'denial_ip' THEN 30
+            WHEN 'step_up_ip' THEN 30
+            ELSE 100
         END
     )
 );
+
+CREATE INDEX auth_attempt_buckets_scope_idx
+ON public.auth_attempt_buckets (kind, key_digest, bucket_start);
 
 COMMENT ON TABLE public.recovery_attempts IS
 'Recovery reservations ended explicitly under the installation write lock.';
@@ -335,6 +401,7 @@ CREATE TABLE public.security_audit (
             'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
             'settings.initialized', 'security.session_policy_changed',
+            'security.rate_policy_changed',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
@@ -583,6 +650,7 @@ GRANT SELECT (
 DROP TABLE public.enrollment_attempts;
 DROP TABLE public.onboarding_tokens;
 DROP TABLE public.auth_attempt_buckets;
+DROP TABLE public.auth_rate_policies;
 DROP TABLE public.recovery_attempts;
 DROP TABLE public.security_audit;
 DROP TABLE public.recovery_codes;

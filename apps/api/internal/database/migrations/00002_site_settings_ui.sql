@@ -88,6 +88,7 @@ CREATE TABLE public.site_revision_languages (
     name text NOT NULL,
     native_name text NOT NULL,
     direction text NOT NULL,
+    catalog_revision_id uuid,
     CONSTRAINT site_revision_languages_pkey PRIMARY KEY (
         revision_id, language_code
     ),
@@ -97,6 +98,9 @@ CREATE TABLE public.site_revision_languages (
     CONSTRAINT site_revision_languages_language_fkey FOREIGN KEY (
         language_code
     ) REFERENCES public.languages (code),
+    CONSTRAINT site_revision_languages_catalog_fkey FOREIGN KEY (
+        catalog_revision_id, language_code
+    ) REFERENCES public.site_revision_languages (revision_id, language_code),
     CONSTRAINT site_revision_languages_direction_check CHECK (
         direction IN ('ltr', 'rtl')
     )
@@ -240,6 +244,7 @@ $$;
 -- +goose StatementBegin
 CREATE FUNCTION public.guard_site_revision() RETURNS trigger LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp AS $$
+DECLARE catalog_base uuid;
 BEGIN
  IF TG_OP='INSERT' THEN
   IF NEW.sealed THEN RAISE EXCEPTION 'new snapshot must be a draft' USING ERRCODE='23514'; END IF;
@@ -250,6 +255,20 @@ BEGIN
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  IF NEW.sealed THEN
+  IF EXISTS(SELECT 1 FROM public.site_revision_languages WHERE revision_id=NEW.id AND catalog_revision_id IS NOT NULL) THEN
+   SELECT published_id INTO catalog_base FROM public.site_state WHERE singleton FOR UPDATE;
+   IF catalog_base IS NULL
+    OR EXISTS(SELECT language_code,catalog_revision_id,name,native_name,direction FROM public.site_revision_languages
+     WHERE revision_id=NEW.id AND catalog_revision_id IS NOT NULL
+     EXCEPT SELECT language_code,COALESCE(catalog_revision_id,revision_id),name,native_name,direction
+     FROM public.site_revision_languages WHERE revision_id=catalog_base)
+    OR EXISTS((SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id
+     EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=catalog_base)
+     UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=catalog_base
+     EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)) THEN
+    RAISE EXCEPTION 'reused catalog differs from current publication' USING ERRCODE='23514';
+   END IF;
+  END IF;
   IF (SELECT count(*) FROM public.site_revision_slug_rules WHERE revision_id=NEW.id)>512 THEN
    RAISE EXCEPTION 'too many slug rules to publish' USING ERRCODE='23514';
   END IF;
@@ -262,11 +281,19 @@ BEGIN
    OR EXISTS(SELECT 1 FROM public.site_revision_languages c JOIN public.languages l ON l.code=c.language_code
     WHERE c.revision_id=NEW.id AND (NOT l.is_enabled OR (c.name,c.native_name,c.direction) IS DISTINCT FROM (l.name,l.native_name,l.direction)))
    OR NOT EXISTS(SELECT 1 FROM public.site_revision_keys WHERE revision_id=NEW.id)
-   OR EXISTS((SELECT message_key,placeholders FROM public.ui_message_keys EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)
-    UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id EXCEPT SELECT message_key,placeholders FROM public.ui_message_keys))
+   OR (catalog_base IS NULL AND EXISTS((SELECT message_key,placeholders FROM public.ui_message_keys EXCEPT SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id)
+    UNION ALL (SELECT message_key,placeholders FROM public.site_revision_keys WHERE revision_id=NEW.id EXCEPT SELECT message_key,placeholders FROM public.ui_message_keys)))
+   OR EXISTS(SELECT 1 FROM public.site_revision_languages c
+    LEFT JOIN public.site_revisions r ON r.id=c.catalog_revision_id AND r.sealed
+    LEFT JOIN public.site_revision_languages source ON source.revision_id=r.id AND source.language_code=c.language_code
+    WHERE c.revision_id=NEW.id AND c.catalog_revision_id IS NOT NULL
+    AND (source.revision_id IS NULL OR source.catalog_revision_id IS NOT NULL
+     OR EXISTS(SELECT 1 FROM public.site_revision_messages own
+      WHERE own.revision_id=c.revision_id AND own.language_code=c.language_code)))
    OR EXISTS(SELECT 1 FROM public.site_revision_languages c CROSS JOIN public.site_revision_keys k
-    LEFT JOIN public.site_revision_messages m ON m.revision_id=c.revision_id AND m.language_code=c.language_code AND m.message_key=k.message_key
-    WHERE c.revision_id=NEW.id AND k.revision_id=NEW.id AND (m.message_key IS NULL
+    LEFT JOIN public.site_revision_messages m ON m.revision_id=c.revision_id
+    AND m.language_code=c.language_code AND m.message_key=k.message_key
+    WHERE c.revision_id=NEW.id AND c.catalog_revision_id IS NULL AND k.revision_id=NEW.id AND (m.message_key IS NULL
      OR public.ui_placeholders(m.message_value)<>k.placeholders
      OR regexp_replace(m.message_value,'\{[a-z][a-z0-9_]*\}','','g') ~ '[{}]')) THEN
    RAISE EXCEPTION 'incomplete or invalid UI publication' USING ERRCODE='23514';
@@ -360,14 +387,21 @@ INNER JOIN public.languages AS l ON c.language_code = l.code AND l.is_enabled;
 
 CREATE VIEW public.public_ui_messages WITH (security_barrier = true) AS
 SELECT
-    m.revision_id,
+    c.revision_id,
     m.language_code,
     m.message_key,
     m.message_value
-FROM public.site_revision_messages AS m
+FROM public.public_ui_languages AS c
 INNER JOIN
-    public.public_ui_languages AS c
-    ON m.revision_id = c.revision_id AND m.language_code = c.language_code;
+    public.site_revision_languages AS l
+    ON c.revision_id = l.revision_id AND c.language_code = l.language_code
+INNER JOIN
+    public.site_revision_messages AS m
+    ON
+        coalesce(l.catalog_revision_id, l.revision_id) = m.revision_id
+        AND l.language_code = m.language_code
+INNER JOIN public.site_revision_keys AS k
+    ON c.revision_id = k.revision_id AND m.message_key = k.message_key;
 
 CREATE VIEW public.public_slug_rules WITH (security_barrier = true) AS
 SELECT
@@ -426,6 +460,9 @@ COMMENT ON TABLE public.site_revision_keys IS
 
 COMMENT ON TABLE public.site_revision_languages IS
 'UI language metadata captured for this revision.';
+
+COMMENT ON COLUMN public.site_revision_languages.catalog_revision_id IS
+'Sealed revision supplying this locale catalog. Null owns the messages.';
 
 COMMENT ON TABLE public.site_revision_language_flags IS
 'Language flags captured for one settings revision.';

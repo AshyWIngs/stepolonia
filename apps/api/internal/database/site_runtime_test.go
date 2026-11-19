@@ -42,7 +42,7 @@ func writeSiteRuntimeFixture(t *testing.T, ctx context.Context, cfg *pgx.ConnCon
 	}
 	var version int64
 	requireNoError(t, owner.QueryRowContext(ctx, "SELECT version FROM public.site_state WHERE singleton").Scan(&version))
-	draft := runtimeSiteDraft(registeredFixtureKeys(t, ctx, owner), mode)
+	draft := runtimeSiteDraft(registeredFixtureSignatures(t, ctx, owner), mode)
 	editor := siteconfig.NewService(applicationDatabase(t, cfg, publisherTestRole, "site-runtime-publisher"))
 	version, err := editor.SaveDraft(ctx, version, draft)
 	requireNoError(t, err)
@@ -52,26 +52,20 @@ func writeSiteRuntimeFixture(t *testing.T, ctx context.Context, cfg *pgx.ConnCon
 	}
 }
 
-func runtimeSiteDraft(keys []string, mode string) siteconfig.Draft {
-	draft := siteFixture(keys)
+func runtimeSiteDraft(signatures map[string][]string, mode string) siteconfig.Draft {
+	draft := siteFixture(signatures)
 	draft.Settings.Title = "Fixture secondary"
 	if mode == runtimePrimary {
 		draft.Settings.Title = "Fixture primary"
 		draft.Settings.DefaultLanguage = "ru"
 		draft.Settings.FallbackLanguage = "ru"
 		delete(draft.Catalogs, "pl")
-		draft.Catalogs["ru"] = map[string]string{}
-		for key := range draft.Catalogs["en"] {
-			draft.Catalogs["ru"][key] = "Fixture ru " + key
-		}
+		draft.Catalogs["ru"] = fixtureMessages("ru", signatures)
 	}
 	if mode == "updated" {
 		draft.Settings.Title = "Fixture updated"
 		draft.Settings.DefaultLanguage = "en"
-		draft.Catalogs["fr"] = map[string]string{}
-		for key := range draft.Catalogs["en"] {
-			draft.Catalogs["fr"][key] = "Fixture fr " + key
-		}
+		draft.Catalogs["fr"] = fixtureMessages("fr", signatures)
 		for code, messages := range draft.Catalogs {
 			messages[siteArticlesKey] = "Fixture updated " + code + " articles"
 		}

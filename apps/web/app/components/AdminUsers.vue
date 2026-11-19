@@ -234,9 +234,15 @@ onBeforeUnmount(() => { issue.value = undefined })
         v-if="sessionsOpen" :key="selected.id" :user-id="selected.id" :csrf="csrf" :ui-language="uiLanguage" :translate="translate"
         @step-up="emit('step-up')" @session-changed="emit('session-changed')" @busy="sessionsBusy = $event"
       />
-      <form v-if="membership" @submit.prevent="saveMembership">
+      <form v-if="membership" class="admin-domain" @submit.prevent="saveMembership">
         <fieldset class="membership-editor" :disabled="usersBusy || Boolean(confirmation)">
           <legend ref="membershipHeading" tabindex="-1">{{ translate('admin.users_memberships') }} · <bdi>{{ selected.login }}</bdi></legend>
+          <AdminDomainHeader :save-label="translate('admin.users_apply_roles')" :disabled="!membershipDirty || membershipConflict || chosen.length > membership.max_roles">
+            <template #actions>
+              <button v-if="membershipConflict" type="button" @click="openMembership">{{ translate('admin.access_reload') }}</button>
+              <button v-if="membershipDirty || membershipConflict" type="button" @click="resetMembership">{{ translate('admin.cancel') }}</button>
+            </template>
+          </AdminDomainHeader>
           <p v-if="!membershipGroups.length">{{ translate('admin.users_roles_none') }}</p>
           <div v-else class="membership-groups">
             <section v-for="group in membershipGroups" :key="group.domain" class="membership-group">
@@ -268,13 +274,6 @@ onBeforeUnmount(() => { issue.value = undefined })
             </section>
           </div>
           <p v-if="chosen.length >= membership.max_roles">{{ translate('admin.users_roles_limit') }}</p>
-          <div class="access-actions membership-actions">
-            <button type="submit" :disabled="!membershipDirty || membershipConflict || chosen.length > membership.max_roles">
-              {{ translate('admin.users_apply_roles') }}
-            </button>
-            <button v-if="membershipConflict" type="button" @click="openMembership">{{ translate('admin.access_reload') }}</button>
-            <button v-if="membershipDirty || membershipConflict" type="button" @click="resetMembership">{{ translate('admin.cancel') }}</button>
-          </div>
         </fieldset>
       </form>
       <div v-if="confirmation" class="access-confirm">
@@ -325,5 +324,4 @@ onBeforeUnmount(() => { issue.value = undefined })
 
 .membership-group small { display: block; color: var(--admin-muted); font-weight: normal; }
 
-.membership-actions { margin-block-start: .75rem; }
 </style>

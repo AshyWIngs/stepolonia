@@ -4,7 +4,8 @@ import { operationName } from '~/utils/admin-role-rules'
 import { ownValue } from '~/utils/draft-edit-buffer'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePublicApi } from '~/composables/usePublicApi'
-import { createCollection, listCollections, readManagedCollection, reviseCollection, setCollectionAvailability } from '~/utils/admin-content'
+import { hasSVGViewBox, svgNamespace, useSvgImagePreview } from '~/composables/useSvgImagePreview'
+import { changeCollectionFields, createCollection, listCollections, readManagedCollection, saveCollectionIcon, setCollectionAvailability } from '~/utils/admin-content'
 import type { CollectionChoice, FieldKind, ManagedCollection, RegistryField, RegistryRenderer } from '~/utils/admin-content'
 import { suggestSlug, type SlugRule } from '~/utils/slug-suggestion'
 import type { PortalLanguage } from '~/utils/admin-site-settings'
@@ -13,7 +14,7 @@ interface BuilderRow {
   id: number
   field: RegistryField
   locked: boolean
-  originalLabels?: RegistryField['display_labels']
+  originalLabels?: NonNullable<RegistryField['display_labels']>
 }
 
 type DisplayPart = 'label' | 'help'
@@ -40,6 +41,10 @@ const selected = ref('')
 const newName = ref('')
 const iconSvg = ref('')
 const iconInvalid = ref(false)
+const iconConflict = ref(false)
+const iconFailure = ref('')
+const iconSaved = ref(false)
+const iconStatus = ref<HTMLOutputElement>()
 const iconInput = ref<HTMLTextAreaElement>()
 const availabilityDialog = ref<HTMLDialogElement>()
 let creationSuffix: string | undefined
@@ -57,7 +62,10 @@ const initialize = ref(false)
 const busy = ref(false)
 const failure = ref('')
 const feedback = ref('')
+const fieldStatus = ref<HTMLOutputElement>()
 const conflict = ref(false)
+const limited = ref(false)
+let retryTimer: ReturnType<typeof setTimeout> | undefined
 const kinds: FieldKind[] = ['string', 'text', 'markdown', 'boolean', 'integer', 'decimal', 'datetime', 'enum', 'relation']
 const builtInFields = new Set(['title', 'slug', 'body'])
 let nextRowID = 0
@@ -75,8 +83,9 @@ const visibleRows = computed(() => rows.value.filter(({ field }) =>
 ))
 const savedIcon = computed(() => collection.value?.icon_svg ?? '')
 const changedIcon = computed(() => iconSvg.value !== savedIcon.value)
-const previewIcon = computed(() => iconSvg.value.trim() ? savedIcon.value : '')
-const dirty = computed(() => Boolean(newName.value.trim()) || changedIcon.value || initialize.value || hasNewFields.value || rows.value.some(labelsChanged))
+const { svg: previewIcon, unavailable: previewUnavailable } = useSvgImagePreview(iconSvg, savedIcon)
+const fieldsDirty = computed(() => initialize.value || hasNewFields.value || rows.value.some(labelsChanged))
+const dirty = computed(() => Boolean(newName.value.trim()) || changedIcon.value || fieldsDirty.value)
 watch([dirty, busy], ([edited, saving]) => {
   emit('editing-state', { dirty: edited, busy: saving })
 })
@@ -114,37 +123,63 @@ watch([translationLocale, () => props.uiLanguage, () => props.languages], async 
   }
 }, { immediate: true })
 
-function showError(error: unknown) {
+function markInvalidIcon() {
+  iconInvalid.value = true
+  void nextTick(() => iconInput.value?.focus())
+}
+
+function showError(error: unknown, forIcon = false) {
+  const message = forIcon ? iconFailure : failure
   if (!(error instanceof AdminContentError)) {
-    failure.value = 'admin.unavailable'
+    message.value = 'admin.unavailable'
     return
   }
   if (error.code === 'invalid_collection_icon') {
-    iconInvalid.value = true
-    void nextTick(() => iconInput.value?.focus())
+    markInvalidIcon()
+  }
+  else if (error.status === 429) {
+    message.value = 'admin.limited'
+    if (error.retryAfter) {
+      limited.value = true
+      clearTimeout(retryTimer)
+      retryTimer = setTimeout(() => { limited.value = false }, Math.min(error.retryAfter, 2147483) * 1000)
+    }
   }
   else if (error.code === 'step_up_required') emit('step-up')
   else if (error.status === 401 || error.code === 'csrf_failed') {
-    failure.value = 'admin.changed'
+    message.value = 'admin.changed'
     emit('session-changed')
   }
-  else if (error.status === 403) failure.value = 'admin.access_denied'
+  else if (error.status === 403) message.value = 'admin.access_denied'
   else if (error.status === 409) {
-    conflict.value = ['version_conflict', 'collection_exists'].includes(error.code ?? '')
-    failure.value = conflict.value ? 'admin.registry_conflict' : 'admin.registry_invalid'
+    const state = forIcon ? iconConflict : conflict
+    state.value = isRegistryConflict(error.code)
+    message.value = registryConflictMessage(state.value)
   }
-  else if (error.status === 400) failure.value = 'admin.registry_invalid'
-  else failure.value = 'admin.unavailable'
+  else if (error.status === 400) message.value = 'admin.registry_invalid'
+  else message.value = 'admin.unavailable'
 }
 
-async function run(work: () => Promise<void>) {
+function isRegistryConflict(code?: string) {
+  return code === 'version_conflict' || code === 'collection_exists'
+}
+
+function registryConflictMessage(conflicted: boolean) {
+  return conflicted ? 'admin.registry_conflict' : 'admin.registry_invalid'
+}
+
+async function run(work: () => Promise<void>, forIcon = false) {
   if (busy.value) return
   busy.value = true
-  failure.value = ''
-  feedback.value = ''
-  iconInvalid.value = false
+  if (forIcon) {
+    iconFailure.value = ''
+    iconSaved.value = false
+  } else {
+    failure.value = ''
+    feedback.value = ''
+  }
   try { await work() }
-  catch (error: unknown) { if (active) showError(error) }
+  catch (error: unknown) { if (active) showError(error, forIcon) }
   finally { busy.value = false }
 }
 
@@ -178,6 +213,10 @@ async function openRenderer() {
   if (loaded && loaded.type_key !== key) throw new Error('Collection response does not match the selected type')
   collection.value = loaded
   iconSvg.value = loaded?.icon_svg ?? ''
+  iconInvalid.value = false
+  iconConflict.value = false
+  iconFailure.value = ''
+  iconSaved.value = false
   setFields(loaded?.fields ?? renderer.value?.fields ?? [])
 }
 
@@ -309,20 +348,89 @@ function changeKind(field: RegistryField) {
 }
 
 async function save() {
-  if (!canEdit.value || conflict.value) return
+  const wasPresent = collection.value
+  if (!canEdit.value || conflict.value || limited.value || (wasPresent ? !fieldsDirty.value : iconInvalid.value)) return
+  if (!wasPresent && changedIcon.value && iconSvg.value.trim() && !hasSVGViewBox(iconSvg.value)) {
+    failure.value = ''
+    feedback.value = ''
+    markInvalidIcon()
+    return
+  }
   await run(async () => {
-    const wasPresent = collection.value
     const fields = rows.value.map(row => row.field)
-    const saved = wasPresent ? await reviseCollection(wasPresent, fields, hasNewFields.value && initialize.value, props.csrf, changedIcon.value ? iconSvg.value : undefined)
+    const saved = wasPresent ? await saveFieldChanges(wasPresent)
       : await saveNewCollection(fields)
     if (!active || !saved) return
-    collection.value = saved
+    acceptFieldResult(saved, wasPresent)
     newName.value = ''
-    iconSvg.value = saved.icon_svg ?? ''
     setFields(saved.fields, true)
     feedback.value = wasPresent ? 'admin.registry_revised' : 'admin.registry_created'
     emit('saved', saved)
   })
+  if (active && feedback.value) await nextTick(() => fieldStatus.value?.focus())
+}
+
+function acceptFieldResult(saved: ManagedCollection, before?: ManagedCollection) {
+  const pendingIcon = before && changedIcon.value && iconSvg.value !== (saved.icon_svg ?? '')
+  if (!pendingIcon) {
+    iconSvg.value = saved.icon_svg ?? ''
+    collection.value = saved
+    if (iconConflict.value) {
+      iconConflict.value = false
+      iconFailure.value = ''
+    }
+    return
+  }
+  collection.value = { ...saved, icon_version: before.icon_version }
+  if (saved.icon_version !== before.icon_version) {
+    iconConflict.value = true
+    iconFailure.value = 'admin.registry_conflict'
+  }
+}
+
+function saveFieldChanges(current: ManagedCollection) {
+  const additions = rows.value.filter(row => !row.locked).map(row => row.field)
+  const labels = new Map(rows.value.filter(row => row.locked && labelsChanged(row)).map(row => [row.field.key, row.field.display_labels]))
+  const updates = current.fields.filter(field => labels.has(field.key)).map(field => ({
+    key: field.key,
+    expected_version: field.label_version,
+    display_labels: labels.get(field.key) ?? {},
+  }))
+  return changeCollectionFields(current, additions, updates, initialize.value, props.csrf)
+}
+
+async function saveIcon() {
+  const current = collection.value
+  if (!current || !changedIcon.value || busy.value || limited.value || iconConflict.value || iconInvalid.value) return
+  if (iconSvg.value.trim() && !hasSVGViewBox(iconSvg.value)) {
+    markInvalidIcon()
+    return
+  }
+  await run(async () => {
+    const result = await saveCollectionIcon(current, iconSvg.value, props.csrf)
+    if (!active) return
+    const version = current.version === result.previous_version ? result.version : current.version
+    const saved = { ...current, version, icon_svg: result.icon_svg, icon_version: result.icon_version }
+    collection.value = saved
+    iconSvg.value = result.icon_svg
+    iconSaved.value = true
+    emit('saved', saved)
+  }, true)
+  if (active && iconSaved.value) await nextTick(() => iconStatus.value?.focus())
+}
+
+async function reloadIcon() {
+  const current = collection.value
+  if (!current || busy.value) return
+  await run(async () => {
+    const fresh = await readManagedCollection(current.type_key)
+    if (!active) return
+    const reloaded = { ...current, icon_svg: fresh.icon_svg, icon_version: fresh.icon_version }
+    collection.value = reloaded
+    iconConflict.value = false
+    emit('saved', reloaded)
+  }, true)
+  if (active && !iconConflict.value) await nextTick(() => iconInput.value?.focus())
 }
 
 function saveNewCollection(fields: RegistryField[]) {
@@ -355,14 +463,17 @@ onMounted(() => {
   void load()
   void loadTranslationLanguages()
 })
-onBeforeUnmount(() => { active = false })
+onBeforeUnmount(() => {
+  active = false
+  clearTimeout(retryTimer)
+})
 </script>
 
 <template>
   <section class="builder" :aria-busy="busy">
     <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
-    <p v-if="failure" role="alert">{{ translate(failure) }}</p>
-    <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
+    <p v-if="failure && !canEdit" role="alert">{{ translate(failure) }}</p>
+    <p v-if="feedback && !canEdit"><output>{{ translate(feedback) }}</output></p>
     <div v-if="canEdit" class="builder-selection">
       <div v-if="!collection && available.length > 1" class="builder-control">
         <label for="registry-renderer">{{ translate('admin.registry_template') }}</label>
@@ -416,34 +527,57 @@ onBeforeUnmount(() => { active = false })
     <button v-if="conflict || (failure && !canEdit)" type="button" class="admin-secondary" :disabled="busy" @click="load">
       {{ translate(dirty ? 'admin.reload_settings' : 'admin.registry_reload') }}
     </button>
-    <form v-if="canEdit" ref="form" @submit.prevent="save" @invalid.capture="openFieldDetails($event.target)">
-      <div v-if="isCustom" class="builder-control">
-        <label for="registry-collection-name">{{ translate('admin.registry_collection_name') }}</label>
-        <input id="registry-collection-name" ref="collectionNameInput" v-model="newName" required maxlength="120" dir="auto" :readonly="busy">
-      </div>
+    <div v-if="canEdit && isCustom" class="builder-control">
+      <label for="registry-collection-name">{{ translate('admin.registry_collection_name') }}</label>
+      <input id="registry-collection-name" ref="collectionNameInput" v-model="newName" form="registry-fields" required maxlength="120" dir="auto" :readonly="busy">
+    </div>
+    <component :is="collection ? 'form' : 'div'" v-if="canEdit" class="admin-domain" @submit.prevent="saveIcon">
+      <AdminDomainHeader
+        v-if="collection" :title="translate('admin.registry_icon')" :save-label="translate('admin.registry_icon_save')"
+        :disabled="busy || limited || iconInvalid || iconConflict || !changedIcon"
+      />
       <div class="builder-control builder-icon-editor">
-        <label for="registry-collection-icon">{{ translate('admin.registry_icon') }}</label>
+        <label for="registry-collection-icon" :class="{ 'builder-icon-label--named': collection }">{{ translate('admin.registry_icon') }}</label>
         <div class="builder-icon-preview">
-          <span class="builder-icon-sample" data-testid="collection-icon-preview"><AdminIcon name="collection" :icon-svg="previewIcon" /></span>
-          <span>{{ translate(changedIcon && iconSvg.trim() ? 'admin.registry_icon_pending' : 'admin.registry_icon_preview') }}</span>
+          <span v-if="!previewUnavailable" class="builder-icon-sample" data-testid="collection-icon-preview"><AdminIcon name="collection" :icon-svg="previewIcon" /></span>
+          <span v-else>{{ translate('admin.svg_preview_unavailable') }}</span>
         </div>
-        <p id="registry-icon-help" class="builder-hint">{{ translate('admin.registry_icon_help') }}</p>
+        <p id="registry-icon-help" class="builder-hint">
+          {{ translate('admin.registry_icon_help') }}
+          <br><code>viewBox="0 0 24 24"</code> · 20 × 20 px
+        </p>
         <textarea
           id="registry-collection-icon" ref="iconInput" v-model="iconSvg" :readonly="busy" maxlength="4096" rows="4"
           dir="ltr" spellcheck="false" :aria-invalid="iconInvalid || undefined"
           :aria-describedby="iconInvalid ? 'registry-icon-help registry-icon-error' : 'registry-icon-help'"
-          @input="iconInvalid = false"
+          @input="iconInvalid = false; iconSaved = false"
         />
-        <p v-if="iconInvalid" id="registry-icon-error" role="alert">{{ translate('admin.registry_icon_invalid') }}</p>
+        <p v-if="iconInvalid" id="registry-icon-error" role="alert">
+          {{ translate('admin.registry_icon_invalid') }}
+          <code>xmlns="{{ svgNamespace }}"</code>
+        </p>
         <button
           v-if="iconSvg" type="button" class="admin-secondary" :disabled="busy"
-          @click="iconSvg = ''; iconInvalid = false; iconInput?.focus()"
+          @click="iconSvg = ''; iconInvalid = false; iconSaved = false; iconInput?.focus()"
         >{{ translate('admin.registry_icon_default') }}</button>
+        <p v-if="iconFailure" role="alert">{{ translate(iconFailure) }}</p>
+        <output v-if="iconSaved" ref="iconStatus" tabindex="-1">{{ translate('admin.registry_icon_saved') }}</output>
+        <button v-if="iconConflict" type="button" class="admin-secondary" :disabled="busy" @click="reloadIcon">
+          {{ translate('admin.settings_scoped_reload') }}
+        </button>
       </div>
+    </component>
+    <form v-if="canEdit" id="registry-fields" ref="form" class="admin-domain" @submit.prevent="save" @invalid.capture="openFieldDetails($event.target)">
+      <AdminDomainHeader
+        v-if="collection" :title="translate('admin.registry_schema') + ' ' + collection.schema_no"
+        :save-label="translate('admin.registry_save')" :disabled="busy || conflict || limited || !fieldsDirty"
+        class="builder-schema"
+      />
       <div v-if="collection" class="builder-schema">
-        <strong>{{ translate('admin.registry_schema') }} {{ collection.schema_no }}</strong>
         <p>{{ translate('admin.registry_schema_help') }}</p>
       </div>
+      <p v-if="failure" role="alert">{{ translate(failure) }}</p>
+      <p v-if="feedback"><output ref="fieldStatus" tabindex="-1">{{ translate(feedback) }}</output></p>
       <details
         v-for="row in visibleRows" :key="row.id" class="builder-field"
         :aria-labelledby="`registry-name-${row.id}`"
@@ -535,14 +669,23 @@ onBeforeUnmount(() => { active = false })
         <input v-model="initialize" type="checkbox" :disabled="busy">
         {{ translate(collection ? 'admin.registry_new_field_access' : 'admin.registry_initial_access') }}
       </label>
-      <button type="submit" :disabled="busy || conflict || Boolean(collection && !dirty)">
-        {{ translate(collection ? 'admin.registry_save' : 'admin.registry_create') }}
+      <button v-if="!collection" type="submit" :disabled="busy || conflict || limited || iconInvalid">
+        {{ translate('admin.registry_create') }}
       </button>
     </form>
   </section>
 </template>
 
 <style scoped>
+.builder-icon-label--named {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .builder-icon-preview {
   display: flex;
   align-items: center;

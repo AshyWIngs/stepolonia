@@ -207,7 +207,8 @@ func storeDraft(ctx context.Context, tx *sql.Tx, id string, input Draft) error {
 }
 
 func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map[string]string) error {
-	result, err := tx.ExecContext(ctx, `INSERT INTO public.site_revision_languages SELECT $1,code,name,native_name,direction FROM public.languages WHERE code=$2`, id, code)
+	result, err := tx.ExecContext(ctx, `INSERT INTO public.site_revision_languages(revision_id,language_code,name,native_name,direction)
+ SELECT $1,code,name,native_name,direction FROM public.languages WHERE code=$2`, id, code)
 	if err != nil {
 		return dbError(err)
 	}
@@ -218,12 +219,15 @@ func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map
 	if count != 1 {
 		return failure(400, "language_unavailable")
 	}
+	keys := make([]string, 0, len(messages))
+	values := make([]string, 0, len(messages))
 	for key, value := range messages {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO public.site_revision_messages VALUES($1,$2,$3,$4)`, id, code, key, value); err != nil {
-			return dbError(err)
-		}
+		keys = append(keys, key)
+		values = append(values, value)
 	}
-	return nil
+	_, err = tx.ExecContext(ctx, `INSERT INTO public.site_revision_messages(revision_id,language_code,message_key,message_value)
+ SELECT $1,$2,message.key,message.value FROM unnest($3::text[],$4::text[]) AS message(key,value)`, id, code, keys, values)
+	return dbError(err)
 }
 func deleteDraft(ctx context.Context, tx *sql.Tx, id string) error {
 	for _, query := range []string{

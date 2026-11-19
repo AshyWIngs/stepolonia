@@ -253,32 +253,40 @@ func revokeSession(ctx context.Context, tx *sql.Tx, id string) error {
 	return err
 }
 
-// CheckReady verifies installation binding, session policy and confirmed MFA
+// CheckReady verifies installation binding, policies and confirmed MFA
 // keys before serving authentication. It performs no writes.
 func (s *AuthService) CheckReady(ctx context.Context) error {
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := readSessionPolicy(ctx, tx); err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT user_id::text,ciphertext,key_version FROM public.mfa_totp WHERE confirmed_at IS NOT NULL`)
+		if _, err := readRatePolicies(ctx, tx); err != nil {
+			return err
+		}
+		return s.checkConfirmedFactors(ctx, tx)
+	})
+}
+
+func (s *AuthService) checkConfirmedFactors(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT user_id::text,ciphertext,key_version FROM public.mfa_totp WHERE confirmed_at IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var user string
+		var ciphertext []byte
+		var version int
+		if err = rows.Scan(&user, &ciphertext, &version); err != nil {
+			return err
+		}
+		if version != s.config.KeyVersion {
+			return ErrSecurityUnavailable
+		}
+		_, err = decryptSeed(s.config.EncryptionKey, s.config.Site, user, version, ciphertext)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var user string
-			var ciphertext []byte
-			var version int
-			if err = rows.Scan(&user, &ciphertext, &version); err != nil {
-				return err
-			}
-			if version != s.config.KeyVersion {
-				return ErrSecurityUnavailable
-			}
-			if _, err = decryptSeed(s.config.EncryptionKey, s.config.Site, user, version, ciphertext); err != nil {
-				return err
-			}
-		}
-		return rows.Err()
-	})
+	}
+	return rows.Err()
 }

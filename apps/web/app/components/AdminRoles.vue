@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { copyAccessRole, listAccessRoles, roleGrantOptions, saveAccessRole, updateRoleState } from '~/utils/admin-access'
+import { accessRoleChanges, changeAccessRole, copyAccessRole, createAccessRole, listAccessRoles, readAccessRole, roleGrantOptions, updateRoleState } from '~/utils/admin-access'
 import type { AccessRole, RoleAction, RoleGrant, RoleGrantOption } from '~/utils/admin-access'
 import { useAccessActions } from '~/utils/admin-access-feedback'
 import { collectionName, groupRules, operationName, ruleDomain, ruleKey, ruleScope } from '~/utils/admin-role-rules'
+
+type RoleEditorMode = 'edit' | 'create' | 'copy'
 
 const props = defineProps<{ csrf: string, translate: (key: string) => string }>()
 const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
@@ -13,7 +15,7 @@ const next = ref<number | null>(null)
 const offset = ref(0)
 const { active, busy, error, feedback, run } = useAccessActions(() => { emit('step-up') }, () => { emit('session-changed') })
 const heading = ref<HTMLElement>()
-const mode = ref<'edit' | 'create' | 'copy'>()
+const mode = ref<RoleEditorMode>()
 const name = ref('')
 const nameField = ref<HTMLInputElement>()
 const staged = ref<RoleGrant[]>([])
@@ -31,6 +33,9 @@ const groupedGrants = computed(() => groupRules(selected.value?.grants ?? [], gr
 const incomplete = computed(() => mode.value !== 'copy' && staged.value.some(grant =>
   grant.target_scope && !grant.delegate_operations?.length,
 ))
+const changes = computed(() => selected.value ? accessRoleChanges(selected.value, name.value, staged.value) : undefined)
+const unchanged = computed(() => mode.value === 'edit' && changes.value &&
+  changes.value.name === undefined && !changes.value.upsert && !changes.value.remove)
 const actions = computed<RoleAction[]>(() => {
   switch (selected.value?.state) {
     case 'active': return ['disable']
@@ -58,7 +63,7 @@ async function select(role: AccessRole) {
   if (active.value) heading.value?.focus()
 }
 
-function startEdit(value: 'edit' | 'create' | 'copy') {
+function startEdit(value: RoleEditorMode) {
   return run(async () => {
     const available = value === 'copy' ? undefined : await roleGrantOptions()
     if (!active.value) return
@@ -83,18 +88,44 @@ function label(grant: RoleGrant) {
 function save() {
   const action = mode.value
   const role = selected.value
-  if (!action || incomplete.value || (action !== 'create' && !role)) return
-  const roleToUpdate = action === 'edit' ? role : undefined
+  if (!action || incomplete.value || unchanged.value || (action !== 'create' && !role)) return
+  const change = changes.value
   return run(async () => {
-    const saved = action === 'copy' && role
-      ? await copyAccessRole(role, name.value, props.csrf)
-      : await saveAccessRole(roleToUpdate, name.value, staged.value, props.csrf)
+    const saved = await saveRoleCommand(action, role, change)
     if (!active.value) return
     selected.value = saved
     mode.value = undefined
-    await load()
-    if (active.value) feedback.value = 'admin.access_saved'
+    feedback.value = 'admin.access_saved'
+    await nextTick()
+    heading.value?.focus()
+    try {
+      await load()
+    } catch {
+      if (active.value) error.value = 'admin.unavailable'
+    }
   })
+}
+
+function reloadEditedRole() {
+  const current = selected.value
+  if (!current) return
+  return run(async () => {
+    const role = await readAccessRole(current)
+    if (active.value) await select(role)
+  })
+}
+
+async function cancelEdit() {
+  mode.value = undefined
+  error.value = ''
+  await nextTick()
+  heading.value?.focus()
+}
+
+function saveRoleCommand(action: RoleEditorMode, role: AccessRole | undefined, change: typeof changes.value) {
+  if (action === 'edit' && role && change) return changeAccessRole(role, change, props.csrf)
+  if (action === 'copy' && role) return copyAccessRole(role, name.value, props.csrf)
+  return createAccessRole(name.value, staged.value, props.csrf)
 }
 
 function transition() {
@@ -124,7 +155,7 @@ onMounted(() => { void run(() => load()) })
 <template>
   <section class="access-panel" :aria-busy="busy">
     <h2>{{ translate('admin.roles') }}</h2>
-    <p v-if="error" role="alert">{{ translate(error) }}</p>
+    <p v-if="error && !mode" role="alert">{{ translate(error) }}</p>
     <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
     <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <div class="access-actions">
@@ -170,16 +201,28 @@ onMounted(() => { void run(() => load()) })
         </div>
       </div>
     </section>
-    <form v-if="mode" @submit.prevent="save">
+    <form v-if="mode" class="admin-domain" @submit.prevent="save">
       <label for="access-role-name">{{ translate('admin.roles_name') }}</label>
       <input id="access-role-name" ref="nameField" v-model="name" required maxlength="128" :disabled="busy">
-      <div class="access-actions role-edit-actions">
-        <button type="submit" :disabled="busy || incomplete">{{ translate('admin.roles_save') }}</button>
-        <button type="button" :disabled="busy" @click="mode = undefined">{{ translate('admin.cancel') }}</button>
+      <div class="role-edit-actions">
+        <AdminDomainHeader
+          :title="mode === 'edit' ? translate('admin.roles_grants') : undefined"
+          :save-label="mode === 'edit' ? translate('admin.roles_save') : undefined"
+          :disabled="busy || incomplete || unchanged || error === 'admin.access_version_conflict'"
+        >
+          <template #actions>
+            <button v-if="mode !== 'edit'" type="submit" :disabled="busy || incomplete">{{ translate('admin.roles_save') }}</button>
+            <button v-if="mode === 'edit' && error === 'admin.access_version_conflict'" type="button" :disabled="busy" @click="reloadEditedRole">
+              {{ translate('admin.reload_settings') }}
+            </button>
+            <button type="button" :disabled="busy" @click="cancelEdit">{{ translate('admin.cancel') }}</button>
+          </template>
+        </AdminDomainHeader>
         <output v-if="incomplete">{{ translate('admin.role_rule_choose_delegated_operation') }}</output>
+        <p v-if="error" role="alert">{{ translate(error) }}</p>
       </div>
       <template v-if="mode !== 'copy'">
-        <h3>{{ translate('admin.roles_grants') }}</h3>
+        <h3 v-if="mode === 'create'">{{ translate('admin.roles_grants') }}</h3>
         <AdminRoleRules
           v-model="staged" :options="options" :collection-keys="mode === 'edit' ? selected?.collection_keys : undefined"
           :original="mode === 'edit' ? selected?.grants ?? [] : []" :busy="busy" :translate="translate"
@@ -201,5 +244,5 @@ onMounted(() => { void run(() => load()) })
 .role-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem; }
 .role-summary ul { margin-block: 0 .5rem; padding-inline-start: 1.25rem; }
 .role-edit-actions { position: sticky; inset-block-start: 0; z-index: 1; padding-block: .5rem; background: var(--admin-card); }
-.role-edit-actions output { flex-basis: 100%; margin: 0; }
+.role-edit-actions output { margin: 0; }
 </style>

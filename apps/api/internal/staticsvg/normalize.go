@@ -15,6 +15,7 @@ import (
 const (
 	MaxBytes           = 4096
 	svgNamespace       = "http://www.w3.org/2000/svg"
+	shortSVGNamespace  = "http://w3.org"
 	svgWhitespace      = " \t\r\n"
 	svgRootElement     = "svg"
 	svgPolygonElement  = "polygon"
@@ -76,6 +77,8 @@ func (d *iconDocument) accept(token xml.Token) bool {
 		return d.encoder.EncodeToken(xml.EndElement{Name: xml.Name{Local: value.Name.Local}}) == nil
 	case xml.CharData:
 		return len(bytes.TrimSpace(value)) == 0
+	case xml.Comment:
+		return true
 	default:
 		return false
 	}
@@ -98,7 +101,7 @@ func (d *iconDocument) start(element xml.StartElement) bool {
 
 func allowedIconElement(element xml.StartElement, stack []string, count int) bool {
 	name := element.Name
-	if name.Space != "" && name.Space != svgNamespace {
+	if name.Space != "" && !supportedSVGNamespace(name.Space) {
 		return false
 	}
 	if len(stack) == 0 {
@@ -122,7 +125,7 @@ func iconElement(element xml.StartElement, root bool) (xml.StartElement, bool) {
 			return out, false
 		}
 		seen[key] = true
-		if root && key == "xmlns" && attr.Value == svgNamespace {
+		if root && key == "xmlns" && supportedSVGNamespace(attr.Value) {
 			continue
 		}
 		attr.Value = strings.TrimSpace(attr.Value)
@@ -132,6 +135,10 @@ func iconElement(element xml.StartElement, root bool) (xml.StartElement, bool) {
 		out.Attr = append(out.Attr, attr)
 	}
 	return out, iconRequiredAttributes(name, seen)
+}
+
+func supportedSVGNamespace(namespace string) bool {
+	return namespace == svgNamespace || namespace == shortSVGNamespace
 }
 
 func iconRequiredAttributes(element string, seen map[string]bool) bool {

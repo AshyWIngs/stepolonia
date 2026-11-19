@@ -62,11 +62,17 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
-		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit", "security/session-policy"} {
+		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit", "security/session-policy", "security/rate-policy"} {
 			mux.Handle("/api/v1/admin/"+path, auth)
 		}
 		mux.Handle("/api/v1/admin/settings", auth)
 		mux.Handle("/api/v1/admin/settings/publication", auth)
+		mux.Handle("/api/v1/admin/settings/appearance", auth)
+		mux.Handle("/api/v1/admin/settings/language-flags", auth)
+		mux.Handle("/api/v1/admin/settings/details", auth)
+		mux.Handle("/api/v1/admin/settings/locale-defaults", auth)
+		mux.Handle("/api/v1/admin/settings/slug-rules", auth)
+		mux.Handle("/api/v1/admin/settings/catalogs", auth)
 		mux.Handle("/api/v1/admin/users", auth)
 		mux.Handle("/api/v1/admin/users/", auth)
 		mux.Handle("/api/v1/admin/roles", auth)
@@ -74,6 +80,8 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 		mux.Handle("/api/v1/admin/content-types", auth)
 		mux.Handle("/api/v1/admin/content-types/{type_key}", auth)
 		mux.Handle("/api/v1/admin/content-types/{type_key}/availability", auth)
+		mux.Handle("/api/v1/admin/content-types/{type_key}/icon", auth)
+		mux.Handle("/api/v1/admin/content-types/{type_key}/fields", auth)
 		const draftPath = "/api/v1/admin/content/{type_key}/{item_id}"
 		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish", "/schema", "/adopt-schema", "/unpublish"} {
 			mux.Handle(draftPath+suffix, auth)

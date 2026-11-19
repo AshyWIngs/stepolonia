@@ -43,3 +43,23 @@ func TestAuthHashCapacityAndDummy(t *testing.T) {
 		t.Fatal("dummy accepted")
 	}
 }
+
+func TestAuthHashSoftCapacityReservesRecoveryHeadroom(t *testing.T) {
+	ctx := context.Background()
+	release, err := passwordHashSlot(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if extra, err := passwordHashSlot(ctx, 1); !errors.Is(err, ErrRateLimited) || RateRetryAfter(err) != 1 {
+		if extra != nil {
+			extra()
+		}
+		t.Fatalf("public password work exceeded its configured cap: %v", err)
+	}
+	recoverSlot, err := passwordHashSlot(ctx, MaxPasswordHashJobs)
+	if err != nil {
+		t.Fatalf("trusted work could not use spare process capacity: %v", err)
+	}
+	recoverSlot()
+}

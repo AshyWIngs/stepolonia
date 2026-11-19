@@ -47,11 +47,13 @@ func (s *AuthService) ChangeAccountPassword(ctx context.Context, req AuthRequest
 	if err != nil {
 		return err
 	}
-	if validatePassword(password) != nil {
-		return ErrValidation
-	}
-	hash, err := bootstrapHash(ctx, password)
+	hash, err := hashCredentialPassword(ctx, password, budget.hashJobs)
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			if releaseErr := s.releaseBudget(ctx, budget); releaseErr != nil {
+				return releaseErr
+			}
+		}
 		return authError(err)
 	}
 	return s.accountCredentialCommand(ctx, req, passwordChangedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {

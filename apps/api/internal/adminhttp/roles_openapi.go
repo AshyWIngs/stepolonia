@@ -26,6 +26,12 @@ const (
 	roleSchema      = "Role"
 	roleListSchema  = "RoleList"
 	roleGrantSchema = "RoleGrant"
+	roleNameField   = "name"
+	operationField  = "operation"
+	roleTypeObjects = "type"
+	exampleRoleName = "docs-reviewer"
+	upsertField     = "upsert"
+	removeField     = "remove"
 )
 
 func roleGrantExample() roleGrantDTO {
@@ -33,13 +39,16 @@ func roleGrantExample() roleGrantDTO {
 }
 
 func roleRequestSchema(operationID string) (*huma.Schema, map[string]any) {
-	example := map[string]any{"name": "docs-reviewer"}
+	if operationID == changeRoleOperation {
+		return roleChangesSchema()
+	}
+	example := map[string]any{roleNameField: exampleRoleName}
 	schema := responseDTOSchema("Complete explicit role policy. Name and grants are required; no actor, state, memberships, recipient list or implicit grant expansion is accepted.", roleWriteInput{})
 	if operationID == copyRoleOperation {
 		example[expectedVersionField] = 1
 		delete(schema.Properties, "grants")
 		schema.Description = "New role name and current source version."
-		schema.Required = []string{"name", expectedVersionField}
+		schema.Required = []string{roleNameField, expectedVersionField}
 		schema.Examples = []any{example}
 		return schema, example
 	}
@@ -55,6 +64,29 @@ func roleRequestSchema(operationID string) (*huma.Schema, map[string]any) {
 	return schema, example
 }
 
+func roleChangesSchema() (*huma.Schema, map[string]any) {
+	removed := identity.RoleGrantKey{Operation: "audit.read"}
+	example := map[string]any{
+		expectedVersionField: 1,
+		roleNameField:        exampleRoleName,
+		upsertField:          []roleGrantDTO{roleGrantExample()},
+		removeField:          []identity.RoleGrantKey{removed},
+	}
+	key := closedObjectSchema("Unique grant identity in this role.", map[string]*huma.Schema{
+		operationField: {Type: huma.TypeString, MinLength: new(1)},
+		typeIDField:    uuidSchema(exampleUUID),
+		"object_scope": {Type: huma.TypeString, Enum: []any{roleTypeObjects, roleAssignedObjects, roleAnyObjects}},
+	}, []string{operationField}, removed)
+	schema := closedObjectSchema("Save a sparse role name or grant change.", map[string]*huma.Schema{
+		expectedVersionField: {Type: huma.TypeInteger, Minimum: new(float64(1))},
+		roleNameField:        {Type: huma.TypeString, MinLength: new(1), MaxLength: new(128)},
+		upsertField:          {Type: huma.TypeArray, Items: schemaRef(roleGrantSchema), MinItems: new(1), MaxItems: new(identity.MaxRoleGrants)},
+		removeField:          {Type: huma.TypeArray, Items: key, MinItems: new(1), MaxItems: new(identity.MaxRoleGrants)},
+	}, []string{expectedVersionField}, example)
+	schema.MinProperties = new(2)
+	return schema, example
+}
+
 func replaceRoleGrantSchema(schema *huma.Schema) {
 	schema.Properties["grants"] = &huma.Schema{Type: huma.TypeArray, Items: schemaRef(roleGrantSchema), MaxItems: intPointer(identity.MaxRoleGrants), Description: "Complete explicit grant set; duplicated operation/type/object scopes and field IDs are rejected. Empty grants removes all access."}
 }
@@ -62,7 +94,7 @@ func replaceRoleGrantSchema(schema *huma.Schema) {
 func addRoleSchemas(schemas map[string]*huma.Schema) {
 	schemas[roleGrantSchema] = roleGrantContract()
 	example := roleResponse{
-		ID: exampleUUID, Name: "docs-reviewer", State: roleDisabled, Version: 1,
+		ID: exampleUUID, Name: exampleRoleName, State: roleDisabled, Version: 1,
 		Grants:         []roleGrantDTO{{Operation: string(identity.OpContentRead), Scope: roleContentScope, TypeID: exampleUUID, ObjectScope: roleAssignedObjects}},
 		CollectionKeys: map[string]string{exampleUUID: apiexamples.Article().TypeKey},
 	}
@@ -79,30 +111,30 @@ func roleGrantContract() *huma.Schema {
 	allContent := append([]string{"content.items.create"}, content...)
 	security := roleGrantVariant(installation, roleInstallationScope)
 	create := roleGrantVariant([]string{"content.items.create"}, roleContentScope)
-	addContentGrantProperties(create, []string{"type"})
+	addContentGrantProperties(create, []string{roleTypeObjects})
 	data := roleGrantVariant(content, roleContentScope)
 	addContentGrantProperties(data, []string{roleAssignedObjects, roleAnyObjects})
 	installationAuthority := roleAuthoritySchema(roleInstallationScope, allContent)
 	typeAuthority := roleAuthoritySchema("type", allContent)
-	typeAuthority.Properties["type_id"] = uuidSchema(exampleUUID)
+	typeAuthority.Properties[typeIDField] = uuidSchema(exampleUUID)
 	typeAuthority.Properties["field_ids"] = roleFieldsSchema()
-	typeAuthority.Required = append(typeAuthority.Required, "type_id")
+	typeAuthority.Required = append(typeAuthority.Required, typeIDField)
 	return &huma.Schema{Description: "One explicit registered grant. Choose exactly one closed shape: installation security, content create, content item access, installation delegation authority or type delegation authority. Irrelevant, null and unknown properties are rejected even when empty or false. Authority grants permission to delegate policies, without content data access.", OneOf: []*huma.Schema{security, create, data, installationAuthority, typeAuthority}, Examples: []any{roleGrantExample(), roleGrantDTO{Operation: string(identity.OpContentRead), Scope: roleContentScope, TypeID: exampleUUID, ObjectScope: roleAssignedObjects, FieldIDs: []string{exampleUUID}}, roleGrantDTO{Operation: roleAuthorityOperation, Scope: roleInstallationScope, TargetScope: roleInstallationScope, ObjectCeiling: roleAnyObjects, MayDelegateContent: &mayDelegate, DelegateOperations: []string{string(identity.OpContentRead)}}}}
 }
 
 func roleGrantVariant(operations []string, scope string) *huma.Schema {
-	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: false, Required: []string{"operation", "scope", "can_delegate"}, Properties: map[string]*huma.Schema{
-		"operation":    {Type: huma.TypeString, Enum: stringValues(operations), Description: "Exact registered operation; new or unknown operations never expand implicitly."},
+	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: false, Required: []string{operationField, "scope", "can_delegate"}, Properties: map[string]*huma.Schema{
+		operationField: {Type: huma.TypeString, Enum: stringValues(operations), Description: "Exact registered operation; new or unknown operations never expand implicitly."},
 		"scope":        {Type: huma.TypeString, Const: scope, Description: "Registered grant category."},
 		"can_delegate": {Type: huma.TypeBoolean, Description: "Whether the grant may itself be delegated; bounded by the actor's current envelope."},
 	}}
 }
 
 func addContentGrantProperties(schema *huma.Schema, scopes []string) {
-	schema.Properties["type_id"] = uuidSchema(exampleUUID)
+	schema.Properties[typeIDField] = uuidSchema(exampleUUID)
 	schema.Properties["object_scope"] = &huma.Schema{Type: huma.TypeString, Enum: stringValues(scopes), Description: "Create has type scope; other content actions require assigned or any."}
 	schema.Properties["field_ids"] = roleFieldsSchema()
-	schema.Required = append(schema.Required, "type_id", "object_scope")
+	schema.Required = append(schema.Required, typeIDField, "object_scope")
 }
 
 func roleFieldsSchema() *huma.Schema {
@@ -130,7 +162,10 @@ func roleErrorCodes(rt route) map[int][]string {
 	}
 	if rt.method != http.MethodGet {
 		codes[403] = append(codes[403], csrfCode, stepUpRequiredCode)
-		codes[409] = []string{versionConflictCode, invalidTransitionCode, lastAdminRequiredCode}
+		codes[409] = []string{versionConflictCode, lastAdminRequiredCode}
+		if rt.operationID != changeRoleOperation {
+			codes[409] = append(codes[409], invalidTransitionCode)
+		}
 		if rt.operationID == deleteRoleOperation {
 			codes[409] = append(codes[409], roleInUseCode)
 		}
@@ -155,6 +190,8 @@ func roleSuccessDescription(rt route) string {
 		return "Archived role deleted and audit committed."
 	case createRoleOperation:
 		return "Disabled role and explicit grants committed with audit; no memberships created."
+	case changeRoleOperation:
+		return "Supplied role changes committed with a version increment and atomic audit."
 	default:
 		return "Role name and complete explicit grants replaced with a version increment and atomic audit; state and memberships preserved."
 	}

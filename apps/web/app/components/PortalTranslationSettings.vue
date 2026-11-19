@@ -146,7 +146,13 @@ async function removeCatalog(code: string) {
   languageInput.value?.focus()
 }
 
-defineExpose({ showMissing })
+async function focusActive() {
+  await nextTick()
+  const target = input.value ?? languageInput.value
+  target?.focus()
+}
+
+defineExpose({ showMissing, focusActive })
 </script>
 
 <template>

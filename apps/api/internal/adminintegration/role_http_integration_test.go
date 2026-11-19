@@ -72,6 +72,68 @@ func TestAuthRolesHTTPAtomicEditorIntegration(t *testing.T) {
 	}
 }
 
+func TestAuthRolesHTTPScopedChangesIntegration(t *testing.T) {
+	f := newAuthHTTPFixture(t)
+	full := authFull(t, f.state)
+	created, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath,
+		`{"name":"scoped-reviewer","grants":[{"operation":"users.read","scope":"installation","can_delegate":false},{"operation":"audit.read","scope":"installation","can_delegate":false}]}`,
+		full, http.StatusOK)
+	id := created["id"].(string)
+	path := rolesHTTPPath + "/" + id + "/changes"
+	untouched := roleAccountReadGrantID(t, f, id)
+
+	delta := `{"expected_version":1,"upsert":[{"operation":"security_policy.manage","scope":"installation","can_delegate":false}],"remove":[{"operation":"audit.read"}]}`
+	noCSRF := full
+	noCSRF.CSRF = ""
+	f.roleHTTP(t, http.MethodPost, path, delta, noCSRF, http.StatusForbidden)
+	scoped, requestID := f.roleHTTP(t, http.MethodPost, path, delta, full, http.StatusOK)
+	if scoped["name"] != created["name"] || scoped["version"] != float64(2) || len(scoped["grants"].([]any)) != 2 {
+		t.Fatal("grant delta did not preserve the role name and untouched grant")
+	}
+	if roleAccountReadGrantID(t, f, id) != untouched {
+		t.Fatal("grant delta replaced an untouched row")
+	}
+	var audited bool
+	requireNoError(t, f.state.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM public.security_audit
+WHERE target_id=$1 AND operation='roles.edited' AND request_id=$2)`, id, requestID).Scan(&audited))
+	if !audited {
+		t.Fatal("role changes lost audit correlation")
+	}
+	f.roleHTTP(t, http.MethodPost, path, delta, full, http.StatusConflict)
+	assertMalformedRoleChanges(t, f, path, full)
+	renamed, _ := f.roleHTTP(t, http.MethodPost, path, `{"expected_version":2,"name":"policy-reviewer"}`, full, http.StatusOK)
+	if renamed["name"] != "policy-reviewer" || !reflect.DeepEqual(renamed["grants"], scoped["grants"]) ||
+		roleAccountReadGrantID(t, f, id) != untouched {
+		t.Fatal("renaming replaced the grant policy")
+	}
+	expireSessionStepUp(t, f.state.db, full.Token)
+	body, _ := f.roleHTTP(t, http.MethodPost, path, `{"expected_version":3,"name":"expired-session"}`, full, http.StatusForbidden)
+	if body["code"] != stepUpRequiredProblem {
+		t.Fatal("sparse role edit did not require fresh MFA")
+	}
+}
+
+func assertMalformedRoleChanges(t *testing.T, f authHTTPFixture, path string, full identity.SessionTokens) {
+	t.Helper()
+	for _, body := range []string{
+		`{"expected_version":137}`,
+		`{"expected_version":2,"name":null}`,
+		`{"expected_version":2,"name":"reviewer","Name":"other"}`,
+		`{"expected_version":2,"upsert":[{"operation":"users.read","Operation":"audit.read","scope":"installation","can_delegate":false}]}`,
+		`{"expected_version":2,"remove":[{"operation":"users.read","Operation":"audit.read"}]}`,
+		`{"expected_version":2,"remove":[{"operation":"users.read"}],"upsert":[{"operation":"users.read","scope":"installation","can_delegate":false}]}`,
+	} {
+		f.roleHTTP(t, http.MethodPost, path, body, full, http.StatusBadRequest)
+	}
+}
+
+func roleAccountReadGrantID(t *testing.T, f authHTTPFixture, roleID string) string {
+	t.Helper()
+	var id string
+	requireNoError(t, f.state.db.QueryRow(`SELECT id::text FROM public.role_grants WHERE role_id=$1 AND operation='users.read'`, roleID).Scan(&id))
+	return id
+}
+
 func assertRoleCreationHTTP(t *testing.T, f authHTTPFixture, id, requestID string) {
 	t.Helper()
 	var isolated, audited bool

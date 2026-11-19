@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 const sitePublishedEvent = "settings.published"
@@ -21,13 +22,21 @@ func (s *AuthService) ApplySiteSettings(ctx context.Context, req AuthRequest, wr
 	if write == nil {
 		return ErrSecurityUnavailable
 	}
-	return s.auditedCommand(ctx, req, sitePublishedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
+	var authorizedFailure error
+	err := s.auditedCommand(ctx, req, sitePublishedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
 		if err := requirePermission(ctx, tx, session.user, opSettingsManage); err != nil {
 			return err
 		}
 		if err := write(ctx, tx); err != nil {
+			if errors.Is(err, ErrValidation) || errors.Is(err, ErrVersionConflict) {
+				authorizedFailure = err
+			}
 			return err
 		}
 		return securityAudit(ctx, tx, sitePublishedEvent, session.user, "", "")
 	})
+	if authorizedFailure != nil && errors.Is(err, ErrRateLimited) {
+		return authorizedFailure
+	}
+	return err
 }

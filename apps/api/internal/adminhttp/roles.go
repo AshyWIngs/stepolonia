@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 	"stepolonia/apps/api/internal/identity"
@@ -28,6 +29,10 @@ type RoleService interface {
 
 var _ RoleService = (*identity.AuthService)(nil)
 
+type roleChangesService interface {
+	ChangeRole(context.Context, identity.AuthRequest, string, int64, identity.RoleChanges) (identity.Role, error)
+}
+
 const (
 	rolesPath = "/api/v1/admin/roles"
 	rolePath  = rolesPath + "/{id}"
@@ -38,6 +43,7 @@ const (
 	getRoleOperation    = "rolesGet"
 	createRoleOperation = "rolesCreate"
 	editRoleOperation   = "rolesEdit"
+	changeRoleOperation = "rolesApplyChanges"
 	copyRoleOperation   = "rolesCopy"
 	deleteRoleOperation = "rolesDelete"
 )
@@ -63,6 +69,7 @@ var roleRoutes = map[string][]route{
 		{kind: fullKind, method: http.MethodDelete, fields: expectedVersionField, operationID: deleteRoleOperation, summary: "Delete an archived role", description: "Requires a full session, roles.delete, CSRF and strong authentication no older than five minutes. The server checks expected_version under the shared security mutex. A non-archived role returns invalid_transition. Remaining memberships, grants or field dependencies on an archived role return role_in_use. Deletion and audit commit atomically. Prior audit records are preserved."},
 	},
 	rolePath + "/copy":    {{kind: fullKind, method: http.MethodPost, operationID: copyRoleOperation, summary: "Copy a role policy", response: roleSchema, description: "Requires a full session, both roles.create and roles.edit, CSRF and strong authentication no older than five minutes. The source version, explicit grants and delegation envelope are checked under the shared security mutex. Creates a disabled role with a new UUID and the supplied unique name. Memberships are never copied. A stale version or name collision returns version_conflict. Reaching the role limit returns invalid_transition. Creation, grants and audit commit atomically."}},
+	rolePath + "/changes": {{kind: fullKind, method: http.MethodPost, operationID: changeRoleOperation, summary: "Save changes to a role policy", response: roleSchema, description: "Requires a full session, current roles.edit, CSRF and strong authentication no older than five minutes. Applies the supplied name and grant changes to the current policy at the expected version. Grant identity is operation, collection UUID when applicable, and object scope when applicable. The entire resulting policy and affected recipients are checked under the security mutex. Changes and audit commit atomically."}},
 	rolePath + "/enable":  {roleStateRoute("rolesEnable", "roles.enable", roleDisabled, roleActive, RoleService.EnableRole)},
 	rolePath + "/disable": {roleStateRoute("rolesDisable", "roles.disable", roleActive, roleDisabled, RoleService.DisableRole)},
 	rolePath + "/archive": {roleStateRoute("rolesArchive", "roles.archive", roleDisabled, roleArchived, RoleService.ArchiveRole)},
@@ -169,6 +176,10 @@ func (h *handler) serveRole(w http.ResponseWriter, r *http.Request, rt route, id
 		serveRoleVersionCommand(w, r, rt, service, req, id)
 		return
 	}
+	if rt.operationID == changeRoleOperation {
+		serveRoleChanges(w, r, req, id, service)
+		return
+	}
 	input, code, status := readRoleInput(w, r, rt.operationID)
 	if code != "" {
 		problem(w, status, code)
@@ -185,6 +196,35 @@ func (h *handler) serveRole(w http.ResponseWriter, r *http.Request, rt route, id
 	default:
 		err = identity.ErrSecurityUnavailable
 	}
+	respondRole(w, role, err)
+}
+
+type roleChangesInput struct {
+	ExpectedVersion int64                   `json:"expected_version"`
+	Name            *string                 `json:"name,omitempty"`
+	Upsert          []roleGrantDTO          `json:"upsert,omitempty"`
+	Remove          []identity.RoleGrantKey `json:"remove,omitempty"`
+}
+
+func serveRoleChanges(w http.ResponseWriter, r *http.Request, req identity.AuthRequest, id string, service RoleService) {
+	editor, ok := service.(roleChangesService)
+	if !ok {
+		writeError(w, identity.ErrSecurityUnavailable)
+		return
+	}
+	raw, code, status := readJSONBody(w, r, maxRoleBodyBytes)
+	if code != "" {
+		problem(w, status, code)
+		return
+	}
+	schema, _ := roleRequestSchema(changeRoleOperation)
+	var input roleChangesInput
+	if !validateRoleContract(raw, schema, true) || json.Unmarshal(raw, &input) != nil {
+		writeError(w, identity.ErrValidation)
+		return
+	}
+	upsert := rolePolicy(roleWriteInput{Grants: input.Upsert}).Grants
+	role, err := editor.ChangeRole(r.Context(), req, id, input.ExpectedVersion, identity.RoleChanges{Name: input.Name, Upsert: upsert, Remove: input.Remove})
 	respondRole(w, role, err)
 }
 
@@ -271,6 +311,10 @@ func readRoleInput(w http.ResponseWriter, r *http.Request, operationID string) (
 // Schema validation shares the documented conditional grant shapes. A token
 // walk rejects duplicate keys and null before Go's decoder can erase them.
 func validateRoleJSON(raw []byte, schema *huma.Schema) bool {
+	return validateRoleContract(raw, schema, false)
+}
+
+func validateRoleContract(raw []byte, schema *huma.Schema, exact bool) bool {
 	value, ok := decodeUniqueJSON(raw)
 	if !ok {
 		return false
@@ -279,9 +323,47 @@ func validateRoleJSON(raw []byte, schema *huma.Schema) bool {
 	registry.Map()[roleGrantSchema] = roleGrantContract()
 	schema.PrecomputeMessages()
 	registry.Map()[roleGrantSchema].PrecomputeMessages()
+	if exact && (!utf8.Valid(raw) || !exactRoleContractKeys(registry, value, schema)) {
+		return false
+	}
 	var result huma.ValidateResult
 	huma.Validate(registry, schema, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, value, &result)
 	return len(result.Errors) == 0
+}
+
+func exactRoleContractKeys(registry huma.Registry, value any, schema *huma.Schema) bool {
+	if schema.Ref != "" {
+		return exactRoleContractKeys(registry, value, registry.SchemaFromRef(schema.Ref))
+	}
+	if len(schema.OneOf) != 0 {
+		for _, shape := range schema.OneOf {
+			if exactRoleContractKeys(registry, value, shape) {
+				return true
+			}
+		}
+		return false
+	}
+	switch value := value.(type) {
+	case map[string]any:
+		return exactRoleObjectKeys(registry, value, schema)
+	case []any:
+		for _, item := range value {
+			if schema.Items == nil || !exactRoleContractKeys(registry, item, schema.Items) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func exactRoleObjectKeys(registry huma.Registry, value map[string]any, schema *huma.Schema) bool {
+	for key, child := range value {
+		property := schema.Properties[key]
+		if property == nil || !exactRoleContractKeys(registry, child, property) {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeUniqueJSON(raw []byte) (any, bool) {

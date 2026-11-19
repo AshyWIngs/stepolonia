@@ -254,12 +254,12 @@ func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, inp
 // EditRole atomically replaces explicit policy without state or membership changes.
 func (s *AuthService) EditRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64, input RoleInput) (Role, error) {
 	var out Role
-	err := s.authorizedCommand(ctx, req, []string{opRolesEdit}, "roles.edited", func(ctx context.Context, tx *sql.Tx, x Session) error {
+	err := s.authorizedCommand(ctx, req, []string{opRolesEdit}, roleEditedEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
 		if err != nil {
 			return err
 		}
-		out, err = s.applyRoleEdit(ctx, tx, x, plan, normalizeRoleInput(input))
+		out, err = s.applyRoleEdit(ctx, tx, x, plan, normalizeRoleInput(input), replaceRoleGrants)
 		return err
 	})
 	if err != nil {
@@ -310,7 +310,9 @@ func prepareRoleMutation(ctx context.Context, tx *sql.Tx, x Session, id string, 
 	return plan, nil
 }
 
-func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput) (Role, error) {
+type roleGrantWriter func(context.Context, *sql.Tx, string, []RoleGrant) error
+
+func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput, writeGrants roleGrantWriter) (Role, error) {
 	if plan.role.bound {
 		return Role{}, ErrPermissionDenied
 	}
@@ -326,7 +328,7 @@ func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, 
 	if err != nil {
 		return Role{}, roleWriteError(err)
 	}
-	if err = replaceRoleGrants(ctx, tx, out.ID, input.Grants); err != nil {
+	if err = writeGrants(ctx, tx, out.ID, input.Grants); err != nil {
 		return Role{}, err
 	}
 	after, err := loadAccess(ctx, tx)
@@ -343,7 +345,7 @@ func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, 
 	if err != nil {
 		return Role{}, err
 	}
-	return out, securityAudit(ctx, tx, "roles.edited", x.user, out.ID, "")
+	return out, securityAudit(ctx, tx, roleEditedEvent, x.user, out.ID, "")
 }
 
 func ownAccessDoesNotGrow(before, after userAccess) bool {

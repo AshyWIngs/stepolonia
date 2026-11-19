@@ -98,7 +98,8 @@ onMounted(load)
     <button v-else-if="!saved && error && error !== 'admin.access_denied'" type="button" class="admin-secondary" :disabled="busy" @click="load">
       {{ translate('admin.retry') }}
     </button>
-    <form v-if="saved" aria-describedby="session-policy-help" @submit.prevent="save">
+    <form v-if="saved" class="admin-domain" aria-describedby="session-policy-help" @submit.prevent="save">
+      <AdminDomainHeader :save-label="translate('admin.session_policy_save')" :disabled="!dirty || busy || conflicted" />
       <div class="session-policy-fields">
         <div>
           <label for="session-policy-idle-minutes">{{ translate('admin.session_policy_idle_minutes') }}</label>
@@ -109,7 +110,6 @@ onMounted(load)
           <input id="session-policy-absolute-hours" v-model.number="absoluteHours" type="number" :min="absoluteMin" :max="absoluteMax" step="1" required :readonly="busy">
         </div>
       </div>
-      <button type="submit" :disabled="!dirty || busy || conflicted">{{ translate('admin.session_policy_save') }}</button>
     </form>
   </section>
 </template>

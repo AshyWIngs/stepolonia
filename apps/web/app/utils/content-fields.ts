@@ -46,7 +46,10 @@ export function formatContentValue(field: Exclude<PublicField, { kind: 'boolean'
 }
 
 export function relationPath(path: string): string {
-  const match = /^\/[a-z]{2,8}(?:-[a-z0-9]{1,8})*\/([a-z0-9-]+)\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.exec(path)
-  if (!match?.[1] || !isContentNamespace(match[1])) throw publicError(503)
+  const [prefix, locale, namespace, slug, ...extra] = path.split('/')
+  if (prefix !== '' || !locale || !namespace || !slug || extra.length || !isContentNamespace(namespace)) throw publicError(503)
+  const [language, ...subtags] = locale.split('-')
+  if (!language || !/^[a-z]{2,8}$/u.test(language) || !subtags.every(part => /^[a-z0-9]{1,8}$/u.test(part))
+    || !slug.split('-').every(part => /^[a-z0-9]+$/u.test(part))) throw publicError(503)
   return path
 }

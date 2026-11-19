@@ -113,7 +113,7 @@ var draftRequestContract = draftRequestSchema()
 
 func draftRequestSchema() *huma.Schema {
 	key := stringSchema("Stable field key from the item's pinned collection schema.")
-	key.Pattern = `^[a-z][a-z0-9_]{0,63}$`
+	key.Pattern = contentKeyPattern
 	unset := &huma.Schema{Type: huma.TypeArray, Items: key, UniqueItems: true, Description: "Field keys removed explicitly. Omitted changes preserve existing values."}
 	kind := stringSchema("Scalar kind in the pinned schema. The value uses the codec for that kind.")
 	kind.Enum = stringValues([]string{"string", "text", "markdown", "integer", "decimal", "datetime", "enum", "boolean"})

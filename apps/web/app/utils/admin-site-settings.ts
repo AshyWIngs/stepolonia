@@ -1,7 +1,11 @@
 import type { components } from '@stepolonia/sdk'
 import type { SlugRule } from '~/utils/slug-suggestion'
+import { retryAfterSeconds } from '~/utils/admin-request'
 
 export type PortalFields = components['schemas']['Settings']
+export type PortalDetails = Pick<PortalFields, 'title' | 'tagline' | 'description' | 'notice'>
+export type PortalLocaleDefaults = Pick<PortalFields, 'default_language' | 'fallback_language'>
+export type SlugRuleKey = Pick<SlugRule, 'language_code' | 'character'>
 export type PortalLanguage = components['schemas']['Language']
 
 export const portalSettingsPages = {
@@ -23,6 +27,12 @@ export interface EditablePortal {
   message_keys: string[]
   slug_rules: SlugRule[]
   language_flags?: Record<string, string>
+  appearance_version: string
+  details_version: string
+  locale_defaults_version: string
+  slug_rules_version: string
+  catalog_versions: Record<string, string>
+  language_flag_versions: Record<string, string>
 }
 
 interface PortalSettingsInput {
@@ -34,7 +44,7 @@ interface PortalSettingsInput {
 }
 
 export class AdminSettingsError extends Error {
-  constructor(readonly status: number, readonly code?: string) {
+  constructor(readonly status: number, readonly code?: string, readonly retryAfter?: number) {
     super('Administration settings request failed')
   }
 }
@@ -70,11 +80,18 @@ function isEditablePortal(value: unknown): value is EditablePortal {
   if (!hasVersion(value) || typeof value.has_draft !== 'boolean') return false
   if (!isPortalFields(value.settings) || !isRecord(value.catalogs)) return false
   if (value.language_flags !== undefined && !isStringRecord(value.language_flags)) return false
+  if (!validScopeVersions(value)) return false
   const catalogues = Object.values(value.catalogs)
   return Array.isArray(value.slug_rules) && value.slug_rules.every(isSlugRule) &&
     Array.isArray(value.languages) && value.languages.every(isPortalLanguage) &&
     Array.isArray(value.message_keys) && value.message_keys.every(key => typeof key === 'string') &&
     catalogues.every(isStringRecord)
+}
+
+function validScopeVersions(value: Record<string, unknown>) {
+  return typeof value.appearance_version === 'string' && typeof value.details_version === 'string' &&
+    typeof value.locale_defaults_version === 'string' && typeof value.slug_rules_version === 'string' &&
+    isStringRecord(value.language_flag_versions) && isStringRecord(value.catalog_versions)
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
@@ -102,7 +119,7 @@ async function readResponse(result: Promise<Response>): Promise<unknown> {
   const json: unknown = await response.json().catch(() => null)
   if (response.ok) return json
   const code = isRecord(json) && typeof json.code === 'string' ? json.code : undefined
-  throw new AdminSettingsError(response.status, code)
+  throw new AdminSettingsError(response.status, code, retryAfterSeconds(response.headers))
 }
 
 export async function getPortalSettings(): Promise<EditablePortal> {
@@ -121,4 +138,35 @@ export async function savePortalSettings(csrf: string, input: PortalSettingsInpu
   const flags = json.language_flags
   if (flags !== undefined && !isStringRecord(flags)) throw new AdminSettingsError(503)
   return { version: json.version, publicationID: json.publication_id, languageFlags: flags }
+}
+
+export type ScopedSettingsSection = 'details' | 'appearance' | 'language-flags' | 'locale-defaults' | 'slug-rules' | 'catalogs'
+
+export type ScopedSettingsInput = { expected_version: string } & (
+  { details: PortalDetails } | { accent: string } | { language_code: string, svg: string } |
+  { defaults: PortalLocaleDefaults } | { upsert?: SlugRule[], remove?: SlugRuleKey[] } |
+  { language_code: string, messages?: Record<string, string>, remove_catalog?: true }
+)
+
+export async function saveScopedPortalSetting(
+  scope: ScopedSettingsSection,
+  csrf: string,
+  input: ScopedSettingsInput,
+) {
+  const json = await readResponse(fetch(`/api/v1/admin/settings/${scope}`, {
+    ...requestOptions(),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(input),
+  }))
+  if (!hasVersion(json) || typeof json.previous_version !== 'string' || typeof json.publication_id !== 'string' ||
+      typeof json.scope_version !== 'string' || !validScopedValue(scope, json.value)) throw new AdminSettingsError(503)
+  return {
+    version: json.version, previousVersion: json.previous_version, publicationID: json.publication_id,
+    scopeVersion: json.scope_version, value: typeof json.value === 'string' ? json.value : '',
+  }
+}
+
+function validScopedValue(scope: ScopedSettingsSection, value: unknown) {
+  return scope !== 'appearance' && scope !== 'language-flags' || typeof value === 'string'
 }

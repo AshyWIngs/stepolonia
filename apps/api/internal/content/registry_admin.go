@@ -208,30 +208,41 @@ type CollectionRevision struct {
 }
 
 func (e *DraftEditor) ReviseCollection(ctx context.Context, req identity.AuthRequest, input CollectionRevision) (RegistryWriteResult, error) {
+	return e.reviseManagedCollection(ctx, req, input.TypeKey, input.Initialize, func(current *TypeSchema) ([]Definition, error) {
+		if current.Version != input.ExpectedVersion {
+			return nil, problem(Conflict, versionConflictCode)
+		}
+		if input.IconSVG != nil {
+			icon, err := normalizeCollectionIcon(*input.IconSVG)
+			if err != nil {
+				return nil, err
+			}
+			current.IconSVG = icon
+		}
+		if err := rejectRegistryFieldIDs(input.Fields); err != nil {
+			return nil, err
+		}
+		return input.Fields, nil
+	})
+}
+
+func (e *DraftEditor) reviseManagedCollection(ctx context.Context, req identity.AuthRequest, key string, initialize bool, amend func(*TypeSchema) ([]Definition, error)) (RegistryWriteResult, error) {
 	if e == nil || e.auth == nil {
 		return RegistryWriteResult{}, identity.ErrSecurityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftCandidateTimeout)
 	defer cancel()
 	var out TypeSchema
-	access, err := e.auth.WithCollectionRevision(ctx, req, input.Initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
-		current, err := loadManagedCollection(ctx, tx, input.TypeKey)
+	access, err := e.auth.WithCollectionRevision(ctx, req, initialize, func(ctx context.Context, tx *sql.Tx) (identity.CollectionMutation, error) {
+		current, err := loadManagedCollection(ctx, tx, key)
 		if err != nil {
 			return identity.CollectionMutation{}, auditedCandidateError(err)
 		}
-		if current.Version != input.ExpectedVersion {
-			return identity.CollectionMutation{}, auditedCandidateError(problem(Conflict, versionConflictCode))
-		}
-		if input.IconSVG != nil {
-			current.IconSVG, err = normalizeCollectionIcon(*input.IconSVG)
-			if err != nil {
-				return identity.CollectionMutation{}, auditedCandidateError(err)
-			}
-		}
-		if err := rejectRegistryFieldIDs(input.Fields); err != nil {
+		fields, err := amend(&current)
+		if err != nil {
 			return identity.CollectionMutation{}, auditedCandidateError(err)
 		}
-		out, err = reviseType(ctx, tx, current, TypeInput{Key: current.Key, RouteNamespace: current.RouteNamespace, Fields: input.Fields})
+		out, err = reviseType(ctx, tx, current, TypeInput{Key: current.Key, RouteNamespace: current.RouteNamespace, Fields: fields})
 		if err != nil {
 			return identity.CollectionMutation{}, auditedCandidateError(registryWriteError(err))
 		}

@@ -32,39 +32,49 @@ func siteError(t *testing.T, err error, status int) {
 		t.Fatalf("expected site status %d, got %v", status, err)
 	}
 }
-func registeredFixtureKeys(t *testing.T, ctx context.Context, owner *sql.DB) []string {
+func registeredFixtureSignatures(t *testing.T, ctx context.Context, owner *sql.DB) map[string][]string {
 	t.Helper()
-	rows, err := owner.QueryContext(ctx, "SELECT message_key FROM public.ui_message_keys ORDER BY message_key")
+	rows, err := owner.QueryContext(ctx, "SELECT message_key,to_json(placeholders) FROM public.ui_message_keys")
 	requireNoError(t, err)
 	defer func() { _ = rows.Close() }()
-	var keys []string
+	signatures := make(map[string][]string)
 	for rows.Next() {
 		var key string
-		requireNoError(t, rows.Scan(&key))
-		keys = append(keys, key)
+		var encoded []byte
+		var placeholders []string
+		requireNoError(t, rows.Scan(&key, &encoded))
+		requireNoError(t, json.Unmarshal(encoded, &placeholders))
+		signatures[key] = placeholders
 	}
 	requireNoError(t, rows.Err())
-	return keys
+	return signatures
 }
 
-func siteFixture(keys []string) siteconfig.Draft {
-	catalogs := make(map[string]map[string]string, 2)
-	for _, code := range []string{"pl", "en"} {
-		messages := make(map[string]string, len(keys))
-		for _, key := range keys {
-			messages[key] = "Fixture " + code + " " + key
-		}
-		catalogs[code] = messages
-	}
+func siteFixture(signatures map[string][]string) siteconfig.Draft {
 	return siteconfig.Draft{
 		Settings: siteconfig.Settings{Title: "Fixture title", Tagline: "Fixture tagline", Description: "Fixture description", Notice: "Fixture notice",
 			Accent: "#123aBC", DefaultLanguage: "pl", FallbackLanguage: "en"},
-		Catalogs: catalogs,
+		Catalogs: map[string]map[string]string{
+			"pl": fixtureMessages("pl", signatures),
+			"en": fixtureMessages("en", signatures),
+		},
 	}
 }
 
+func fixtureMessages(code string, signatures map[string][]string) map[string]string {
+	messages := make(map[string]string, len(signatures))
+	for key, placeholders := range signatures {
+		message := "Fixture " + code + " " + key
+		for _, placeholder := range placeholders {
+			message += " {" + placeholder + "}"
+		}
+		messages[key] = message
+	}
+	return messages
+}
+
 type siteTestFixture struct {
-	keys        []string
+	signatures  map[string][]string
 	owner       *sql.DB
 	cfg         *pgx.ConnConfig
 	app         applicationFixture
@@ -77,7 +87,8 @@ type siteTestFixture struct {
 }
 
 func testSiteConfiguration(t *testing.T, ctx context.Context, owner *sql.DB, cfg *pgx.ConnConfig) {
-	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=true WHERE code IN ('pl','en')")
+	// Russian is enabled for content, while only English and Polish have complete interface catalogs.
+	_, err := owner.ExecContext(ctx, "UPDATE public.languages SET is_enabled=code IN ('pl','en','ru') WHERE code IN ('pl','en','ru','kk')")
 	requireNoError(t, err)
 	f := newApplicationFixture(t, owner, cfg)
 	editorDB := applicationDatabase(t, cfg, publisherTestRole, "site-editor")
@@ -86,12 +97,12 @@ func testSiteConfiguration(t *testing.T, ctx context.Context, owner *sql.DB, cfg
 	server := httptest.NewServer(platform.Handler(httpTestDatabase{f.runtime}, f.reader, slog.New(slog.NewTextHandler(io.Discard, nil)), reader))
 	defer server.Close()
 	base := server.URL + "/api/v1/site"
-	fixture := &siteTestFixture{keys: registeredFixtureKeys(t, ctx, owner), owner: owner, cfg: cfg, app: f, editor: editor, reader: reader, server: server, base: base}
+	fixture := &siteTestFixture{signatures: registeredFixtureSignatures(t, ctx, owner), owner: owner, cfg: cfg, app: f, editor: editor, reader: reader, server: server, base: base}
 	runSiteTests(t, ctx, fixture)
 }
 func runSiteTests(t *testing.T, ctx context.Context, f *siteTestFixture) {
 	t.Run("site missing publication strict HTTP and private access", func(t *testing.T) { f.testAccess(t, ctx) })
-	version, err := f.editor.SaveDraft(ctx, 1, siteFixture(f.keys))
+	version, err := f.editor.SaveDraft(ctx, 1, siteFixture(f.signatures))
 	requireNoError(t, err)
 	publicRequest(t, ctx, f.server.Client(), f.base, 503)
 	publication, version, err := f.editor.Publish(ctx, version)
@@ -113,7 +124,7 @@ func (f *siteTestFixture) testAccess(t *testing.T, ctx context.Context) {
 	for _, q := range []string{"?lang=", "?lang=pl&lang=en", "?x=y", "?version=bad", "?version=00000000x0000x0000x0000x000000000000", "?lang=bad_locale", "?version=", "?lang=%ZZ"} {
 		publicRequest(t, ctx, f.server.Client(), f.base+q, 400)
 	}
-	_, err := siteconfig.NewService(f.app.runtime).SaveDraft(ctx, 1, siteFixture(f.keys))
+	_, err := siteconfig.NewService(f.app.runtime).SaveDraft(ctx, 1, siteFixture(f.signatures))
 	siteError(t, err, 403)
 	_, err = siteconfig.NewReader(f.owner).Read(ctx, "", "")
 	siteError(t, err, 503)
@@ -142,7 +153,7 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 		}
 	}
 	requireNoError(t, ImportLanguages(ctx, f.owner, []Language{{Code: "fr", Name: "French", NativeName: "Français", Direction: "ltr"}}))
-	draft := siteFixture(f.keys)
+	draft := siteFixture(f.signatures)
 	draft.SlugRules = []siteconfig.SlugRule{
 		{LanguageCode: "RU", Character: "Ё", Replacement: ""},
 		{LanguageCode: "pl", Character: "A\u0328", Replacement: "a-1"},
@@ -166,7 +177,7 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	testInvalidSlugRules(t, ctx, f, version)
 	assertEditableSlugRules(t, ctx, f.owner, want)
 
-	version, err = f.editor.SaveDraft(ctx, version, siteFixture(f.keys))
+	version, err = f.editor.SaveDraft(ctx, version, siteFixture(f.signatures))
 	requireNoError(t, err)
 	publication, version, err := f.editor.Publish(ctx, version)
 	requireNoError(t, err)
@@ -182,7 +193,7 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	draft.SlugRules = []siteconfig.SlugRule{}
 	version, err = f.editor.SaveDraft(ctx, version, draft)
 	requireNoError(t, err)
-	version, err = f.editor.SaveDraft(ctx, version, siteFixture(f.keys))
+	version, err = f.editor.SaveDraft(ctx, version, siteFixture(f.signatures))
 	requireNoError(t, err)
 	assertEditableSlugRules(t, ctx, f.owner, []siteconfig.SlugRule{})
 	f.publication, f.version, err = f.editor.Publish(ctx, version)
@@ -222,7 +233,7 @@ SELECT draft_id,$1,$2,$3 FROM public.site_state WHERE singleton`
 		{{LanguageCode: "de", Character: "é", Replacement: "e"}},
 		make([]siteconfig.SlugRule, 513),
 	} {
-		draft := siteFixture(f.keys)
+		draft := siteFixture(f.signatures)
 		draft.SlugRules = rules
 		_, err := f.editor.SaveDraft(ctx, version, draft)
 		siteError(t, err, 400)
@@ -234,7 +245,7 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	body, _ := publicRequest(t, ctx, f.server.Client(), f.base, 200)
 	var out siteconfig.Publication
 	requireNoError(t, json.Unmarshal(body, &out))
-	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || !maps.Equal(out.Messages, siteFixture(f.keys).Catalogs["en"]) || out.Settings.Accent != "#123aBC" {
+	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || !maps.Equal(out.Messages, siteFixture(f.signatures).Catalogs["en"]) || out.Settings.Accent != "#123aBC" {
 		t.Fatalf("unexpected site contract: %s", body)
 	}
 	out, err = f.reader.Read(ctx, "PL", f.publication)
@@ -263,10 +274,10 @@ func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable
 	if unavailable {
 		command.Args = append(command.Args, "--unavailable")
 	}
-	keys, err := json.Marshal(f.keys)
+	signatures, err := json.Marshal(f.signatures)
 	requireNoError(t, err)
 	command.Env = append(os.Environ(), "STAGE22_API_URL="+f.server.URL, "STAGE22_VERSION="+f.publication,
-		"STAGE22_MESSAGE_KEYS="+string(keys))
+		"STAGE22_MESSAGE_SIGNATURES="+string(signatures))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("site SDK failed: %v\n%s", err, output)
@@ -277,13 +288,13 @@ func (f *siteTestFixture) testSDK(t *testing.T, ctx context.Context, unavailable
 func (f *siteTestFixture) testInvalid(t *testing.T, ctx context.Context) {
 	var err error
 	for _, mutate := range []func(*siteconfig.Draft){func(d *siteconfig.Draft) { d.Settings.Title = strings.Repeat(" ", 201) + "x" }, func(d *siteconfig.Draft) { d.Settings.Title = "\u00a0\u2003" }, func(d *siteconfig.Draft) { d.Settings.Accent = "red; color: blue" }, func(d *siteconfig.Draft) { d.Catalogs["en"][siteArticlesKey] = strings.Repeat(" ", 4001) + "x" }, func(d *siteconfig.Draft) { d.Catalogs["en"][siteArticlesKey] = "\u00a0\u2003" }, func(d *siteconfig.Draft) { d.Settings.DefaultLanguage = "xx-unknown" }, func(d *siteconfig.Draft) { d.Catalogs["en"]["unknown"] = "text" }} {
-		d := siteFixture(f.keys)
+		d := siteFixture(f.signatures)
 		mutate(&d)
 		_, err := f.editor.SaveDraft(ctx, f.version, d)
 		siteError(t, err, 400)
 	}
 	for _, mutate := range []func(*siteconfig.Draft){func(d *siteconfig.Draft) { delete(d.Catalogs["en"], siteArticlesKey) }, func(d *siteconfig.Draft) { d.Catalogs["en"][siteArticlesKey] = "Wrong {name}" }, func(d *siteconfig.Draft) { d.Catalogs["en"][siteArticlesKey] = "Wrong {Name}" }, func(d *siteconfig.Draft) { delete(d.Catalogs, "en") }} {
-		d := siteFixture(f.keys)
+		d := siteFixture(f.signatures)
 		mutate(&d)
 		f.version, err = f.editor.SaveDraft(ctx, f.version, d)
 		requireNoError(t, err)
@@ -304,7 +315,7 @@ func (f *siteTestFixture) testPlaceholders(t *testing.T, ctx context.Context) {
 		_, e := f.owner.ExecContext(ctx, "UPDATE public.ui_message_keys SET placeholders='{}' WHERE message_key='articles'")
 		requireNoError(t, e)
 	}()
-	d := siteFixture(f.keys)
+	d := siteFixture(f.signatures)
 	// Quotes and SQL comment markers in editorial text remain bound data.
 	sqlLiteral := "x'); DELETE FROM public.site_state; --"
 	d.Settings.Notice = sqlLiteral
@@ -335,7 +346,7 @@ func (f *siteTestFixture) testConcurrent(t *testing.T, ctx context.Context) {
 	start := make(chan struct{})
 	results := make(chan error, 2)
 	for _, service := range []*siteconfig.Service{f.editor, second} {
-		go func() { <-start; _, e := service.SaveDraft(ctx, f.version, siteFixture(f.keys)); results <- e }()
+		go func() { <-start; _, e := service.SaveDraft(ctx, f.version, siteFixture(f.signatures)); results <- e }()
 	}
 	close(start)
 	successes, conflicts := 0, 0

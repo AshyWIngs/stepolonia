@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useSvgImagePreview } from '~/composables/useSvgImagePreview'
 import type { PortalLanguage } from '~/utils/admin-site-settings'
 
 const props = defineProps<{
@@ -10,7 +11,7 @@ const props = defineProps<{
   invalid?: boolean
 }>()
 const updates = defineModel<Record<string, string>>({ required: true })
-const selected = ref('')
+const selected = defineModel<string>('language', { required: true })
 const sourceInput = ref<HTMLTextAreaElement>()
 
 watch(() => props.languages, (languages) => {
@@ -28,6 +29,7 @@ const source = computed({
   },
 })
 const pending = computed(() => Object.hasOwn(updates.value, selected.value))
+const { svg: preview, unavailable: previewUnavailable } = useSvgImagePreview(source, saved)
 
 async function focusInvalid() {
   if (!pending.value) selected.value = Object.keys(updates.value)[0] ?? selected.value
@@ -39,7 +41,6 @@ defineExpose({ focusInvalid })
 </script>
 
 <template>
-  <legend>{{ translate('admin.language_flags') }}</legend>
   <div class="flag-settings">
     <div class="flag-fields">
       <label for="portal-flag-language">{{ translate('admin.language') }}</label>
@@ -51,14 +52,17 @@ defineExpose({ focusInvalid })
     </div>
     <div v-if="selected" class="flag-fields">
       <p class="flag-preview" data-testid="language-flag-preview">
-        <LanguageFlag :svg="saved" />
-        {{ translate('admin.language_flag_saved') }}
+        <LanguageFlag v-if="!previewUnavailable" :svg="preview" />
+        {{ translate(previewUnavailable ? 'admin.svg_preview_unavailable' : 'admin.registry_icon_preview') }}
       </p>
       <label for="portal-language-flag-svg">{{ translate('admin.language_flag_svg') }}</label>
-      <p id="portal-flag-help">{{ translate('admin.language_flag_help') }}</p>
+      <p id="portal-flag-help">
+        {{ translate('admin.language_flag_help') }}
+        <br><code>viewBox="0 0 30 20"</code> · 24 × 16 px
+      </p>
       <textarea
         id="portal-language-flag-svg" ref="sourceInput" v-model="source" dir="ltr" spellcheck="false"
-        rows="4" maxlength="4096" aria-describedby="portal-flag-help"
+        rows="4" maxlength="4096" :aria-describedby="invalid && pending ? 'portal-flag-help scoped-settings-error' : 'portal-flag-help'"
         :aria-invalid="invalid && pending || undefined"
       />
       <button v-if="source.trim()" type="button" class="flag-reset" @click="source = ''">

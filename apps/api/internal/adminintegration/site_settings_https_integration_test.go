@@ -22,6 +22,18 @@ const settingsEndpoint = "/api/v1/admin/settings"
 const applySettingsEndpoint = settingsEndpoint + "/publication"
 const settingsSignInMessage = "admin.sign_in"
 const settingsInitialPolishSignIn = "Zaloguj się"
+const scopedTestAccent = "#774411"
+
+type appearanceCommand struct {
+	ExpectedVersion string `json:"expected_version"`
+	Accent          string `json:"accent"`
+}
+
+type flagCommand struct {
+	ExpectedVersion string `json:"expected_version"`
+	LanguageCode    string `json:"language_code"`
+	SVG             string `json:"svg"`
+}
 
 type settingsHTTPFixture struct {
 	server       *httptest.Server
@@ -60,12 +72,18 @@ func (f settingsHTTPFixture) request(t *testing.T, actor identity.AuthRequest, m
 }
 
 type observedEditableSettings struct {
-	Version     string                       `json:"version"`
-	HasDraft    bool                         `json:"has_draft"`
-	PublishedID string                       `json:"published_id"`
-	Settings    siteconfig.Settings          `json:"settings"`
-	Catalogs    map[string]map[string]string `json:"catalogs"`
-	SlugRules   []siteconfig.SlugRule        `json:"slug_rules"`
+	Version               string                       `json:"version"`
+	HasDraft              bool                         `json:"has_draft"`
+	PublishedID           string                       `json:"published_id"`
+	Settings              siteconfig.Settings          `json:"settings"`
+	Catalogs              map[string]map[string]string `json:"catalogs"`
+	SlugRules             []siteconfig.SlugRule        `json:"slug_rules"`
+	AppearanceVersion     string                       `json:"appearance_version"`
+	DetailsVersion        string                       `json:"details_version"`
+	LocaleDefaultsVersion string                       `json:"locale_defaults_version"`
+	SlugRulesVersion      string                       `json:"slug_rules_version"`
+	CatalogVersions       map[string]string            `json:"catalog_versions"`
+	LanguageFlagVersions  map[string]string            `json:"language_flag_versions"`
 }
 
 func (f settingsHTTPFixture) editable(t *testing.T) observedEditableSettings {
@@ -103,6 +121,128 @@ func settingsSavePayload(t *testing.T, data observedEditableSettings) string {
 	return string(body)
 }
 
+func TestAdminPortalRetiredCatalogKeyHTTPSIntegration(t *testing.T) {
+	f := newSettingsHTTPFixture(t)
+	ctx := context.Background()
+	const retired = "admin.retired_notice"
+	_, err := f.owner.ExecContext(ctx, `INSERT INTO public.ui_message_keys(message_key,placeholders) VALUES($1,'{}')`, retired)
+	requireNoError(t, err)
+	editable := f.editable(t)
+	for _, catalog := range editable.Catalogs {
+		catalog[retired] = "Community notice"
+	}
+	f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSavePayload(t, editable), http.StatusOK)
+	_, err = f.owner.ExecContext(ctx, `DELETE FROM public.ui_message_keys WHERE message_key=$1`, retired)
+	requireNoError(t, err)
+	if f.public(t, "en").Messages[retired] != "Community notice" {
+		t.Fatal("retiring the key changed the current publication")
+	}
+	editable = f.editable(t)
+	for code, catalog := range editable.Catalogs {
+		if _, present := catalog[retired]; present {
+			t.Fatalf("editable catalog for %s contains a retired key", code)
+		}
+	}
+	f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSavePayload(t, editable), http.StatusOK)
+	if _, present := f.public(t, "en").Messages[retired]; present {
+		t.Fatal("the new publication contains a retired key")
+	}
+}
+
+func TestAdminScopedPortalSettingsHTTPSIntegration(t *testing.T) {
+	f := newSettingsHTTPFixture(t)
+	initial := f.public(t, "pl")
+	editable := f.editable(t)
+	flag := `<svg viewBox="0 0 30 20"><rect width="30" height="20" fill="#808080"/></svg>`
+	flagPayload := marshalScopedSettings(t, flagCommand{editable.LanguageFlagVersions["pl"], "pl", flag})
+	appearancePayload := marshalScopedSettings(t, appearanceCommand{editable.AppearanceVersion, scopedTestAccent})
+	details := editable.Settings.Details()
+	details.Title = "Dom spotkań polonijnych"
+	detailsPayload := marshalScopedSettings(t, struct {
+		ExpectedVersion string                   `json:"expected_version"`
+		Details         siteconfig.PortalDetails `json:"details"`
+	}{editable.DetailsVersion, details})
+	const flagEndpoint = settingsEndpoint + "/language-flags"
+	const appearanceEndpoint = settingsEndpoint + "/appearance"
+	f.request(t, f.withoutGrant, http.MethodPost, flagEndpoint, flagPayload, http.StatusForbidden)
+	f.request(t, f.manager, http.MethodPost, flagEndpoint, flagPayload, http.StatusOK)
+	afterFlag := f.public(t, "pl")
+	if afterFlag.Version == initial.Version || afterFlag.LanguageFlags["pl"] == initial.LanguageFlags["pl"] {
+		t.Fatal("flag change was not published")
+	}
+	f.request(t, f.manager, http.MethodPost, appearanceEndpoint, appearancePayload, http.StatusOK)
+	f.request(t, f.manager, http.MethodPost, settingsEndpoint+"/details", detailsPayload, http.StatusOK)
+	result := f.public(t, "pl")
+	if result.Settings.Accent != scopedTestAccent || result.LanguageFlags["pl"] != afterFlag.LanguageFlags["pl"] || result.Settings.Title != details.Title {
+		t.Fatal("publication did not preserve the three independent changes")
+	}
+	for _, version := range []string{afterFlag.Version, result.Version} {
+		var messages int
+		requireNoError(t, f.owner.QueryRow(`SELECT count(*) FROM public.site_revision_messages WHERE revision_id=$1`, version).Scan(&messages))
+		if messages != 0 {
+			t.Fatalf("scoped revision %s copied %d messages", version, messages)
+		}
+	}
+	if result.Messages[settingsSignInMessage] != initial.Messages[settingsSignInMessage] {
+		t.Fatal("scoped publication changed the existing catalog")
+	}
+	beforeConflict := f.public(t, "en")
+	f.request(t, f.manager, http.MethodPost, flagEndpoint, flagPayload, http.StatusConflict)
+	assertPublicSettingsUnchanged(t, f, beforeConflict)
+	assertSettingsSuccessAudit(t, f.owner, 0, 3)
+}
+
+func marshalScopedSettings(t *testing.T, input any) string {
+	t.Helper()
+	body, err := json.Marshal(input)
+	requireNoError(t, err)
+	return string(body)
+}
+
+func TestAdminScopedCatalogHTTPSIntegration(t *testing.T) {
+	f := newSettingsHTTPFixture(t)
+	initial := f.editable(t)
+	const catalogPath = settingsEndpoint + "/catalogs"
+	type command struct {
+		ExpectedVersion string            `json:"expected_version"`
+		LanguageCode    string            `json:"language_code"`
+		Messages        map[string]string `json:"messages"`
+	}
+	polish := command{initial.CatalogVersions["pl"], "pl", map[string]string{settingsSignInMessage: "Wejdź do portalu"}}
+	english := command{initial.CatalogVersions["en"], "en", map[string]string{settingsSignInMessage: "Enter the portal"}}
+	f.request(t, f.manager, http.MethodPost, catalogPath, marshalScopedSettings(t, polish), http.StatusOK)
+	assertOnlyOwnedCatalog(t, f, f.public(t, "pl").Version, "pl")
+	f.request(t, f.manager, http.MethodPost, catalogPath, marshalScopedSettings(t, english), http.StatusOK)
+	published := f.public(t, "en")
+	if published.Messages[settingsSignInMessage] != english.Messages[settingsSignInMessage] ||
+		f.public(t, "pl").Messages[settingsSignInMessage] != polish.Messages[settingsSignInMessage] {
+		t.Fatal("consecutive catalog changes did not preserve independent locales")
+	}
+	assertOnlyOwnedCatalog(t, f, published.Version, "en")
+	f.request(t, f.manager, http.MethodPost, catalogPath, marshalScopedSettings(t, polish), http.StatusConflict)
+
+	_, err := f.owner.Exec(`INSERT INTO public.ui_message_keys(message_key,placeholders) VALUES('admin.new_catalog_message','{}')`)
+	requireNoError(t, err)
+	english.ExpectedVersion = f.editable(t).CatalogVersions["en"]
+	afterDrift := f.request(t, f.manager, http.MethodPost, catalogPath, marshalScopedSettings(t, english), http.StatusConflict)
+	assertPublicationProblem(t, afterDrift, siteconfig.CatalogRegistryChangedCode)
+	assertPublicSettingsUnchanged(t, f, published)
+	assertSettingsSuccessAudit(t, f.owner, 0, 2)
+}
+
+func assertOnlyOwnedCatalog(t *testing.T, f settingsHTTPFixture, revision, language string) {
+	t.Helper()
+	var owned, inherited, target int
+	requireNoError(t, f.owner.QueryRow(`SELECT
+ count(*) FILTER (WHERE catalog_revision_id IS NULL),
+ count(*) FILTER (WHERE catalog_revision_id IS NOT NULL),
+ count(*) FILTER (WHERE language_code=$2 AND catalog_revision_id IS NULL)
+ FROM public.site_revision_languages WHERE revision_id=$1`, revision, language).Scan(&owned, &inherited, &target))
+	if owned != 1 || inherited == 0 || target != 1 {
+		t.Fatalf("publication did not preserve unrelated catalog sources for %q", language)
+	}
+}
+
 func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	f := newSettingsHTTPFixture(t)
 	const title = "Polacy w Kazachstanie"
@@ -128,6 +268,7 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	if pending.Version != "4" || !pending.HasDraft || pending.Settings.Description != pendingDescription {
 		t.Fatalf("missing prior pending changes: %+v", pending)
 	}
+	verifyScopedSettingsPending(t, f, pending)
 	editable = f.editable(t)
 	editable.Settings.Title = title
 	editable.Catalogs["en"][settingsSignInMessage] = signIn
@@ -153,6 +294,22 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 		t.Fatalf("editable settings did not return to the published state: %+v", result)
 	}
 	assertSettingsSuccessAudit(t, f.owner, 0, 1)
+}
+
+func verifyScopedSettingsPending(t *testing.T, f settingsHTTPFixture, pending observedEditableSettings) {
+	t.Helper()
+	command := marshalScopedSettings(t, appearanceCommand{pending.AppearanceVersion, scopedTestAccent})
+	blocked := f.request(t, f.manager, http.MethodPost, settingsEndpoint+"/appearance", command, http.StatusConflict)
+	var conflict struct {
+		Code string `json:"code"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(blocked), &conflict))
+	if conflict.Code != "site_draft_pending" {
+		t.Fatalf("unexpected scoped conflict code: %q", conflict.Code)
+	}
+	if kept := f.editable(t); kept.Version != pending.Version || kept.Settings.Description != pending.Settings.Description {
+		t.Fatal("the scoped command changed the pending server draft")
+	}
 }
 
 func TestAdminPortalSlugRulesHTTPSIntegration(t *testing.T) {

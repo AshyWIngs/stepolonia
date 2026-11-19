@@ -16,7 +16,7 @@ const authRequestIDHeader = "X-Request-ID"
 
 func TestAuthHTTPDedicatedPoolIntegration(t *testing.T) {
 	f := newAuthHTTPFixture(t)
-	pre, _ := f.request(t, http.MethodGet, "/api/v1/admin/auth/csrf", "", "", 200)
+	pre, _ := f.request(t, http.MethodGet, qaCSRFPath, "", "", 200)
 	credentials, err := json.Marshal(map[string]string{"login": bootstrapTestLogin, "password": bootstrapTestPassphrase})
 	requireNoError(t, err)
 	f.request(t, http.MethodPost, "/api/v1/admin/auth/login", "", string(credentials), 403)

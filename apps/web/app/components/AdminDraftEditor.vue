@@ -526,8 +526,9 @@ onBeforeUnmount(() => { active = false })
         <div v-if="primaryAction || (metadata.actions.unpublish && draft.publication_id)" class="draft-bar">
           <button
             v-if="primaryAction === 'save'" ref="nextAction" type="submit" form="draft-material-form" :disabled="busy || conflict"
+            class="admin-domain-save" :aria-label="translate('admin.save_draft')" :title="translate('admin.save_draft')"
             aria-describedby="draft-publication-next"
-          >{{ translate('admin.save_draft') }}</button>
+          ><AdminIcon name="save" /></button>
           <button
             v-else-if="primaryAction === 'publish'" ref="nextAction" type="button" :disabled="locked"
             :aria-describedby="directPublishLanguage ? 'draft-publication-next draft-publish-language' : 'draft-publication-next'" @click="publish"

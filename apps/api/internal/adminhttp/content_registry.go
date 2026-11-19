@@ -22,6 +22,11 @@ const (
 	registryReviseOperation       = "registryReviseCollection"
 	registryAvailabilityOperation = "registrySetCollectionAvailability"
 	registryAvailabilityPath      = registryCollectionPath + "/availability"
+	registryIconPath              = registryCollectionPath + "/icon"
+	registryIconOperation         = "registrySaveCollectionIcon"
+	registryIconSchema            = "CollectionIconChange"
+	registryFieldChangesPath      = registryCollectionPath + "/fields"
+	registryFieldChangesOperation = "registrySaveCollectionFields"
 	registryCollectionSchema      = "ManagedCollection"
 	registryRenderersSchema       = "CollectionRenderers"
 	collectionExistsCode          = "collection_exists"
@@ -32,6 +37,8 @@ type RegistryEditor interface {
 	ReadCollectionForManagement(context.Context, identity.AuthRequest, string) (content.TypeSchema, error)
 	CreateCollection(context.Context, identity.AuthRequest, content.CollectionCreate) (content.RegistryWriteResult, error)
 	ReviseCollection(context.Context, identity.AuthRequest, content.CollectionRevision) (content.RegistryWriteResult, error)
+	UpdateCollectionIcon(context.Context, identity.AuthRequest, string, string, string) (content.CollectionIconChange, error)
+	ChangeCollectionFields(context.Context, identity.AuthRequest, content.CollectionFieldChanges) (content.RegistryWriteResult, error)
 	SetCollectionAvailability(context.Context, identity.AuthRequest, string, int64, bool) (content.TypeSchema, error)
 }
 
@@ -60,6 +67,16 @@ var registryAvailabilityRoute = route{
 	summary: "Set collection availability for authoring", description: "Requires content_types.manage, a full session, CSRF, fresh MFA and the current collection version. Disabled collections are excluded from the authoring API. Stored content and published routes remain available according to their existing publication state.",
 }
 
+var registryIconRoute = route{
+	kind: fullKind, method: http.MethodPost, operationID: registryIconOperation, response: registryIconSchema,
+	summary: "Save a collection navigation icon", description: "Changes the icon using its current scoped version. Requires content_types.manage, a full session and CSRF.",
+}
+
+var registryFieldChangesRoute = route{
+	kind: fullKind, method: http.MethodPost, operationID: registryFieldChangesOperation, response: registryCollectionSchema,
+	summary: "Save changes to collection fields", description: "Adds optional fields against the current schema number or edits explicit display labels against the affected field versions. Requires a full session, CSRF and content_types.manage. Initial field access is explicit and requires fresh MFA and delegation authority.",
+}
+
 func registryTarget(path, method string) (routeTarget, route, bool) {
 	switch path {
 	case registryRenderersPath:
@@ -71,11 +88,11 @@ func registryTarget(path, method string) (routeTarget, route, bool) {
 	if !ok {
 		return routeTarget{}, route{}, false
 	}
-	if base, found := strings.CutSuffix(key, "/availability"); found && base != "" && !strings.ContainsRune(base, '/') {
-		return routeTarget{path: registryAvailabilityPath, typeKey: base}, registryAvailabilityRoute, true
-	}
-	if key == "" || strings.ContainsRune(key, '/') {
+	if key == "" {
 		return routeTarget{}, route{}, false
+	}
+	if base, action, found := strings.Cut(key, "/"); found {
+		return registryChildTarget(base, action)
 	}
 	target := routeTarget{path: registryCollectionPath, typeKey: key}
 	if method == http.MethodPatch {
@@ -84,9 +101,23 @@ func registryTarget(path, method string) (routeTarget, route, bool) {
 	return target, registryReadRoute, true
 }
 
+func registryChildTarget(key, action string) (routeTarget, route, bool) {
+	if key != "" {
+		switch action {
+		case "availability":
+			return routeTarget{path: registryAvailabilityPath, typeKey: key}, registryAvailabilityRoute, true
+		case "icon":
+			return routeTarget{path: registryIconPath, typeKey: key}, registryIconRoute, true
+		case "fields":
+			return routeTarget{path: registryFieldChangesPath, typeKey: key}, registryFieldChangesRoute, true
+		}
+	}
+	return routeTarget{}, route{}, false
+}
+
 func isRegistryOperation(operation string) bool {
 	switch operation {
-	case registryRenderersOperation, registryReadOperation, registryCreateOperation, registryReviseOperation, registryAvailabilityOperation:
+	case registryRenderersOperation, registryReadOperation, registryCreateOperation, registryReviseOperation, registryAvailabilityOperation, registryIconOperation, registryFieldChangesOperation:
 		return true
 	default:
 		return false
@@ -126,7 +157,8 @@ type registryReviseInput struct {
 }
 
 type managedRegistryField struct {
-	FieldID string `json:"field_id"`
+	FieldID      string `json:"field_id"`
+	LabelVersion string `json:"label_version"`
 	registryField
 }
 
@@ -147,6 +179,7 @@ type registryCollectionResponse struct {
 	Namespace   string                 `json:"route_namespace"`
 	DisplayName string                 `json:"display_name"`
 	IconSVG     string                 `json:"icon_svg"`
+	IconVersion string                 `json:"icon_version"`
 	Enabled     bool                   `json:"enabled"`
 	Version     int64                  `json:"version,string"`
 	SchemaNo    int64                  `json:"schema_no,string"`
@@ -170,10 +203,12 @@ func collectionResponse(schema content.TypeSchema) registryCollectionResponse {
 	definitions := registryFields(schema.Fields)
 	fields := make([]managedRegistryField, 0, len(definitions))
 	for index, field := range definitions {
-		fields = append(fields, managedRegistryField{FieldID: schema.Fields[index].ID, registryField: field})
+		definition := schema.Fields[index]
+		fields = append(fields, managedRegistryField{FieldID: definition.ID, LabelVersion: content.FieldLabelVersion(definition.DisplayLabels), registryField: field})
 	}
 	return registryCollectionResponse{TypeID: schema.TypeID, TypeKey: schema.Key, Namespace: schema.RouteNamespace,
-		DisplayName: schema.DisplayName, IconSVG: schema.IconSVG, Enabled: schema.Enabled, Version: schema.Version, SchemaNo: schema.SchemaNo, Fields: fields}
+		DisplayName: schema.DisplayName, IconSVG: schema.IconSVG, IconVersion: content.CollectionIconVersion(schema.IconSVG),
+		Enabled: schema.Enabled, Version: schema.Version, SchemaNo: schema.SchemaNo, Fields: fields}
 }
 
 func registryFields(fields []content.Definition) []registryField {
@@ -217,6 +252,10 @@ func (h *handler) serveRegistry(w http.ResponseWriter, r *http.Request, rt route
 		problem(w, status, code)
 		return
 	}
+	if rt.operationID == registryIconOperation {
+		serveRegistryIcon(w, r.Context(), req, target.typeKey, raw, service)
+		return
+	}
 	result, err := runRegistryMutation(r.Context(), req, rt.operationID, target.typeKey, raw, service)
 	if err != nil {
 		writeRegistryError(w, err)
@@ -231,6 +270,32 @@ func (h *handler) serveRegistry(w http.ResponseWriter, r *http.Request, rt route
 		return
 	}
 	respond(w, out)
+}
+
+type registryIconInput struct {
+	ExpectedVersion string `json:"expected_version"`
+	IconSVG         string `json:"icon_svg"`
+}
+
+type registryIconResponse struct {
+	PreviousVersion int64  `json:"previous_version,string"`
+	Version         int64  `json:"version,string"`
+	IconSVG         string `json:"icon_svg"`
+	IconVersion     string `json:"icon_version"`
+}
+
+func serveRegistryIcon(w http.ResponseWriter, ctx context.Context, req identity.AuthRequest, key string, raw []byte, service RegistryEditor) {
+	var input registryIconInput
+	if !decodeClosedCommand(raw, registryWriteContracts[registryIconOperation], &input) {
+		writeError(w, identity.ErrValidation)
+		return
+	}
+	changed, err := service.UpdateCollectionIcon(ctx, req, key, input.ExpectedVersion, input.IconSVG)
+	if err != nil {
+		writeRegistryError(w, err)
+		return
+	}
+	respond(w, registryIconResponse{changed.PreviousVersion, changed.Version, changed.IconSVG, content.CollectionIconVersion(changed.IconSVG)})
 }
 
 func registryReceipt(access identity.CollectionAccess) *registryAccessReceipt {
@@ -275,6 +340,9 @@ func (h *handler) serveRegistryRead(w http.ResponseWriter, r *http.Request, targ
 }
 
 func runRegistryMutation(ctx context.Context, req identity.AuthRequest, operation, key string, raw []byte, service RegistryEditor) (content.RegistryWriteResult, error) {
+	if operation == registryFieldChangesOperation {
+		return runRegistryFieldChanges(ctx, req, key, raw, service)
+	}
 	value, ok := decodeUniqueJSON(raw)
 	object, objectOK := value.(map[string]any)
 	if !ok || !objectOK || !utf8.Valid(raw) || !validRegistryInput(object, operation) {

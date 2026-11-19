@@ -79,7 +79,7 @@ const phase = ref<AdminSessionKind | null>(null)
 const pending = ref(true)
 const notice = ref('')
 const restrictedEntry = ref<RestrictedEntryMode | null>(null)
-const accessSection = ref<'users' | 'roles' | 'audit' | 'security'>('users')
+const accessSection = ref<'users' | 'roles' | 'audit' | 'security' | 'rate_limits'>('users')
 const confirmingIdentity = ref(false)
 const identityDialog = ref<HTMLDialogElement>()
 const identityFailure = ref('')
@@ -114,7 +114,7 @@ const collectionNavigationError = ref('')
 const collectionPageError = ref('')
 let collectionNavigationRequest = 0
 const portalPage = ref<PortalSettingsPage>('identity')
-const accessPages = ['users', 'roles', 'audit', 'security'] as const
+const accessPages = ['users', 'roles', 'audit', 'security', 'rate_limits'] as const
 const portalPages = Object.keys(portalSettingsPages) as PortalSettingsPage[]
 const workspaceOpen = computed(() => phase.value === 'full')
 const editingState = ref({ dirty: false, busy: false })
@@ -867,6 +867,10 @@ onBeforeUnmount(() => {
             <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
             <AdminAudit v-else-if="accessSection === 'audit'" :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
             <AdminSessionPolicy
+              v-else-if="accessSection === 'security'" :csrf="csrf" :translate="t"
+              @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
+            />
+            <AdminRatePolicy
               v-else :csrf="csrf" :translate="t"
               @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
             />

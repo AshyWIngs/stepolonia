@@ -2,6 +2,7 @@ package adminhttp
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -9,6 +10,13 @@ import (
 func checkSettingsRequestExample(t *testing.T, op privateOperation, rt route) {
 	t.Helper()
 	body, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+	if rt.method == http.MethodPost {
+		var input scopedSettingsInput
+		if err != nil || !decodeClosedCommand(body, settingsRequestSchema(rt.operationID), &input) {
+			t.Fatalf("settings example rejected: %s: %v", rt.operationID, err)
+		}
+		return
+	}
 	var input settingsInput
 	if err != nil || !decodeSettings(body, settingsRequestSchema(rt.operationID), &input) {
 		t.Fatalf("settings example rejected: %s: %v", rt.operationID, err)

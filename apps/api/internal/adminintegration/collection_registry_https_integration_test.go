@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"stepolonia/apps/api/internal/content"
+	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/platform"
 )
 
@@ -137,7 +138,7 @@ func assertDisabledCollection(t *testing.T, publisher publicationFixture, draftP
 	}) {
 		t.Fatal("disabled collection missing from registry")
 	}
-	if current := publisher.public(t, http.StatusOK); current != published {
+	if publisher.public(t, http.StatusOK) != published {
 		t.Fatal("disabling authoring changed the public snapshot")
 	}
 }
@@ -195,19 +196,13 @@ func TestAdminCollectionIconHTTPSIntegration(t *testing.T) {
 		secondSVG  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="16" height="16"></rect></svg>`
 		invalidSVG = `<svg viewBox="0 0 24 24"><text>Event</text></svg>`
 	)
-	f := newAuthHTTPFixtureWithEditors(t, func(_ authFixtureState, auth http.Handler) http.Handler {
-		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
-	}, true)
-	admin := authFull(t, f.state)
-	actor := authReq(admin)
-	call := func(method, path, payload string, status int) string {
-		t.Helper()
-		return sendDraftRequest(t, f.server, method, actor.Token, draftHTTPRequest{path: path, body: payload, csrf: actor.CSRF, status: status})
-	}
+	f := newCollectionRegistryFixture(t)
+	call := f.requests(t)
+	admin, actor := f.admin, authReq(f.admin)
 	creation := func(svg string) string {
 		return fmt.Sprintf(`{%s,"icon_svg":%q}`, strings.Trim(eventCreateBody, "{}"), svg)
 	}
-	revision := func(version string, icon string) string {
+	revision := func(version, icon string) string {
 		return fmt.Sprintf(`{"expected_version":%q,"fields":[%s]%s}`, version, eventBaseFields, icon)
 	}
 	withIcon := func(svg string) string { return fmt.Sprintf(`,"icon_svg":%q`, svg) }
@@ -247,6 +242,113 @@ func assertCollectionIcon(t *testing.T, body, svg, version string) {
 	if response.IconSVG == nil || *response.IconSVG != svg || response.Version != version || response.SchemaNo != "1" {
 		t.Fatalf("expected collection version %s, schema 1 and icon %q, got %s", version, svg, body)
 	}
+}
+
+func TestAdminScopedCollectionIconHTTPSIntegration(t *testing.T) {
+	const (
+		iconPath = eventCollectionPath + "/icon"
+		icon     = `<svg viewBox="0 0 24 24"><circle r="6"/></svg>`
+		savedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle r="6"></circle></svg>`
+	)
+	f := newCollectionRegistryFixture(t)
+	call := f.requests(t)
+	admin, actor := f.admin, authReq(f.admin)
+	body := call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusCreated)
+	var created struct {
+		IconVersion string `json:"icon_version"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(body), &created))
+	payload := fmt.Sprintf(`{"expected_version":%q,"icon_svg":%q}`, created.IconVersion, icon)
+	sendDraftRequest(t, f.server, http.MethodPost, actor.Token, draftHTTPRequest{iconPath, payload, "", http.StatusForbidden})
+	limited := fixturePublicationAccount(t, f.state, admin, "observer@example.test",
+		fixturePublicationRole(t, f.state.db, "Obserwator"))
+	sendDraftRequest(t, f.server, http.MethodPost, limited.Token, draftHTTPRequest{iconPath, payload, limited.CSRF, http.StatusForbidden})
+	expireSessionStepUp(t, f.state.db, actor.Token)
+	call(http.MethodPatch, eventCollectionPath, `{"expected_version":"1","fields":[`+eventBaseFields+`,`+eventExtraField+`]}`, http.StatusOK)
+	call(http.MethodPost, iconPath, payload, http.StatusOK)
+	var current struct {
+		Icon     string            `json:"icon_svg"`
+		Version  string            `json:"version"`
+		SchemaNo string            `json:"schema_no"`
+		Fields   []json.RawMessage `json:"fields"`
+	}
+	body = call(http.MethodGet, eventCollectionPath, "", http.StatusOK)
+	requireNoError(t, json.Unmarshal([]byte(body), &current))
+	if current.Version != "3" || current.SchemaNo != "2" || current.Icon != savedSVG || len(current.Fields) != 3 {
+		t.Fatal("scoped icon save did not preserve the new schema")
+	}
+	call(http.MethodPost, iconPath, payload, http.StatusConflict)
+	assertCollectionIconIndexes(t, call, savedSVG)
+}
+
+func TestAdminScopedCollectionFieldsHTTPSIntegration(t *testing.T) {
+	const path = eventCollectionPath + "/fields"
+	const titleField = "title"
+	f := newCollectionRegistryFixture(t)
+	call := f.requests(t)
+	created := call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusCreated)
+	titleVersion := fieldLabelToken(t, created, titleField)
+	labels := fmt.Sprintf(`"labels":[{"key":"title","expected_version":%q,"display_labels":{"pl":{"label":"Tytuł wydarzenia"}}}]`, titleVersion)
+	add := `"add":[` + eventExtraField + `]`
+	call(http.MethodPost, path, `{`+add+`,`+labels+`}`, http.StatusBadRequest)
+	call(http.MethodPost, path, `{"initialize_new_field_access":true,`+labels+`}`, http.StatusBadRequest)
+	added := call(http.MethodPost, path, `{"expected_schema_no":"1",`+add+`}`, http.StatusOK)
+	if fieldLabelToken(t, added, titleField) != titleVersion {
+		t.Fatal("adding a field changed the saved label version of an existing field")
+	}
+	changed := call(http.MethodPost, path, `{`+labels+`}`, http.StatusOK)
+	var persisted struct {
+		SchemaNo int64 `json:"schema_no,string"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(changed), &persisted))
+	if fieldLabelToken(t, changed, titleField) == titleVersion || persisted.SchemaNo != 2 {
+		t.Fatal("changing a label did not advance only its label scope")
+	}
+	call(http.MethodPost, path, `{`+labels+`}`, http.StatusConflict)
+	call(http.MethodPost, path, `{"expected_schema_no":"1",`+add+`}`, http.StatusConflict)
+	expireSessionStepUp(t, f.state.db, f.admin.Token)
+	const freshOnly = `{"expected_schema_no":"2","initialize_new_field_access":true,"add":[{"key":"location_note","kind":"string","scope":"localized","visibility":"private","required":false}]}`
+	assertPublicationProblem(t, call(http.MethodPost, path, freshOnly, http.StatusForbidden), stepUpRequiredProblem)
+}
+
+type collectionRegistryFixture struct {
+	authHTTPFixture
+	admin identity.SessionTokens
+}
+
+func newCollectionRegistryFixture(t *testing.T) collectionRegistryFixture {
+	t.Helper()
+	f := newAuthHTTPFixtureWithEditors(t, func(_ authFixtureState, auth http.Handler) http.Handler {
+		return platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
+	}, true)
+	return collectionRegistryFixture{authHTTPFixture: f, admin: authFull(t, f.state)}
+}
+
+func (f collectionRegistryFixture) requests(t *testing.T) func(string, string, string, int) string {
+	t.Helper()
+	actor := authReq(f.admin)
+	return func(method, path, payload string, status int) string {
+		t.Helper()
+		return sendDraftRequest(t, f.server, method, actor.Token, draftHTTPRequest{path: path, body: payload, csrf: actor.CSRF, status: status})
+	}
+}
+
+func fieldLabelToken(t *testing.T, body, key string) string {
+	t.Helper()
+	var collection struct {
+		Fields []struct {
+			Key     string `json:"key"`
+			Version string `json:"label_version"`
+		} `json:"fields"`
+	}
+	requireNoError(t, json.Unmarshal([]byte(body), &collection))
+	for _, field := range collection.Fields {
+		if field.Key == key && len(field.Version) == 64 {
+			return field.Version
+		}
+	}
+	t.Fatalf("missing scoped token for %q", key)
+	return ""
 }
 
 func assertCollectionIconIndexes(t *testing.T, call func(string, string, string, int) string, svg string) {

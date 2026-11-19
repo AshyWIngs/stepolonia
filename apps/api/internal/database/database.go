@@ -4,17 +4,13 @@ package database
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
-	"io/fs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"stepolonia/apps/api/internal/database/migrations"
 )
-
-//go:embed migrations/*.sql schema_contract.json
-var migrations embed.FS
 
 func Open(cfg *pgx.ConnConfig) *sql.DB {
 	db := stdlib.OpenDB(*cfg)
@@ -24,11 +20,7 @@ func Open(cfg *pgx.ConnConfig) *sql.DB {
 }
 
 func Provider(db *sql.DB) (*goose.Provider, error) {
-	files, err := fs.Sub(migrations, "migrations")
-	if err != nil {
-		return nil, err
-	}
-	return goose.NewProvider(goose.DialectPostgres, db, files)
+	return migrations.Provider(db)
 }
 
 // PrepareRoles is explicit cluster bootstrap. Roles deliberately survive down:

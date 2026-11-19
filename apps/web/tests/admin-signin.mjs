@@ -142,15 +142,13 @@ async function reopenMissingText(page, sourceText) {
   await page.getByRole('list', { name: 'Text to edit', exact: true }).getByRole('button', { name: sourceText, exact: true }).click()
 }
 
-async function verifySettingsSave(page, context) {
-  const oldSite = await readPublicSite(context)
-  const newTitle = 'Polacy w Kazachstanie'
-  const newMessage = 'Enter your code to open the community portal.'
+async function verifyPortalTitleSave(page, settings, newTitle) {
   await page.getByRole('button', { name: 'Portal settings', exact: true }).click()
   const portalName = page.getByLabel('Portal name', { exact: true })
-  assert.equal(await portalName.inputValue(), oldSite.settings.title)
+  assert.equal(await portalName.inputValue(), settings.title)
   const save = page.getByRole('button', { name: 'Save changes', exact: true })
-  assert.equal(await save.count(), 0)
+  await verifyScopedSaveButton(save, '#portal-title')
+  assert.equal(await save.isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
   await page.setViewportSize({ width: 320, height: 844 })
   await assertFit(page)
@@ -160,17 +158,61 @@ async function verifySettingsSave(page, context) {
   assert.equal(await portalName.count(), 0)
   await page.getByRole('button', { name: 'Portal details', exact: true }).click()
   assert.equal(await portalName.inputValue(), newTitle)
-  const message = await findSettingsTranslation(page, oldSite.messages['admin.code_help'])
-  await message.fill('   ')
-  assert.equal(await save.count(), 1)
+  await verifyConcurrentDetailsUpdate(page, settings, save)
+}
+
+async function verifyConcurrentDetailsUpdate(page, settings, save) {
+  const routePath = '**/api/v1/admin/settings/details'
+  const description = 'Community news and events'
+  await page.route(routePath, async (route) => {
+    const sent = route.request().postDataJSON()
+    const concurrent = await route.fetch({
+      postData: { ...sent, details: { ...sent.details, title: settings.title, description } },
+    })
+    assert.equal(concurrent.status(), 200)
+    await route.continue()
+  }, { times: 1 })
+  const rejected = waitForContentMutation(page, '/api/v1/admin/settings/details', 'POST', 409)
   await save.click()
+  await rejected
+  const reload = page.getByRole('button', { name: 'Load saved version and keep my edits', exact: true })
+  await reload.and(page.locator(':focus')).waitFor()
+  await reload.click()
+  await reload.waitFor({ state: 'hidden' })
+  assert.equal(await page.getByLabel('Description', { exact: true }).inputValue(), description)
+  const details = waitForContentMutation(page, '/api/v1/admin/settings/details', 'POST', 200)
+  await save.click()
+  const changedDetails = await details
+  assert.deepEqual(Object.keys(changedDetails.request().postDataJSON()), ['expected_version', 'details'])
+  assert.equal(changedDetails.request().postDataJSON().details.description, description)
+  await page.getByTestId('scoped-settings-status').waitFor()
+}
+
+async function verifySettingsSave(page, context) {
+  const oldSite = await readPublicSite(context)
+  const newTitle = 'Polacy w Kazachstanie'
+  const newMessage = 'Enter your code to open the community portal.'
+  await verifyPortalTitleSave(page, oldSite.settings, newTitle)
+  const beforeTranslation = await readPublicSite(context)
+  assert.equal(beforeTranslation.settings.title, newTitle)
+  assert.deepEqual(beforeTranslation.messages, oldSite.messages)
+  const message = await findSettingsTranslation(page, oldSite.messages['admin.code_help'])
+  const saveTexts = page.getByRole('button', { name: 'Save translations', exact: true })
+  await verifyScopedSaveButton(saveTexts, '#portal-message-value')
+  await message.fill('   ')
+  assert.equal(await saveTexts.count(), 1)
+  await saveTexts.click()
   await reopenMissingText(page, oldSite.messages['admin.code_help'])
-  assert.deepEqual(await readPublicSite(context), oldSite)
+  assert.deepEqual(await readPublicSite(context), beforeTranslation)
 
   await message.fill(newMessage)
-  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/settings/publication', 'PUT', () => save.click(), ['Content', 'Sign out'])
-  await page.getByText('Settings saved.', { exact: true }).waitFor()
-  assert.equal(await save.count(), 0)
+  const translation = waitForContentMutation(page, '/api/v1/admin/settings/catalogs', 'POST', 200)
+  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/settings/catalogs', 'POST', () => saveTexts.click(), ['Content', 'Sign out'])
+  const payload = (await translation).request().postDataJSON()
+  assert.equal(payload.language_code, 'en')
+  assert.deepEqual(payload.messages, { 'admin.code_help': newMessage })
+  await page.getByTestId('scoped-settings-status').waitFor()
+  assert.equal(await saveTexts.isDisabled(), true)
   await page.locator('.admin-name').getByText(newTitle, { exact: false }).waitFor()
   const published = await readPublicSite(context)
   assert.notEqual(published.version, oldSite.version)
@@ -188,21 +230,71 @@ async function verifySlugRuleSettings(page, context) {
   assert.deepEqual(Object.fromEntries(polish.map(rule => [rule.character, rule.replacement])),
     { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' })
   await page.getByRole('button', { name: 'Languages and translations', exact: true }).click()
+  await verifyLocalePreferences(page, context, snapshot.settings.default_language)
   const language = page.getByLabel('Rule language', { exact: true })
   const search = page.getByRole('searchbox', { name: 'Search rules', exact: true })
   const replacement = page.getByLabel('Replacement', { exact: true })
-  const save = page.getByRole('button', { name: 'Save changes', exact: true })
+  const save = page.getByRole('button', { name: 'Save address rules', exact: true })
+  await verifyScopedSaveButton(save, '#portal-slug-language')
   await language.selectOption('pl')
   await search.fill('ł')
   assert.equal(await replacement.inputValue(), 'l')
-  assert.equal(await save.count(), 0)
+  assert.equal(await save.isDisabled(), true)
   await replacement.fill('ll')
   const publishedReplacement = async () => (await readPublicSite(context)).slug_rules.find(rule =>
     rule.language_code === 'pl' && rule.character === 'ł')?.replacement
   assert.equal(await publishedReplacement(), 'l')
+  const delta = waitForContentMutation(page, '/api/v1/admin/settings/slug-rules', 'POST', 200)
   await save.click()
-  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  const request = (await delta).request().postDataJSON()
+  assert.deepEqual(Object.keys(request), ['expected_version', 'upsert'])
+  assert.deepEqual(request.upsert, [{ language_code: 'pl', character: 'ł', replacement: 'll' }])
+  const status = page.getByTestId('scoped-settings-status')
+  await status.waitFor()
+  const bounds = await status.boundingBox()
+  assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height)
   assert.equal(await publishedReplacement(), 'll')
+}
+
+async function verifyScopedSaveButton(button, fieldSelector) {
+  await button.waitFor()
+  assert.equal(await button.locator('svg[aria-hidden="true"]').count(), 1)
+  assert.equal((await button.textContent()).trim(), '')
+  const box = await button.boundingBox()
+  assert.ok(box && box.width >= 44 && box.height >= 44)
+  assert.ok(await button.evaluate((element, selector) => Boolean(element.form?.querySelector(selector)), fieldSelector))
+}
+
+async function verifyLocalePreferences(page, context, originalLanguage) {
+  const select = page.locator('#portal-default-language')
+  const save = page.getByRole('button', { name: 'Save language preferences', exact: true })
+  const other = originalLanguage === 'pl' ? 'en' : 'pl'
+  await select.selectOption(other)
+  const path = '/api/v1/admin/settings/locale-defaults'
+  await page.route(`**${path}`, route => route.fulfill({ status: 400, json: { code: 'invalid_locale_defaults' } }), { times: 1 })
+  await save.click()
+  await page.getByRole('alert').filter({ hasText: 'Choose an enabled content language and an available interface translation.' }).waitFor()
+  await select.and(page.locator(':focus')).waitFor()
+  assert.equal(await select.inputValue(), other)
+  await verifySettingsCooldown(page, path, save)
+  const changed = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  assert.deepEqual(Object.keys((await changed).request().postDataJSON()), ['expected_version', 'defaults'])
+  assert.equal((await readPublicSite(context)).settings.default_language, other)
+  await select.selectOption(originalLanguage)
+  const restored = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  await restored
+}
+
+async function verifySettingsCooldown(page, path, save) {
+  await page.route(`**${path}`, route => route.fulfill({
+    status: 429, headers: { 'Retry-After': '2' }, json: { code: 'rate_limited' },
+  }), { times: 1 })
+  await save.click()
+  await page.getByRole('alert').filter({ hasText: 'Too many attempts.' }).waitFor()
+  assert.equal(await save.isDisabled(), true)
+  await save.and(page.locator(':enabled')).waitFor()
 }
 
 async function waitForFlag(control, svg) {
@@ -214,9 +306,75 @@ async function waitForFlag(control, svg) {
   await control.locator(`.language-flag img[src=${JSON.stringify(source)}]`).evaluate(image => image.decode())
 }
 
+async function openAppearance(page) {
+  const sidebar = page.locator('.admin-navigation')
+  await sidebar.getByRole('button', { name: 'Portal settings', exact: true }).click()
+  await sidebar.getByRole('button', { name: 'Appearance', exact: true }).click()
+}
+
+async function changeAppearanceDraft(page) {
+  await openAppearance(page)
+  const accent = page.locator('#portal-accent')
+  const original = await accent.inputValue()
+  const changed = '#774411'
+  await accent.fill(changed)
+  await page.locator('.admin-navigation').getByRole('button', { name: 'Languages and translations', exact: true }).click()
+  return { original, changed }
+}
+
+async function verifyIndependentAppearanceSave(page, context, appearance, flag) {
+  assert.equal((await readPublicSite(context)).settings.accent, appearance.original)
+  await openAppearance(page)
+  const accent = page.locator('#portal-accent')
+  assert.equal(await accent.inputValue(), appearance.changed)
+  const save = page.getByRole('button', { name: 'Save appearance', exact: true })
+  const saved = page.getByTestId('scoped-settings-status')
+  await save.click()
+  await saved.waitFor()
+  const published = await readPublicSite(context)
+  assert.equal(published.settings.accent, appearance.changed)
+  assert.equal(published.language_flags.en, flag)
+  await accent.fill(appearance.original)
+  await save.click()
+  await saved.waitFor()
+  assert.equal((await readPublicSite(context)).settings.accent, appearance.original)
+  await page.locator('.admin-navigation').getByRole('button', { name: 'Languages and translations', exact: true }).click()
+}
+
+async function verifyPublicFlagReset(page, context, preview, trigger, saveFlag, flag) {
+  const publicPage = await context.newPage()
+  try {
+    await publicPage.goto(`${origin}/en/articles`)
+    const publicTrigger = publicPage.getByTestId('language-switcher').locator('summary')
+    await waitForFlag(publicTrigger, flag)
+
+    await page.getByRole('button', { name: 'Use globe', exact: true }).click()
+    await waitForFlag(preview)
+    await waitForFlag(trigger, flag)
+    await saveFlag()
+    assert.equal((await readPublicSite(context)).language_flags.en, undefined)
+    await waitForFlag(trigger)
+    await publicPage.reload()
+    await waitForFlag(publicTrigger)
+  }
+  finally {
+    await publicPage.close()
+  }
+}
+
 async function verifyLanguageFlagSettings(page, context) {
   const source = page.getByRole('textbox', { name: 'Flag SVG', exact: true })
-  const save = page.getByRole('button', { name: 'Save changes', exact: true })
+  const save = page.getByRole('button', { name: 'Save flag', exact: true })
+  const saved = page.getByTestId('scoped-settings-status')
+  const saveFlag = async () => {
+    const response = page.waitForResponse(result =>
+      new URL(result.url()).pathname.endsWith('/settings/language-flags') && result.request().method() === 'POST')
+    await save.click()
+    assert.equal((await response).status(), 200)
+    await saved.waitFor()
+    assert.equal(await saved.textContent(), 'Settings saved.')
+  }
+  assert.match(await page.locator('#portal-flag-help').textContent(), /viewBox="0 0 30 20"\s*·\s*24 × 16 px/u)
   const trigger = page.getByTestId('language-switcher').locator('summary')
   const original = await source.inputValue()
   const invalid = '<svg viewBox="0 0 24 16"><path d="M0 0 L"/></svg>'
@@ -227,33 +385,27 @@ async function verifyLanguageFlagSettings(page, context) {
   assert.ok(await source.evaluate(element => element === document.activeElement))
   await waitForFlag(trigger, original)
 
-  await source.fill('<svg viewBox="0 0 24 16"><rect width="24" height="16" fill="#6a158c"/></svg>')
-  await save.click()
-  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  await source.fill('<svg viewBox="0 0 24 16"><!-- Flag background --><rect width="24" height="16" fill="#6a158c"/></svg>')
+  const preview = page.getByTestId('language-flag-preview')
+  await preview.locator('img[src*="%236a158c"]').waitFor()
+  await waitForFlag(trigger, original)
+  const appearance = await changeAppearanceDraft(page)
+  await preview.locator('img[src*="%236a158c"]').waitFor()
+  await page.locator('#portal-flag-language').selectOption('pl')
+  const published = await readPublicSite(context)
+  await waitForFlag(preview, published.language_flags.pl)
+  await page.locator('#portal-flag-language').selectOption('en')
+  await preview.locator('img[src*="%236a158c"]').waitFor()
+  await saveFlag()
   const { language_flags: flags } = await readPublicSite(context)
   assert.match(flags.en, /#6a158c/u)
+  assert.doesNotMatch(flags.en, /<!--/u)
   await waitForFlag(trigger, flags.en)
   await waitForFlag(page.getByTestId('language-flag-preview'), flags.en)
-  const publicPage = await context.newPage()
-  try {
-    await publicPage.goto(`${origin}/en/articles`)
-    const publicTrigger = publicPage.getByTestId('language-switcher').locator('summary')
-    await waitForFlag(publicTrigger, flags.en)
-
-    await page.getByRole('button', { name: 'Use globe', exact: true }).click()
-    await save.click()
-    await page.getByText('Settings saved.', { exact: true }).waitFor()
-    assert.equal((await readPublicSite(context)).language_flags.en, undefined)
-    await waitForFlag(trigger)
-    await publicPage.reload()
-    await waitForFlag(publicTrigger)
-  }
-  finally {
-    await publicPage.close()
-  }
+  await verifyIndependentAppearanceSave(page, context, appearance, flags.en)
+  await verifyPublicFlagReset(page, context, preview, trigger, saveFlag, flags.en)
   await source.fill(original)
-  await save.click()
-  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  await saveFlag()
 }
 
 async function verifyNestedNavigation(page) {
@@ -461,7 +613,7 @@ async function verifyTypeBuilder(page) {
   await key.fill('subtitle')
   await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
   const save = page.getByRole('button', { name: 'Save collection changes', exact: true })
-  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/content-types/event', 'PATCH', () => save.click(), ['Content', 'Sign out'])
+  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/content-types/event/fields', 'POST', () => save.click(), ['Content', 'Sign out'])
   await page.getByText('Current schema 2', { exact: true }).waitFor()
   await page.getByText('Collection changes saved.', { exact: true }).waitFor()
   await page.getByRole('group', { name: 'subtitle', exact: true }).waitFor()
@@ -498,7 +650,7 @@ async function createNamedCollection(page, name, configure) {
 
 async function verifyCustomCollection(page, context) {
   const name = 'Community notices'
-  const svg = '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>'
+  const svg = '<svg xmlns="http://w3.org" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>'
   const created = await createNamedCollection(page, name, async () => {
     await page.getByLabel('Collection icon (SVG)', { exact: true }).fill(svg)
   })
@@ -506,6 +658,7 @@ async function verifyCustomCollection(page, context) {
   await structureIcon.waitFor()
   const mask = await structureIcon.evaluate(icon => getComputedStyle(icon).maskImage)
   assert.match(mask, /^url\("data:image\/svg\+xml/iu)
+  assert.match(decodeURIComponent(mask), /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/u)
   assert.equal(await page.getByTestId('collection-icon-preview').locator('.admin-icon--custom').count(), 1)
   const available = await page.evaluate(async () => {
     const response = await fetch('/api/v1/admin/content-types?offset=0', { cache: 'no-store' })
@@ -559,27 +712,104 @@ async function verifyCollectionIconReset(page, name, collection, previousMask) {
   await openSection(page, 'Structure')
   await collectionButton(page, 'registry', name).click()
   const input = page.getByLabel('Collection icon (SVG)', { exact: true })
-  const save = page.getByRole('button', { name: 'Save collection changes', exact: true })
-  const path = `/api/v1/admin/content-types/${collection.type_key}`
+  assert.match(await page.locator('#registry-icon-help').textContent(), /viewBox="0 0 24 24"\s*·\s*20 × 20 px/u)
+  const save = page.getByRole('button', { name: 'Save icon', exact: true })
+  await verifyScopedSaveButton(save, '#registry-collection-icon')
+  const path = `/api/v1/admin/content-types/${collection.type_key}/icon`
+  const wrongNamespace = '<svg xmlns="urn:example:svg" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20"/></svg>'
+  await input.fill(wrongNamespace)
+  await save.click()
+  await page.getByRole('alert').filter({ hasText: 'xmlns="http://www.w3.org/2000/svg"' }).waitFor()
+  assert.equal(await input.inputValue(), wrongNamespace)
+  assert.ok(await save.isDisabled())
+
   const unsupported = '<svg viewBox="0 0 24 24"><title>Sample</title><circle cx="12" cy="12" r="8"/></svg>'
   await input.fill(unsupported)
-  const rejected = waitForContentMutation(page, path, 'PATCH', 400)
+  const rejected = waitForContentMutation(page, path, 'POST', 400)
   await save.click()
   assert.equal((await (await rejected).json()).code, 'invalid_collection_icon')
-  await page.getByText('Use a valid SVG with a viewBox, simple shapes, and up to 4 KB of code.', { exact: true }).waitFor()
+  await page.getByRole('alert').filter({ hasText: 'Use a valid SVG with a viewBox, simple shapes, and up to 4 KB of code.' }).waitFor()
   assert.equal(await input.inputValue(), unsupported)
   const icon = collectionButton(page, 'registry', name).locator('.admin-icon--custom')
   assert.equal(await icon.evaluate(element => getComputedStyle(element).maskImage), previousMask)
 
-  await page.getByRole('button', { name: 'Use default icon', exact: true }).click()
-  const reset = waitForContentMutation(page, path, 'PATCH', 200)
-  await save.click()
-  const result = await (await reset).json()
-  assert.equal(result.icon_svg, '')
-  assert.equal(result.schema_no, collection.schema_no)
+  const calendar = '<svg xmlns="http://w3.org" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor"/></svg>'
+  await input.fill(calendar)
+  const preview = page.getByTestId('collection-icon-preview')
+  await preview.locator(`.admin-icon--custom[style*="${encodeURIComponent('<line x1="8"')}"]`).waitFor()
+  await input.fill('<svg')
+  const editedCalendar = calendar.replace('x1="8"', 'x1="12"')
+  await input.fill(editedCalendar)
+  await preview.locator(`.admin-icon--custom[style*="${encodeURIComponent('<line x1="12"')}"]`).waitFor()
+  assert.equal(await icon.evaluate(element => getComputedStyle(element).maskImage), previousMask)
+  assert.equal(await input.inputValue(), editedCalendar)
+
+  await verifyCollectionIconSaveWithPendingField(page, path, save, collection.schema_no)
   await collectionButton(page, 'registry', name).locator('svg.admin-icon').waitFor()
   await openSection(page, 'Content')
   await collectionButton(page, 'content', name).locator('svg.admin-icon').waitFor()
+}
+
+async function verifyParallelIconConflict(page, path, currentLabel) {
+  const svg = page.getByLabel('Collection icon (SVG)', { exact: true })
+  const local = '<svg viewBox="0 0 24 24"><circle r="5"/></svg>'
+  await svg.fill(local)
+  const label = page.getByRole('group', { name: currentLabel, exact: true }).getByRole('textbox', { name: 'Field label', exact: true })
+  await label.fill('Community title')
+  await page.route(`**${path}`, async (route) => {
+    const response = await route.fetch()
+    const body = await response.json()
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        icon_svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle r="7"></circle></svg>',
+        icon_version: 'a'.repeat(64),
+      },
+    })
+  }, { times: 1 })
+  await page.getByRole('button', { name: 'Save collection changes', exact: true }).click()
+  const reload = page.getByRole('button', { name: 'Load saved version and keep my edits', exact: true })
+  await reload.waitFor()
+  assert.equal(await svg.inputValue(), local)
+  assert.equal(await page.getByRole('button', { name: 'Save icon', exact: true }).isDisabled(), true)
+  await reload.click()
+  await reload.waitFor({ state: 'hidden' })
+  assert.equal(await svg.inputValue(), local)
+  await page.getByRole('button', { name: 'Use default icon', exact: true }).click()
+}
+
+async function verifyCollectionIconSaveWithPendingField(page, path, save, schemaNo) {
+  const title = page.getByRole('group', { name: 'Title', exact: true })
+  await title.locator('summary').click()
+  const label = title.getByRole('textbox', { name: 'Field label', exact: true })
+  const newLabel = 'Notice title'
+  await label.fill(newLabel)
+  await page.getByRole('button', { name: 'Use default icon', exact: true }).click()
+  await page.route(`**${path}`, route => route.fulfill({
+    status: 429, headers: { 'Retry-After': '2' }, json: { code: 'rate_limited' },
+  }), { times: 1 })
+  await save.click()
+  await page.getByRole('alert').filter({ hasText: 'Too many attempts.' }).waitFor()
+  assert.ok(await save.isDisabled())
+  await save.and(page.locator(':enabled')).waitFor()
+  const reset = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  const result = await (await reset).json()
+  assert.equal(result.icon_svg, '')
+  assert.match(result.icon_version, /^[0-9a-f]{64}$/u)
+  assert.equal((await page.locator('.builder-schema h3').textContent()).trim(), `Current schema ${schemaNo}`)
+  assert.equal(await page.getByRole('group', { name: newLabel, exact: true }).getByRole('textbox', { name: 'Field label', exact: true }).inputValue(), newLabel)
+  const fieldsPath = path.replace(/\/icon$/u, '/fields')
+  const fields = waitForContentMutation(page, fieldsPath, 'POST', 200)
+  await page.getByRole('button', { name: 'Save collection changes', exact: true }).click()
+  const response = await fields
+  assert.deepEqual(Object.keys(response.request().postDataJSON()), ['labels'])
+  const saved = await response.json()
+  assert.equal(saved.icon_svg, '')
+  assert.equal(saved.schema_no, schemaNo)
+  assert.ok(saved.fields.some(field => field.display_labels?.en?.label === newLabel))
+  await verifyParallelIconConflict(page, fieldsPath, newLabel)
 }
 
 async function verifyRelatedCollectionSSR(page, context, targetName, target) {
@@ -1100,6 +1330,32 @@ async function verifySessionPolicy(page) {
   await page.getByText('Session policy saved.', { exact: true }).waitFor()
 }
 
+async function verifyRatePolicy(page) {
+  await page.getByRole('button', { name: 'Rate limits', exact: true }).click()
+  const credentials = page.locator('form[data-rate-scope="credentials"]')
+  const preauth = page.locator('form[data-rate-scope="preauth"]')
+  const activeWindow = credentials.locator('input[name="window_seconds"]')
+  const otherWindow = preauth.locator('input[name="window_seconds"]')
+  const save = credentials.locator('button[type="submit"]')
+  await verifyScopedSaveButton(save, 'input[name="window_seconds"]')
+  const original = await activeWindow.inputValue()
+  const other = await otherWindow.inputValue()
+  await otherWindow.fill(String(Number(other) + 1))
+  await activeWindow.fill(String(Number(original) + 1))
+  const path = '/api/v1/admin/security/rate-policy'
+  const saved = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  const updated = await (await saved).json()
+  assert.equal(updated.scope, 'credentials')
+  assert.equal(updated.window_seconds, Number(original) + 1)
+  assert.equal(await otherWindow.inputValue(), String(Number(other) + 1))
+  await otherWindow.fill(other)
+  await activeWindow.fill(original)
+  const restored = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  assert.equal((await (await restored).json()).window_seconds, Number(original))
+}
+
 const browser = await chromium.launch()
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } })
@@ -1117,6 +1373,7 @@ try {
   await verifyWorkspaceGeometry(page)
   await verifyCompactNavigation(page)
   await verifySessionPolicy(page)
+  await verifyRatePolicy(page)
   await verifyNestedNavigation(page)
   await verifyTextSearchAfterResize(page)
   await verifySettingsSave(page, context)

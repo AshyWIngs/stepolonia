@@ -15,12 +15,24 @@ import (
 )
 
 const (
-	settingsPath           = "/api/v1/admin/settings"
-	applySettingsPath      = settingsPath + "/publication"
-	readSettingsOperation  = "settingsReadEditable"
-	applySettingsOperation = "settingsApply"
-	settingsBodyBytes      = 1_000_000
-	settingsTimeout        = 8 * time.Second
+	settingsPath                    = "/api/v1/admin/settings"
+	applySettingsPath               = settingsPath + "/publication"
+	appearanceSettingsPath          = settingsPath + "/appearance"
+	languageFlagSettingsPath        = settingsPath + "/language-flags"
+	portalDetailsSettingsPath       = settingsPath + "/details"
+	localeDefaultsSettingsPath      = settingsPath + "/locale-defaults"
+	slugRulesSettingsPath           = settingsPath + "/slug-rules"
+	catalogSettingsPath             = settingsPath + "/catalogs"
+	readSettingsOperation           = "settingsReadEditable"
+	applySettingsOperation          = "settingsApply"
+	appearanceSettingsOperation     = "settingsApplyAppearance"
+	languageFlagSettingsOperation   = "settingsApplyLanguageFlag"
+	portalDetailsSettingsOperation  = "settingsApplyDetails"
+	localeDefaultsSettingsOperation = "settingsApplyLocaleDefaults"
+	slugRulesSettingsOperation      = "settingsApplySlugRules"
+	catalogSettingsOperation        = "settingsApplyCatalog"
+	settingsBodyBytes               = 1_000_000
+	settingsTimeout                 = 8 * time.Second
 )
 
 var settingsRoutes = map[string][]route{
@@ -30,6 +42,24 @@ var settingsRoutes = map[string][]route{
 	applySettingsPath: {
 		{kind: fullKind, method: http.MethodPut, operationID: applySettingsOperation, summary: "Apply portal settings", response: "SettingsPublication", description: "Requires a full session, settings.manage and CSRF. Validates and applies the complete settings and interface catalogs at the expected version. Settings and audit commit atomically. Omitted slug rules keep the editable revision's rules."},
 	},
+	appearanceSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: appearanceSettingsOperation, summary: "Save portal appearance", response: scopedSettingsResponseName, description: "Changes the accent using its own version. Requires a full session, CSRF and settings.manage."},
+	},
+	languageFlagSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: languageFlagSettingsOperation, summary: "Save a language flag", response: scopedSettingsResponseName, description: "Changes the flag of one enabled language using that flag's version. Requires a full session, CSRF and settings.manage."},
+	},
+	portalDetailsSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: portalDetailsSettingsOperation, summary: "Save portal details", response: scopedSettingsReceiptName, description: "Changes the portal name, tagline, description and notice using the current details version. Requires a full session, CSRF and settings.manage."},
+	},
+	localeDefaultsSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: localeDefaultsSettingsOperation, summary: "Save language preferences", response: scopedSettingsReceiptName, description: "Changes the default content language and interface fallback catalog using their preferences version. Requires a full session, CSRF and settings.manage."},
+	},
+	slugRulesSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: slugRulesSettingsOperation, summary: "Save changes to slug rules", response: scopedSettingsReceiptName, description: "Applies only the added, updated or removed rules at the current rules version. Requires a full session, CSRF and settings.manage."},
+	},
+	catalogSettingsPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: catalogSettingsOperation, summary: "Save one interface catalog", response: scopedSettingsReceiptName, description: "Updates messages or removes one catalog using its saved version. Requires a full session, CSRF and settings.manage. A catalog used as the interface fallback cannot be removed."},
+	},
 }
 
 type settingsVersion struct {
@@ -38,14 +68,20 @@ type settingsVersion struct {
 
 type editableSettingsResponse struct {
 	settingsVersion
-	HasDraft      bool                         `json:"has_draft"`
-	PublishedID   string                       `json:"published_id,omitempty"`
-	Settings      siteconfig.Settings          `json:"settings"`
-	Catalogs      map[string]map[string]string `json:"catalogs"`
-	Languages     []siteconfig.Language        `json:"languages"`
-	MessageKeys   []string                     `json:"message_keys"`
-	SlugRules     []siteconfig.SlugRule        `json:"slug_rules" nullable:"false" doc:"Slug suggestion rules from the same editable revision, ordered by content language code and source character."`
-	LanguageFlags map[string]string            `json:"language_flags" nullable:"false" doc:"Static SVG flags for enabled languages in the editable revision. Missing entries use a globe."`
+	HasDraft              bool                         `json:"has_draft"`
+	PublishedID           string                       `json:"published_id,omitempty"`
+	Settings              siteconfig.Settings          `json:"settings"`
+	Catalogs              map[string]map[string]string `json:"catalogs"`
+	Languages             []siteconfig.Language        `json:"languages"`
+	MessageKeys           []string                     `json:"message_keys"`
+	SlugRules             []siteconfig.SlugRule        `json:"slug_rules" nullable:"false" doc:"Slug suggestion rules from the same editable revision, ordered by content language code and source character."`
+	LanguageFlags         map[string]string            `json:"language_flags" nullable:"false" doc:"Static SVG flags for enabled languages in the editable revision. Missing entries use a globe."`
+	AppearanceVersion     string                       `json:"appearance_version"`
+	DetailsVersion        string                       `json:"details_version"`
+	LocaleDefaultsVersion string                       `json:"locale_defaults_version"`
+	SlugRulesVersion      string                       `json:"slug_rules_version"`
+	CatalogVersions       map[string]string            `json:"catalog_versions" nullable:"false"`
+	LanguageFlagVersions  map[string]string            `json:"language_flag_versions" nullable:"false"`
 }
 
 type settingsPublicationResponse struct {
@@ -77,9 +113,13 @@ func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route
 		h.readSettings(ctx, w, req)
 		return
 	}
-	raw, code, status := readJSONBody(w, r, settingsBodyBytes)
+	raw, code, status := readJSONBody(w, r, settingsRequestLimit(rt))
 	if code != "" {
 		problem(w, status, code)
+		return
+	}
+	if rt.method == http.MethodPost {
+		h.applyScopedSettings(ctx, w, req, rt.operationID, raw)
 		return
 	}
 	var input settingsInput
@@ -88,6 +128,19 @@ func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route
 		return
 	}
 	h.applySettings(ctx, w, req, input)
+}
+
+func settingsRequestLimit(rt route) int64 {
+	if rt.operationID == catalogSettingsOperation {
+		return settingsBodyBytes
+	}
+	if rt.operationID == slugRulesSettingsOperation {
+		return maxDraftBodyBytes
+	}
+	if rt.method == http.MethodPost {
+		return 32_768
+	}
+	return settingsBodyBytes
 }
 
 func (h *handler) readSettings(ctx context.Context, w http.ResponseWriter, req identity.AuthRequest) {
@@ -101,10 +154,22 @@ func (h *handler) readSettings(ctx context.Context, w http.ResponseWriter, req i
 		writeSettingsError(w, err)
 		return
 	}
+	flagVersions := make(map[string]string, len(editable.Languages))
+	catalogVersions := make(map[string]string, len(editable.Languages))
+	for _, language := range editable.Languages {
+		flagVersions[language.Code] = siteconfig.ScopeVersion(editable.LanguageFlags[language.Code])
+		catalogVersions[language.Code] = siteconfig.CatalogVersion(nil)
+	}
+	for code, messages := range editable.Catalogs {
+		catalogVersions[code] = siteconfig.CatalogVersion(messages)
+	}
 	respond(w, editableSettingsResponse{
 		settingsVersion: settingsVersion{editable.Version}, HasDraft: editable.HasDraft, PublishedID: editable.PublishedID,
 		Settings: editable.Settings, Catalogs: editable.Catalogs, Languages: editable.Languages, MessageKeys: editable.MessageKeys,
 		SlugRules: editable.SlugRules, LanguageFlags: editable.LanguageFlags,
+		AppearanceVersion: siteconfig.ScopeVersion(editable.Settings.Accent), DetailsVersion: editable.Settings.Details().Version(), LanguageFlagVersions: flagVersions,
+		LocaleDefaultsVersion: editable.Settings.LocaleDefaults().Version(), SlugRulesVersion: siteconfig.SlugRulesVersion(editable.SlugRules),
+		CatalogVersions: catalogVersions,
 	})
 }
 
@@ -157,9 +222,18 @@ func settingsCommandError(err error) error {
 
 func writeSettingsError(w http.ResponseWriter, err error) {
 	var domain *siteconfig.Error
-	if errors.As(err, &domain) && (domain.Status == http.StatusConflict || domain.Code == siteconfig.InvalidLanguageFlagCode) {
+	if errors.As(err, &domain) && (domain.Status == http.StatusConflict || isScopedSettingsValidation(domain.Code)) {
 		problem(w, domain.Status, domain.Code)
 		return
 	}
 	writeError(w, err)
+}
+
+func isScopedSettingsValidation(code string) bool {
+	switch code {
+	case siteconfig.InvalidLanguageFlagCode, siteconfig.InvalidAccentCode, siteconfig.InvalidDetailsCode, siteconfig.InvalidLocaleDefaultsCode, siteconfig.InvalidSlugRulesCode, siteconfig.InvalidCatalogChangeCode:
+		return true
+	default:
+		return false
+	}
 }

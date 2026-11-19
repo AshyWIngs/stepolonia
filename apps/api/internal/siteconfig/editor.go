@@ -276,7 +276,9 @@ func readEditorRevision(ctx context.Context, tx *sql.Tx, revision string, result
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT l.language_code,m.message_key,m.message_value
  FROM public.site_revision_languages l
- LEFT JOIN public.site_revision_messages m USING (revision_id,language_code)
+ LEFT JOIN public.site_revision_messages m
+ ON m.revision_id=COALESCE(l.catalog_revision_id,l.revision_id) AND m.language_code=l.language_code
+ AND EXISTS (SELECT 1 FROM public.ui_message_keys k WHERE k.message_key=m.message_key)
  WHERE l.revision_id=$1`, revision)
 	if err != nil {
 		return dbError(err)

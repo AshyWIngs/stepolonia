@@ -116,6 +116,11 @@ func sessionPolicyRequest(t *testing.T, f authHTTPFixture, actor identity.AuthRe
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, f.server.URL+sessionPolicyHTTPPath, strings.NewReader(body))
 	requireNoError(t, err)
+	return string(authSecurityPolicyRequest(t, f, req, actor, origin, status))
+}
+
+func authSecurityPolicyRequest(t *testing.T, f authHTTPFixture, req *http.Request, actor identity.AuthRequest, origin string, status int) []byte {
+	t.Helper()
 	setAuthHTTPHeaders(req, origin, actor.CSRF)
 	if actor.Token != "" {
 		req.AddCookie(&http.Cookie{Name: authFullSessionCookie, Value: actor.Token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -127,9 +132,9 @@ func sessionPolicyRequest(t *testing.T, f authHTTPFixture, actor identity.AuthRe
 	requireNoError(t, err)
 	assertAuthNoStore(t, res)
 	if res.StatusCode != status {
-		t.Fatalf("%s %s: received HTTP %d, want %d, body %s", method, sessionPolicyHTTPPath, res.StatusCode, status, payload)
+		t.Fatalf("%s %s: received HTTP %d, want %d, body %s", req.Method, req.URL.Path, res.StatusCode, status, payload)
 	}
-	return string(payload)
+	return payload
 }
 
 func assertSessionPolicy(t *testing.T, body string, version int64, idle, absolute int) {

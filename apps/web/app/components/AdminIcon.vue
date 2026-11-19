@@ -15,10 +15,12 @@ const glyphs = {
   roles: 'M7 11h10v9H7zM9 11V8a3 3 0 0 1 6 0v3m-3 4v1',
   audit: 'M7 3h10v18H7zM10 7h4m-4 4h4m-4 4h4m-10-6h3m10 6h3',
   security: 'M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zm0 6v4m0 3h.01',
+  rate_limits: 'M4 19a8 8 0 1 1 16 0zM12 15l4-4M7 15h.01M12 9h.01M17 15h.01',
   collection: 'M4 7h16v13H4zM5 4h14m-10 7h6',
   menu: 'M4 6h16M4 12h16M4 18h16',
   more: 'M5 12h14m-7-7v14',
   add: 'M12 5v14M5 12h14',
+  save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h9M7 21v-8h10v8',
 } as const
 
 const props = defineProps<{ name: keyof typeof glyphs, iconSvg?: string }>()

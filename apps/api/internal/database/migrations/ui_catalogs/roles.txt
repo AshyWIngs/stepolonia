@@ -1,0 +1,425 @@
+admin.roles
+Roles
+Role
+Роли
+Рөлдер
+
+admin.role_rule_domain
+Permission area
+Obszar uprawnień
+Область доступа
+Қолжетімділік саласы
+
+admin.role_rule_field_help
+Access applies only to selected fields.
+Dostęp obejmuje tylko zaznaczone pola.
+Доступны только отмеченные поля.
+Тек белгіленген өрістерге қол жеткізуге болады.
+
+admin.role_rule_filter
+Collection or installation
+Kolekcja lub instalacja
+Коллекция или портал
+Жинақ немесе портал
+
+admin.role_rule_all_scopes
+All scopes
+Wszystkie zakresy
+Все области
+Барлық ауқым
+
+admin.role_rule_scope_installation
+Entire portal
+Cały portal
+Весь портал
+Бүкіл портал
+
+admin.role_rule_scope_type
+Collection
+Kolekcja
+Коллекция
+Жинақ
+
+admin.role_rule_scope_assigned
+Assigned items
+Przypisane materiały
+Назначенные материалы
+Тағайындалған материалдар
+
+admin.role_rule_scope_any
+All items
+Wszystkie materiały
+Все материалы
+Барлық материалдар
+
+admin.role_rule_group_content
+Content
+Treści
+Материалы
+Материалдар
+
+admin.role_rule_group_structure
+Collection structure
+Struktura kolekcji
+Структура коллекций
+Жинақ құрылымы
+
+admin.role_rule_group_accounts
+Accounts
+Konta
+Учётные записи
+Тіркелгілер
+
+admin.role_rule_group_roles
+Roles and delegation
+Role i delegowanie
+Роли и делегирование
+Рөлдер және өкілеттік беру
+
+admin.role_rule_group_portal
+Portal settings
+Ustawienia portalu
+Настройки портала
+Портал баптаулары
+
+admin.role_rule_group_security
+Security and audit
+Bezpieczeństwo i audyt
+Безопасность и аудит
+Қауіпсіздік және аудит
+
+admin.role_rule_group_other
+Other roles
+Pozostałe role
+Другие роли
+Басқа рөлдер
+
+admin.role_rule_group_mixed
+Multiple domains
+Kilka obszarów
+Несколько областей
+Бірнеше сала
+
+admin.role_rule_configure
+Configure
+Skonfiguruj
+Настроить
+Баптау
+
+admin.role_rule_coverage
+Available grant scope
+Dostępny zakres uprawnienia
+Доступный охват разрешения
+Рұқсаттың қолжетімді ауқымы
+
+admin.role_rule_limit
+This role has the maximum number of rules.
+Ta rola ma maksymalną liczbę reguł.
+В роли уже максимальное число правил.
+Бұл рөлде ережелер саны шегіне жетті.
+
+admin.role_rule_choose_delegated_operation
+Choose at least one operation for each delegation rule.
+Wybierz co najmniej jedną operację dla każdej reguły delegowania.
+Выберите хотя бы одну операцию для каждого правила делегирования.
+Өкілеттік берудің әр ережесі үшін кемінде бір операцияны таңдаңыз.
+
+admin.permission.content.items.create
+Create items
+Tworzenie materiałów
+Создание материалов
+Материал жасау
+
+admin.permission.content.items.read
+Read items
+Odczyt materiałów
+Просмотр материалов
+Материалдарды қарау
+
+admin.permission.content.items.update
+Edit items
+Edycja materiałów
+Редактирование материалов
+Материалдарды өңдеу
+
+admin.permission.content.items.ready
+Mark items ready
+Oznaczanie materiałów jako gotowe
+Отметка готовности материалов
+Материалдарды дайын деп белгілеу
+
+admin.permission.content.items.publish
+Publish items
+Publikowanie materiałów
+Публикация материалов
+Материалдарды жариялау
+
+admin.permission.content.items.unpublish
+Unpublish items
+Wycofywanie publikacji materiałów
+Снятие материалов с публикации
+Материалдарды жарияланымнан алу
+
+admin.permission.content.items.assign
+Assign items to users
+Przypisywanie materiałów użytkownikom
+Назначение материалов пользователям
+Материалдарды пайдаланушыларға тағайындау
+
+admin.permission.content_types.manage
+Manage collections and fields
+Zarządzanie kolekcjami i polami
+Управление коллекциями и полями
+Жинақтар мен өрістерді басқару
+
+admin.permission.content_types.initialize_access
+Set initial collection access
+Ustawianie początkowego dostępu do kolekcji
+Настройка начального доступа к коллекциям
+Жинақтарға бастапқы қолжетімділікті баптау
+
+admin.permission.content.permissions.delegate
+Delegate content permissions
+Delegowanie uprawnień do treści
+Делегирование прав на материалы
+Материалдарға құқықтарды беру
+
+admin.permission.users.create
+Create accounts and issue invitations
+Tworzenie kont i wysyłanie zaproszeń
+Создание учётных записей и выдача приглашений
+Тіркелгі жасау және шақыру беру
+
+admin.permission.users.read
+View accounts
+Przeglądanie kont
+Просмотр учётных записей
+Тіркелгілерді қарау
+
+admin.permission.users.activate
+Activate accounts
+Aktywowanie kont
+Активация учётных записей
+Тіркелгілерді белсендіру
+
+admin.permission.users.disable
+Disable accounts
+Wyłączanie kont
+Отключение учётных записей
+Тіркелгілерді өшіру
+
+admin.permission.roles.create
+Create and copy roles
+Tworzenie i kopiowanie ról
+Создание и копирование ролей
+Рөлдерді жасау және көшіру
+
+admin.permission.roles.read
+View roles
+Przeglądanie ról
+Просмотр ролей
+Рөлдерді қарау
+
+admin.permission.roles.edit
+Edit roles
+Edycja ról
+Редактирование ролей
+Рөлдерді өңдеу
+
+admin.permission.roles.assign
+Assign roles to accounts
+Przypisywanie ról do kont
+Назначение ролей учётным записям
+Тіркелгілерге рөл тағайындау
+
+admin.permission.roles.disable
+Disable roles
+Wyłączanie ról
+Отключение ролей
+Рөлдерді өшіру
+
+admin.permission.roles.enable
+Enable roles
+Włączanie ról
+Включение ролей
+Рөлдерді қосу
+
+admin.permission.roles.archive
+Archive roles
+Archiwizowanie ról
+Архивация ролей
+Рөлдерді мұрағаттау
+
+admin.permission.roles.restore
+Restore archived roles
+Przywracanie zarchiwizowanych ról
+Восстановление архивных ролей
+Мұрағатталған рөлдерді қалпына келтіру
+
+admin.permission.roles.delete
+Delete archived roles
+Usuwanie zarchiwizowanych ról
+Удаление архивных ролей
+Мұрағатталған рөлдерді жою
+
+admin.permission.sessions.revoke_any
+Revoke sessions for other users
+Unieważnianie sesji innych użytkowników
+Завершение сеансов других пользователей
+Басқа пайдаланушылардың сеанстарын аяқтау
+
+admin.permission.audit.read
+Read the audit log
+Odczyt dziennika audytu
+Просмотр журнала аудита
+Аудит журналын қарау
+
+admin.permission.settings.manage
+Manage portal settings
+Zarządzanie ustawieniami portalu
+Управление настройками портала
+Портал баптауларын басқару
+
+admin.permission.security_policy.manage
+Manage session limits
+Zarządzanie limitami sesji
+Управление сроками сеансов
+Сеанс шектеулерін басқару
+
+admin.roles_create
+Create role
+Utwórz rolę
+Создать роль
+Рөл жасау
+
+admin.roles_edit
+Edit role policy
+Edytuj politykę roli
+Изменить политику роли
+Рөл саясатын өңдеу
+
+admin.roles_copy
+Copy role
+Skopiuj rolę
+Скопировать роль
+Рөлді көшіру
+
+admin.roles_name
+Role name
+Nazwa roli
+Название роли
+Рөл атауы
+
+admin.roles_grants
+Role grants
+Uprawnienia roli
+Разрешения роли
+Рөл рұқсаттары
+
+admin.roles_remove_grant
+Remove grant
+Usuń uprawnienie
+Удалить разрешение
+Рұқсатты алып тастау
+
+admin.roles_operation
+Operation and scope
+Operacja i zakres
+Операция и область
+Операция және ауқым
+
+admin.roles_choose_operation
+Choose a grant
+Wybierz uprawnienie
+Выберите разрешение
+Рұқсатты таңдаңыз
+
+admin.roles_fields
+Fields
+Pola
+Поля
+Өрістер
+
+admin.roles_delegated_operations
+Delegated operations
+Operacje do delegowania
+Делегируемые операции
+Тапсырылатын операциялар
+
+admin.roles_allow_delegation
+Allow this grant to be delegated
+Zezwól na przekazywanie tego uprawnienia
+Разрешить делегирование этого разрешения
+Осы рұқсатты тапсыруға рұқсат беру
+
+admin.roles_add_grant
+Add grant
+Dodaj uprawnienie
+Добавить разрешение
+Рұқсат қосу
+
+admin.roles_save
+Save role
+Zapisz rolę
+Сохранить роль
+Рөлді сақтау
+
+admin.roles_duplicate
+A grant for this operation and scope already exists.
+Istnieje już uprawnienie dla tej operacji i zakresu.
+Разрешение для этой операции и области уже существует.
+Осы операция мен ауқымға арналған рұқсат бар.
+
+admin.roles_confirm_enable
+Enable this role’s grants for its members?
+Włączyć uprawnienia tej roli dla jej członków?
+Включить разрешения этой роли для её участников?
+Рөл мүшелері үшін рұқсаттарды қосу керек пе?
+
+admin.roles_confirm_disable
+Disable this role’s grants for its members?
+Wyłączyć uprawnienia tej roli dla jej członków?
+Отключить разрешения этой роли для её участников?
+Рөл мүшелері үшін рұқсаттарды өшіру керек пе?
+
+admin.roles_confirm_archive
+Archive this disabled role?
+Przenieść tę wyłączoną rolę do archiwum?
+Архивировать отключённую роль?
+Өшірілген рөлді мұрағаттау керек пе?
+
+admin.roles_confirm_restore
+Restore this role as disabled?
+Przywrócić rolę jako wyłączoną?
+Восстановить роль в отключённом состоянии?
+Рөлді өшірілген күйде қалпына келтіру керек пе?
+
+admin.roles_confirm_delete
+Permanently delete this role?
+Trwale usunąć tę rolę?
+Удалить эту роль безвозвратно?
+Бұл рөлді біржола жою керек пе?
+
+admin.roles_allow_delegable_content
+Allow issuing delegable content grants
+Zezwól na nadawanie uprawnień do treści z prawem dalszego delegowania
+Разрешить выдачу делегируемых разрешений на контент
+Тапсыруға болатын контент рұқсаттарын беруге рұқсат беру
+
+admin.roles_delegation_scope
+Delegation scope
+Zakres delegowania
+Область делегирования
+Тапсыру ауқымы
+
+admin.roles_scope_assigned
+Assigned items only
+Tylko przypisane materiały
+Только назначенные материалы
+Тек тағайындалған материалдар
+
+admin.roles_scope_any
+Any item
+Wszystkie materiały
+Любые материалы
+Кез келген материал

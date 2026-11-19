@@ -102,12 +102,36 @@ async function proveIndependentDelegationControls(page) {
   await accountRead.press('Space')
   assert.equal(await accountRead.isChecked(), false)
   const response = await pageResponse(page, '/api/v1/admin/roles', 200, () => button(page, 'Save role').click())
-  const { grants, state } = await response.json()
+  const { grants, state, id } = await response.json()
   assert.equal(state, 'disabled')
   assert.equal(grants.length, 1)
   assert.equal(grants[0].can_delegate, false)
   assert.equal(grants[0].may_delegate_content, true)
   assert.equal(grants[0].object_ceiling, 'assigned')
+  await verifyRoleChangePayload(page, id)
+}
+
+async function verifyRoleChangePayload(page, id) {
+  await button(page, 'Edit role policy').click()
+  const save = button(page, 'Save role')
+  assert.equal(await save.isDisabled(), true)
+  const name = page.getByLabel('Role name', { exact: true })
+  await name.fill('Delegation reviewer')
+  const path = `/api/v1/admin/roles/${id}/changes`
+  const renamed = await pageResponse(page, path, 200, () => save.click())
+  assert.equal(renamed.request().method(), 'POST')
+  assert.deepEqual(renamed.request().postDataJSON(), { expected_version: 1, name: 'Delegation reviewer' })
+  await heading(page, 'Delegation reviewer').waitFor()
+  await button(page, 'Edit role policy').click()
+  await page.getByLabel('Permission area', { exact: true }).selectOption({ label: 'All' })
+  await page.getByRole('checkbox', { name: 'View accounts · Entire portal', exact: true }).check()
+  const changed = await pageResponse(page, path, 200, () => save.click())
+  assert.deepEqual(changed.request().postDataJSON(), {
+    expected_version: 2,
+    upsert: [{ operation: 'users.read', scope: 'installation', can_delegate: false }],
+  })
+  assert.equal((await changed.json()).grants.length, 2)
+  await page.getByRole('status').getByText('Changes saved.', { exact: true }).waitFor()
 }
 
 function grantsForRole(type, stage) {

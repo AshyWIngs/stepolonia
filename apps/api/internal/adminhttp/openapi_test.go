@@ -98,16 +98,29 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 		checkManagedCollectionExample(t, op, rt)
 	case rt.operationID == accountFactorOperation:
 		checkFactorRequestExamples(t, doc, op, rt)
-	case rt.operationID == replaceSessionPolicyOperation:
-		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
-		var input sessionPolicyInput
-		if err != nil || !decodeSessionPolicy(raw, &input) {
-			t.Fatal("documented session policy example rejected by transport")
-		}
+	case securityPolicyRequestSchema(rt.operationID) != nil:
+		checkSecurityPolicyExample(t, op, rt.operationID)
 	default:
 		checkRegistryRequestExample(t, doc, op, rt)
 	}
 	return op
+}
+
+func checkSecurityPolicyExample(t *testing.T, op privateOperation, operationID string) {
+	t.Helper()
+	raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operationID == replaceRatePolicyOperation {
+		if !decodeRatePolicy(raw, new(ratePolicyInput)) {
+			t.Fatal("documented attempt policy example rejected by transport")
+		}
+		return
+	}
+	if !decodeSessionPolicy(raw, new(sessionPolicyInput)) {
+		t.Fatal("documented session policy example rejected by transport")
+	}
 }
 
 func checkFactorRequestExamples(t *testing.T, doc privateDocument, op privateOperation, rt route) {
@@ -128,6 +141,18 @@ func checkFactorRequestExamples(t *testing.T, doc privateDocument, op privateOpe
 func checkManagedCollectionExample(t *testing.T, op privateOperation, rt route) {
 	t.Helper()
 	raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+	if rt.operationID == registryIconOperation {
+		if err != nil || !decodeClosedCommand(raw, registryWriteContracts[rt.operationID], new(registryIconInput)) {
+			t.Fatal("documented collection icon example rejected by transport")
+		}
+		return
+	}
+	if rt.operationID == registryFieldChangesOperation {
+		if err != nil || !decodeRegistryFieldChanges(raw, new(registryFieldChangesInput)) {
+			t.Fatal("documented collection field changes example rejected by transport")
+		}
+		return
+	}
 	value, ok := decodeUniqueJSON(raw)
 	object, objectOK := value.(map[string]any)
 	if err != nil || !ok || !objectOK || !validRegistryInput(object, rt.operationID) {
@@ -329,7 +354,7 @@ func TestPrivateOnboardingOpenAPIDenialBudget(t *testing.T) {
 			t.Fatalf("missing denial-budget status for %s", path)
 		}
 		retry := response.Headers["Retry-After"]
-		if retry == nil || retry.Schema == nil || retry.Schema.Const != "900" {
+		if retry == nil || retry.Schema == nil || retry.Schema.Type != huma.TypeString || retry.Schema.Pattern != `^[1-9][0-9]*$` || retry.Schema.Const != nil {
 			t.Fatalf("missing denial-budget retry contract for %s", path)
 		}
 		example := response.Content["application/problem+json"].Examples["rate_limited"].Value
@@ -347,13 +372,13 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
-		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
-		"portal-settings":         {"settingsReadEditable", "settingsApply"},
-		"security-policy":         {"readSessionPolicy", "replaceSessionPolicy"},
+		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesApplyChanges", "rolesCopy", "rolesDelete"},
+		"portal-settings":         {"settingsReadEditable", "settingsApply", "settingsApplyAppearance", "settingsApplyLanguageFlag", "settingsApplyDetails", "settingsApplyLocaleDefaults", "settingsApplySlugRules", "settingsApplyCatalog"},
+		"security-policy":         {"readSessionPolicy", "replaceSessionPolicy", "readRatePolicies", "replaceRatePolicy"},
 		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
 		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
 		"account-security":        {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
-		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection", "registrySetCollectionAvailability"},
+		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection", "registrySetCollectionAvailability", "registrySaveCollectionIcon", "registrySaveCollectionFields"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -413,6 +438,9 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	media := op.RequestBody.Content[jsonMediaType]
 	schema := registry.SchemaFromRef(media.Schema.Ref)
 	switch op.OperationID {
+	case replaceRatePolicyOperation:
+		checkRatePolicyRequiredFields(t, registry, schema, media.Example.(map[string]any))
+		return
 	case accountFactorOperation:
 		validatePrivateValue(t, registry, schema, op.OperationID, map[string]any{})
 		privateSchemaRejects(t, registry, schema, map[string]any{"replacement_token": strings.Repeat("A", 80)})
@@ -425,7 +453,9 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	example := media.Example.(map[string]any)
 	for field := range schema.Properties {
 		if optionalRequestField(op.OperationID, field) {
-			validatePrivateValue(t, registry, schema, op.OperationID, copyWithoutField(example, field))
+			if op.OperationID != registryFieldChangesOperation && op.OperationID != catalogSettingsOperation {
+				validatePrivateValue(t, registry, schema, op.OperationID, copyWithoutField(example, field))
+			}
 			continue
 		}
 		if op.OperationID == saveDraftOperation && !slices.Contains(schema.Required, field) {
@@ -436,14 +466,39 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 		}
 		missing := copyWithoutField(example, field)
 		privateSchemaRejects(t, registry, schema, missing)
-		for _, invalid := range []any{nil, false, ""} {
-			if invalid == false && schema.Properties[field].Type == huma.TypeBoolean {
-				continue
-			}
-			missing[field] = invalid
-			privateSchemaRejects(t, registry, schema, missing)
-		}
+		checkInvalidFieldValues(t, registry, schema, op.OperationID, field, missing)
 	}
+}
+
+func checkRatePolicyRequiredFields(t *testing.T, registry huma.Registry, schema *huma.Schema, example map[string]any) {
+	t.Helper()
+	for field := range schema.Properties {
+		privateSchemaRejects(t, registry, schema, copyWithoutField(example, field))
+	}
+	preauth := copyWithoutField(copyWithoutField(example, rateSubjectField), rateHashJobsField)
+	preauth["scope"] = "preauth"
+	validatePrivateValue(t, registry, schema, replaceRatePolicyOperation, preauth)
+	preauth[rateSubjectField] = 1
+	privateSchemaRejects(t, registry, schema, preauth)
+}
+
+func checkInvalidFieldValues(t *testing.T, registry huma.Registry, schema *huma.Schema, operation, field string, payload map[string]any) {
+	t.Helper()
+	for _, invalid := range []any{nil, false, ""} {
+		if invalid == "" && allowsEmptySVG(operation, field) {
+			continue
+		}
+		if invalid == false && schema.Properties[field].Type == huma.TypeBoolean {
+			continue
+		}
+		payload[field] = invalid
+		privateSchemaRejects(t, registry, schema, payload)
+	}
+}
+
+func allowsEmptySVG(operation, field string) bool {
+	return operation == languageFlagSettingsOperation && field == "svg" ||
+		operation == registryIconOperation && field == collectionIconField
 }
 
 func optionalRequestField(operation, field string) bool {
@@ -452,8 +507,16 @@ func optionalRequestField(operation, field string) bool {
 		return field == "initial_access" || field == typeKeyField || field == registryDisplayNameField || field == collectionIconField
 	case registryReviseOperation:
 		return field == "initialize_new_field_access" || field == collectionIconField
+	case registryFieldChangesOperation:
+		return true
 	case applySettingsOperation:
 		return field == slugRulesField || field == languageFlagsField
+	case slugRulesSettingsOperation:
+		return field != expectedVersionField
+	case catalogSettingsOperation:
+		return field == catalogMessagesField || field == catalogRemoveField
+	case changeRoleOperation:
+		return field != expectedVersionField
 	default:
 		return false
 	}

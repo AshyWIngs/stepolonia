@@ -84,6 +84,7 @@ const (
 
 const (
 	csrfOperation               = "authCSRF"
+	stepUpOperation             = "authStepUp"
 	logoutOperation             = "authLogout"
 	recoverOperation            = "authRecover"
 	completeRecoveryOperation   = "authCompleteRecovery"
@@ -112,7 +113,7 @@ var routes = map[string]route{
 		description: "Requires a preauth session and its CSRF token. A successful password check replaces preauth with a five-minute restricted login session; it does not grant full access. Submit a fresh TOTP to MFA verification with the returned CSRF token."},
 	"/mfa/verify": {kind: loginKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authVerifyMFA", summary: "Complete login with a TOTP", response: csrfResponseSchema,
 		description: "Requires a restricted login session. A valid unused TOTP replaces it with a full session and rotates CSRF. A full session uses the installation lifetime policy at sign-in, which defaults to 12 hours absolute and 30 minutes idle. Strong authentication stays fresh for five minutes from this successful MFA. Invalid, expired or replayed factors do not grant access."},
-	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: "authStepUp", summary: "Refresh strong authentication", response: csrfResponseSchema,
+	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: stepUpOperation, summary: "Refresh strong authentication", response: csrfResponseSchema,
 		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute expiry and idle timeout."},
 	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: recoverOperation, summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
 		description: "Requires preauth, password and an unused recovery code. Returns a pending TOTP seed and a ten-minute restricted recovery session, not full access. Enroll the seed locally, then confirm a fresh TOTP through recovery completion. A pending reservation prevents concurrent use; cancellation releases it."},
@@ -178,6 +179,10 @@ func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt rout
 	}
 	if path == sessionPolicyPath {
 		h.serveSessionPolicy(w, r, rt, ip)
+		return
+	}
+	if path == ratePolicyPath {
+		h.serveRatePolicy(w, r, rt, ip)
 		return
 	}
 	if settingsRoutes[path] != nil {

@@ -135,10 +135,10 @@ func decodeSessionPolicy(raw []byte, input *sessionPolicyInput) bool {
 	return len(result.Errors) == 0 && json.Unmarshal(raw, input) == nil && input.ExpectedVersion > 0
 }
 
-func sessionPolicyErrorCodes(rt route) map[int][]string {
+func securityPolicyErrorCodes(rt route) map[int][]string {
 	codes := map[int][]string{400: {validationCode}, 401: {authenticationCode}, 403: {originCode, permissionCode},
 		405: {methodNotAllowedCode}, 503: {securityUnavailableCode}}
-	if rt.method == http.MethodPut {
+	if rt.method != http.MethodGet {
 		codes[403] = append(codes[403], csrfCode, stepUpRequiredCode)
 		codes[409] = []string{versionConflictCode}
 		codes[413] = []string{bodyTooLargeCode}

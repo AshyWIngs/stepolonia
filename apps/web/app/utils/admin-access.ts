@@ -104,14 +104,52 @@ export function listAccessRoles(offset = 0) {
   return administrationRequest<Page<AccessRole>>(`${rolesPath}?offset=${offset}`)
 }
 
+export function readAccessRole(role: AccessRole) {
+  return administrationRequest<AccessRole>(recordPath(rolesPath, role.id))
+}
+
 export function roleGrantOptions() {
   return administrationRequest<{ options: RoleGrantOption[] }>(`${rolesPath}/grant-options`)
 }
 
-export function saveAccessRole(role: AccessRole | undefined, name: string, grants: RoleGrant[], csrf: string) {
-  return role
-    ? administrationRequest<AccessRole>(recordPath(rolesPath, role.id), csrf, 'PATCH', { name, grants, expected_version: role.version })
-    : administrationRequest<AccessRole>(rolesPath, csrf, 'POST', { name, grants })
+export function createAccessRole(name: string, grants: RoleGrant[], csrf: string) {
+  return administrationRequest<AccessRole>(rolesPath, csrf, 'POST', { name, grants })
+}
+
+type GrantKey = Pick<RoleGrant, 'operation' | 'type_id' | 'object_scope'>
+
+function grantKey(grant: RoleGrant): GrantKey {
+  return { operation: grant.operation, type_id: grant.type_id, object_scope: grant.object_scope }
+}
+
+function grantFingerprint(grant: RoleGrant) {
+  const compare = (left: string, right: string) => left.localeCompare(right, 'en')
+  return JSON.stringify([
+    grant.scope, grant.can_delegate, grant.target_scope, grant.object_ceiling, grant.may_delegate_content ?? false,
+    [...(grant.field_ids ?? [])].sort(compare), [...(grant.delegate_operations ?? [])].sort(compare),
+  ])
+}
+
+export function accessRoleChanges(role: AccessRole, name: string, grants: RoleGrant[]) {
+  const previous = new Map(role.grants.map(grant => [JSON.stringify(grantKey(grant)), grant]))
+  const upsert = grants.filter((grant) => {
+    const key = JSON.stringify(grantKey(grant))
+    const before = previous.get(key)
+    previous.delete(key)
+    return !before || grantFingerprint(before) !== grantFingerprint(grant)
+  })
+  const remove = [...previous.values()].map(grantKey)
+  return {
+    name: name === role.name ? undefined : name,
+    upsert: upsert.length ? upsert : undefined,
+    remove: remove.length ? remove : undefined,
+  }
+}
+
+export function changeAccessRole(role: AccessRole, change: ReturnType<typeof accessRoleChanges>, csrf: string) {
+  return administrationRequest<AccessRole>(`${recordPath(rolesPath, role.id)}/changes`, csrf, 'POST', {
+    ...change, expected_version: role.version,
+  })
 }
 
 export function copyAccessRole(role: AccessRole, name: string, csrf: string) {

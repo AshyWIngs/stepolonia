@@ -107,12 +107,16 @@ async function showInvalid(index: number) {
   focusRule(index, characterInvalid(rule, index) ? 'character' : 'replacement')
 }
 
-defineExpose({ showInvalid })
+async function focusActive() {
+  await nextTick()
+  editor.value?.querySelector<HTMLSelectElement>('#portal-slug-language')?.focus()
+}
+
+defineExpose({ showInvalid, focusActive })
 </script>
 
 <template>
   <section ref="editor" class="slug-rules" aria-labelledby="portal-slug-title">
-    <h3 id="portal-slug-title">{{ translate('admin.slug_rules_title') }}</h3>
     <p id="portal-slug-help">{{ translate('admin.slug_rules_help') }}</p>
     <div class="slug-controls">
       <div>
