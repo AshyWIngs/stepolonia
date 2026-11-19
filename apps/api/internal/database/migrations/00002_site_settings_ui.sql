@@ -2001,10 +2001,10 @@ WITH initial_messages (message_key, en, pl, ru, kk) AS (
     ),
     (
         'admin.settings_complete_catalog',
-        'Complete the missing translations or remove this language before publishing.',
+        'Fill in the missing texts or remove this language.',
         'Przed publikacją uzupełnij brakujące tłumaczenia lub usuń ten język.',
-        'Перед публикацией заполните недостающие переводы или удалите этот язык.',
-        'Жарияламас бұрын жетіспейтін аудармаларды толтырыңыз немесе осы тілді алып тастаңыз.'
+        'Заполните пропуски или удалите этот язык перед публикацией.',
+        'Бос аудармаларды толтырыңыз немесе тілді алып тастаңыз.'
     ),
     (
         'admin.workspace_structure',

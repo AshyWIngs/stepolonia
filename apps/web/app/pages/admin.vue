@@ -30,9 +30,10 @@ const { data: initialCatalog, error } = await useAsyncData('admin-ui-catalog', a
 })
 if (error.value || !initialCatalog.value) throw publicError(503)
 const catalog = ref(initialCatalog.value)
+// vue-i18n expands dotted keys in place. Keep the API catalog flat for settings search.
 const { t, locale, setLocaleMessage } = useI18n({
   useScope: 'local', inheritLocale: false, locale: catalog.value.language.code, fallbackLocale: false,
-  flatJson: true, messages: { [catalog.value.language.code]: catalog.value.messages },
+  flatJson: true, messages: { [catalog.value.language.code]: { ...catalog.value.messages } },
 })
 
 let catalogRequest = 0
@@ -44,7 +45,7 @@ async function updateCatalog(language: string, remember: boolean) {
   try {
     const next = await loadCatalog(language)
     if (!active || requestID !== catalogRequest) return
-    setLocaleMessage(next.language.code, next.messages)
+    setLocaleMessage(next.language.code, { ...next.messages })
     locale.value = next.language.code
     catalog.value = next
     if (remember && next.language.code === language) savedLanguage.value = language

@@ -157,16 +157,19 @@ defineExpose({ showMissing })
       <div class="catalog-controls catalog-filters">
         <div>
         <label for="portal-message-search">{{ translate('admin.settings_search_messages') }}</label>
-        <input id="portal-message-search" ref="search" v-model="query" type="search" @keydown.enter.prevent>
+        <input
+          id="portal-message-search" ref="search" v-model="query" type="search"
+          @input="selected = ''" @keydown.enter.prevent
+        >
         </div>
         <div>
         <label for="portal-message-group">{{ translate('admin.settings_message_group') }}</label>
-        <select id="portal-message-group" v-model="group">
+        <select id="portal-message-group" v-model="group" @change="selected = ''">
           <option v-for="item in groups" :key="item" :value="item">{{ translate(item) }}</option>
         </select>
         </div>
         <label class="catalog-filter">
-          <input v-model="missingOnly" type="checkbox">
+          <input v-model="missingOnly" type="checkbox" @change="selected = ''">
           {{ translate('admin.settings_missing_only') }}
         </label>
       </div>
