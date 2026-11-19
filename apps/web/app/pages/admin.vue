@@ -115,7 +115,7 @@ watch(() => editingState.value.dirty, dirty => {
 })
 
 watch(phase, kind => {
-  if (kind !== 'full' && confirmingIdentity.value) closeIdentityDialog()
+  if (kind !== 'full' && confirmingIdentity.value) void closeIdentityDialog()
 })
 
 const title = computed(() => {
@@ -206,7 +206,8 @@ function takeAuthFields(form: HTMLFormElement, ...names: Array<'login' | 'passwo
   return Object.fromEntries(names.map((name) => {
     const field = form.elements.namedItem(name)
     if (name !== 'login' && field instanceof HTMLInputElement) field.value = ''
-    return [name, String(data.get(name) ?? '')]
+    const value = data.get(name)
+    return [name, typeof value === 'string' ? value : '']
   }))
 }
 
@@ -344,7 +345,7 @@ function completeRestrictedEntry() {
   phase.value = null
 }
 
-function rememberWorkspaceFocus(event: FocusEvent | MouseEvent) {
+function rememberWorkspaceFocus(event: FocusEvent | MouseEvent | KeyboardEvent) {
   if (!(event.target instanceof Element)) return
   const control = event.target.closest<HTMLElement>('button, input, select, textarea, a, summary, [tabindex]')
   if (!control) return
@@ -533,7 +534,7 @@ onBeforeUnmount(() => {
       </nav>
       <section
         class="admin-card" :class="{ 'admin-card--workspace': workspaceOpen }" aria-labelledby="admin-heading"
-        @focusin="rememberWorkspaceFocus" @click.capture="rememberWorkspaceFocus"
+        @focusin="rememberWorkspaceFocus" @click.capture="rememberWorkspaceFocus" @keydown.capture="rememberWorkspaceFocus"
       >
         <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
         <output v-if="notice" class="admin-status">{{ t(`admin.${notice}`) }}</output>

@@ -68,7 +68,7 @@ interface ScalarPatch {
 }
 
 export interface ContentPatch {
-  shared?: ScalarPatch['values']
+  shared?: NonNullable<ScalarPatch['values']>
   unset_shared?: string[]
   locales?: Record<string, ScalarPatch>
   relation_changes?: { field_id: string, locale?: string, target_item_id?: string }[]

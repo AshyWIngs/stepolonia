@@ -38,7 +38,7 @@ function integerInRange(value: unknown, min: number, max: number): value is numb
 
 function acceptPolicy(value: unknown) {
   if (!value || typeof value !== 'object' || !('version' in value) ||
-      typeof value.version !== 'string' || !/^[1-9][0-9]{0,18}$/u.test(value.version) ||
+      typeof value.version !== 'string' || !/^[1-9]\d{0,18}$/u.test(value.version) ||
       !('idle_timeout_minutes' in value) || !integerInRange(value.idle_timeout_minutes, idleMin, idleMax) ||
       !('absolute_timeout_hours' in value) || !integerInRange(value.absolute_timeout_hours, absoluteMin, absoluteMax)) {
     throw new AdminContentError(503)

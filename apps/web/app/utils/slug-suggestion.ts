@@ -14,7 +14,7 @@ export function invalidSlugRuleIndex(rules: SlugRule[]): number {
     const source = normalizeSlugCharacter(character)
     if (index >= maxSlugRules || !language_code || !/^[^\p{ASCII}\p{White_Space}\p{C}]$/u.test(source) ||
       !/^[a-z0-9-]{0,16}$/u.test(replacement)) return true
-    const key = language_code + ':' + source
+    const key = `${language_code}:${source}`
     if (seen.has(key)) return true
     seen.add(key)
     return false
@@ -35,7 +35,7 @@ export function suggestSlug(title: string, locale: string, rules: SlugRule[], it
     .replace(/^-|-$/gu, '')
     .slice(0, Math.max(0, limit - suffix.length - 1))
     .replace(/-$/u, '')
-  const fallback = 'item-' + itemID
+  const fallback = `item-${itemID}`
   if (slug) return `${slug}-${suffix}`
   return fallback.length <= limit ? fallback : suffix.slice(0, limit)
 }

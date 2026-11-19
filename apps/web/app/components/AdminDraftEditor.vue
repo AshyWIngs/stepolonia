@@ -328,7 +328,7 @@ async function checkRequired(locales: string[]) {
   const firstError = form.value?.querySelector<HTMLElement>('[aria-invalid="true"]:not([readonly]):not(:disabled)')
   if (firstError) firstError.focus()
   else {
-    if (missing.some(field => field === addressField.value)) failure.value = 'admin.content_publication_address_required'
+    if (addressField.value && missing.includes(addressField.value)) failure.value = 'admin.content_publication_address_required'
     publicationHeading.value?.focus()
   }
   return false
@@ -522,7 +522,7 @@ onBeforeUnmount(() => { active = false })
           <h3 id="draft-publication-heading" ref="publicationHeading" tabindex="-1">{{ translate('admin.content_publication_heading') }}</h3>
           <span v-if="!publicationRefreshRequired" class="publication-state">{{ translate(publicLinks.length ? 'admin.draft_status_published' : 'admin.content_not_published') }}</span>
         </div>
-        <p v-if="!publicationRefreshRequired" id="draft-publication-next" role="status">{{ translate(publicationHint) }}</p>
+        <output v-if="!publicationRefreshRequired" id="draft-publication-next">{{ translate(publicationHint) }}</output>
         <div v-if="primaryAction || (metadata.actions.unpublish && draft.publication_id)" class="draft-bar">
           <button
             v-if="primaryAction === 'save'" ref="nextAction" type="submit" form="draft-material-form" :disabled="busy || conflict"
@@ -604,7 +604,7 @@ onBeforeUnmount(() => { active = false })
   min-width: 0;
 }
 
-.draft-editor a, .draft-editor p {
+.draft-editor :is(a, p, output) {
   overflow-wrap: anywhere;
 }
 

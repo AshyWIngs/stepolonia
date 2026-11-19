@@ -41,7 +41,7 @@ const eligibleCovers = computed(() => {
   return grant ? (available.value.get(expanded.value) ?? []).filter(cover => coversGrant(cover, grant)) : []
 })
 const coverIndex = computed({
-  get: () => Math.max(0, eligibleCovers.value.findIndex(cover => cover === chosenCover.value)),
+  get: () => chosenCover.value ? Math.max(0, eligibleCovers.value.indexOf(chosenCover.value)) : 0,
   set: index => { chosenCover.value = eligibleCovers.value[index] },
 })
 const activeCover = computed(() => eligibleCovers.value[coverIndex.value])
@@ -85,8 +85,12 @@ function updateExpanded(patch: Partial<RoleGrant>) {
   }
 }
 
-function toggleMember(values: string[] | undefined, member: string, enabled: boolean) {
-  return enabled ? [...new Set([...(values ?? []), member])] : (values ?? []).filter(value => value !== member)
+function updateRuleMembers(event: Event, property: 'field_ids' | 'delegate_operations', member: string) {
+  if (!(event.target instanceof HTMLInputElement)) return
+  const members = new Set(expandedGrant.value?.[property])
+  if (event.target.checked) members.add(member)
+  else members.delete(member)
+  updateExpanded({ [property]: [...members] })
 }
 
 function updateCeiling(event: Event) {
@@ -182,7 +186,7 @@ function grantDetails(grant: RoleGrant) {
                 <label v-for="field in activeCover.fields" :key="field.id" class="rule-toggle">
                   <input
                     type="checkbox" :checked="expandedGrant.field_ids?.includes(field.id)"
-                    @change="updateExpanded({ field_ids: toggleMember(expandedGrant.field_ids, field.id, ($event.target as HTMLInputElement).checked) })"
+                    @change="updateRuleMembers($event, 'field_ids', field.id)"
                   ><span>{{ fieldName(field.key, translate) }}</span>
                 </label>
               </div>
@@ -192,7 +196,7 @@ function grantDetails(grant: RoleGrant) {
               <label v-for="operation in activeCover.delegate_operations" :key="operation" class="rule-toggle">
                 <input
                   type="checkbox" :checked="expandedGrant.delegate_operations?.includes(operation)"
-                  @change="updateExpanded({ delegate_operations: toggleMember(expandedGrant.delegate_operations, operation, ($event.target as HTMLInputElement).checked) })"
+                  @change="updateRuleMembers($event, 'delegate_operations', operation)"
                 >{{ operationName(operation, translate) }}
               </label>
             </fieldset>

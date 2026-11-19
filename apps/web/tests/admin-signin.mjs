@@ -573,13 +573,13 @@ async function recordReadyUnpublishedChange(page, editor, itemID, saved) {
   const csrf = await saved.request().headerValue('x-csrf-token')
   assert.ok(csrf, 'The saved draft used a live CSRF token')
   const draft = await saved.json()
-  const result = await page.evaluate(async ({ id, csrf, version, schemaNo }) => {
-    return (await fetch(`/api/v1/admin/content/event/${id}/ready`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
-      body: JSON.stringify({ expected_version: version, schema_no: schemaNo, locale: 'en' }),
-    })).status
-  }, { id: itemID, csrf, version: draft.version, schemaNo: draft.schema_no })
-  assert.equal(result, 200)
+  const readyPath = `/api/v1/admin/content/event/${encodeURIComponent(itemID)}/ready`
+  const result = await page.request.post(new URL(readyPath, origin).href, {
+    headers: { origin, 'x-csrf-token': csrf },
+    data: { expected_version: draft.version, schema_no: draft.schema_no, locale: 'en' },
+    maxRedirects: 0,
+  })
+  assert.equal(result.status(), 200)
   await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
   await page.getByRole('button', { name: /^Unpublished headline(?: |$)/u }).click()
   await editor.getByText('This translation is ready.', { exact: true }).waitFor()

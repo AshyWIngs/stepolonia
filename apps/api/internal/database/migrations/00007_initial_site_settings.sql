@@ -1827,7 +1827,7 @@ Usuwanie zarchiwizowanych ról
 Мұрағатталған рөлдерді жою
 
 admin.permission.sessions.revoke_any
-Revoke other users' sessions
+Revoke sessions for other users
 Unieważnianie sesji innych użytkowników
 Завершение сеансов других пользователей
 Басқа пайдаланушылардың сеанстарын аяқтау

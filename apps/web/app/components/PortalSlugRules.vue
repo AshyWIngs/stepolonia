@@ -169,10 +169,12 @@ defineExpose({ showInvalid })
 .slug-rules p { color: var(--admin-muted); }
 .slug-rules-list { list-style: none; padding: 0; }
 .slug-controls { align-items: end; }
-.slug-controls button { justify-self: start; white-space: normal; overflow-wrap: anywhere; }
 .slug-rule { padding-block-start: .5rem; border-block-start: 1px solid var(--admin-border); }
 
 .slug-controls button {
+  justify-self: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
   min-block-size: 44px;
   max-inline-size: 100%;
   padding: .5rem .75rem;

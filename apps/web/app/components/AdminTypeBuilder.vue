@@ -43,7 +43,7 @@ const failure = ref('')
 const feedback = ref('')
 const conflict = ref(false)
 const kinds: FieldKind[] = ['string', 'text', 'markdown', 'boolean', 'integer', 'decimal', 'datetime', 'enum', 'relation']
-const builtInFields = ['title', 'slug', 'body']
+const builtInFields = new Set(['title', 'slug', 'body'])
 let nextRowID = 0
 let active = true
 
@@ -218,7 +218,7 @@ function openFieldDetails(control: EventTarget | null) {
 
 function builtInKey(field: RegistryField, part: DisplayPart) {
   if (part === 'help' && field.kind === 'relation') return 'admin.content_relation_help'
-  if (field.scope !== 'localized' || field.visibility !== 'public' || !builtInFields.includes(field.key)) return undefined
+  if (field.scope !== 'localized' || field.visibility !== 'public' || !builtInFields.has(field.key)) return undefined
   if (part === 'label') return `admin.content_field_${field.key}`
   if (field.key === 'slug' && field.config?.slug) return 'admin.content_field_slug_help'
   return undefined

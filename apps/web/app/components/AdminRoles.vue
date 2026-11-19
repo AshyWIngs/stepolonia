@@ -104,7 +104,7 @@ function transition() {
   return run(async () => {
     const updated = await updateRoleState(role, action, props.csrf)
     if (!active.value) return
-    selected.value = updated || undefined
+    selected.value = updated ?? undefined
     confirmCommand.value = undefined
     await load(offset.value)
     if (active.value) feedback.value = 'admin.access_saved'
@@ -176,7 +176,7 @@ onMounted(() => { void run(() => load()) })
       <div class="access-actions role-edit-actions">
         <button type="submit" :disabled="busy || incomplete">{{ translate('admin.roles_save') }}</button>
         <button type="button" :disabled="busy" @click="mode = undefined">{{ translate('admin.cancel') }}</button>
-        <p v-if="incomplete" role="status">{{ translate('admin.role_rule_choose_delegated_operation') }}</p>
+        <output v-if="incomplete">{{ translate('admin.role_rule_choose_delegated_operation') }}</output>
       </div>
       <template v-if="mode !== 'copy'">
         <h3>{{ translate('admin.roles_grants') }}</h3>
@@ -201,5 +201,5 @@ onMounted(() => { void run(() => load()) })
 .role-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem; }
 .role-summary ul { margin-block: 0 .5rem; padding-inline-start: 1.25rem; }
 .role-edit-actions { position: sticky; inset-block-start: 0; z-index: 1; padding-block: .5rem; background: var(--admin-card); }
-.role-edit-actions p { flex-basis: 100%; margin: 0; }
+.role-edit-actions output { flex-basis: 100%; margin: 0; }
 </style>

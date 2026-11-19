@@ -114,18 +114,18 @@ function saveMembership() {
   const current = membership.value
   if (!current || !membershipDirty.value || membershipConflict.value || chosen.value.length > current.max_roles) return
   return run(async () => {
-    const updated = await replaceMembership(current, chosen.value, props.csrf).catch((problem: unknown) => {
-      if (active.value && problem instanceof AdminContentError && problem.code === 'version_conflict') membershipConflict.value = true
-      throw problem
+    const updated = await replaceMembership(current, chosen.value, props.csrf).catch((error_: unknown) => {
+      if (active.value && error_ instanceof AdminContentError && error_.code === 'version_conflict') membershipConflict.value = true
+      throw error_
     })
     if (!active.value) return
     updateUser(updated)
     feedback.value = 'admin.access_saved'
     try {
       await loadMembership(updated)
-    } catch (problem: unknown) {
+    } catch (error_: unknown) {
       if (active.value) membership.value = undefined
-      throw problem
+      throw error_
     }
   })
 }
@@ -150,20 +150,19 @@ function saveUser(user: AccessUser, action: UserAction) {
   })
 }
 
-function applyUserCommand(user: AccessUser, action: UserAction) {
-  switch (action) {
-    case 'invite': return issueInvitation(user, props.csrf).then(result => {
-      if (!active.value) return
-      updateUser(result.user)
-      issue.value = { token: result.token, expires_at: result.expires_at }
-    })
-    default: return changeUserState(user, action, props.csrf).then(updated => {
-      if (!active.value) return
-      updateUser(updated)
-      membership.value = undefined
-      sessionsOpen.value = false
-    })
+async function applyUserCommand(user: AccessUser, action: UserAction) {
+  if (action === 'invite') {
+    const result = await issueInvitation(user, props.csrf)
+    if (!active.value) return
+    updateUser(result.user)
+    issue.value = { token: result.token, expires_at: result.expires_at }
+    return
   }
+  const updated = await changeUserState(user, action, props.csrf)
+  if (!active.value) return
+  updateUser(updated)
+  membership.value = undefined
+  sessionsOpen.value = false
 }
 
 function openMembership() {
