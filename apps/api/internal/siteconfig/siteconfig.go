@@ -36,10 +36,12 @@ type Publication struct {
 	Language          Language          `json:"language" doc:"Language of the complete returned UI catalog, after fallback."`
 	Languages         []Language        `json:"languages" nullable:"false" doc:"Published active UI languages ordered by code. Each has a complete catalog in this publication."`
 	Messages          map[string]string `json:"messages" doc:"Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code."`
+	SlugRules         []SlugRule        `json:"slug_rules" nullable:"false" doc:"Published slug suggestion rules ordered by content language code and source character."`
 }
 type Draft struct {
-	Settings Settings
-	Catalogs map[string]map[string]string
+	Settings  Settings
+	Catalogs  map[string]map[string]string
+	SlugRules []SlugRule
 }
 
 const (
@@ -104,7 +106,7 @@ type Reader struct{ db *sql.DB }
 
 func NewReader(db *sql.DB) *Reader { return &Reader{db: db} }
 func (r *Reader) Read(ctx context.Context, requested, version string) (Publication, error) {
-	result := Publication{Languages: []Language{}, Messages: map[string]string{}}
+	result := Publication{Languages: []Language{}, Messages: map[string]string{}, SlugRules: []SlugRule{}}
 	if requested != "" {
 		value, err := normalize(requested)
 		if err != nil {
@@ -136,6 +138,10 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 	if err = readCatalog(ctx, tx, &result); err != nil {
 		return result, err
 	}
+	result.SlugRules, err = readSlugRules(ctx, tx, publishedSlugRulesQuery, result.Version)
+	if err != nil {
+		return result, dbError(err)
+	}
 	if err = tx.Commit(); err != nil {
 		return result, dbError(err)
 	}
@@ -165,6 +171,10 @@ func normalizeDraft(input Draft) (Draft, error) {
 	}
 
 	input.Catalogs = catalogs
+	input.SlugRules, err = normalizeSlugRules(input.SlugRules)
+	if err != nil {
+		return Draft{}, err
+	}
 	return input, nil
 }
 
@@ -184,7 +194,7 @@ func storeDraft(ctx context.Context, tx *sql.Tx, id string, input Draft) error {
 			return err
 		}
 	}
-	return nil
+	return storeSlugRules(ctx, tx, id, input.SlugRules)
 }
 
 func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map[string]string) error {
@@ -208,6 +218,7 @@ func storeCatalog(ctx context.Context, tx *sql.Tx, id, code string, messages map
 }
 func deleteDraft(ctx context.Context, tx *sql.Tx, id string) error {
 	for _, query := range []string{
+		"DELETE FROM public.site_revision_slug_rules WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_messages WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_languages WHERE revision_id=$1",
 		"DELETE FROM public.site_revision_keys WHERE revision_id=$1",
@@ -318,6 +329,6 @@ func (Language) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sche
 
 // TransformSchema documents the public Publication contract without changing validation.
 func (Publication) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Description = "One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
+	schema.Description = "One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
 	return schema
 }

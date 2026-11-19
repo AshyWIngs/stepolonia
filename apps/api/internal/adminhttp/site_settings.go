@@ -15,22 +15,20 @@ import (
 )
 
 const (
-	settingsPath             = "/api/v1/admin/settings"
-	publishSettingsPath      = settingsPath + "/publish"
-	readSettingsOperation    = "settingsReadEditable"
-	saveSettingsOperation    = "settingsSaveDraft"
-	publishSettingsOperation = "settingsPublish"
-	settingsBodyBytes        = 1_000_000
-	settingsTimeout          = 8 * time.Second
+	settingsPath           = "/api/v1/admin/settings"
+	applySettingsPath      = settingsPath + "/publication"
+	readSettingsOperation  = "settingsReadEditable"
+	applySettingsOperation = "settingsApply"
+	settingsBodyBytes      = 1_000_000
+	settingsTimeout        = 8 * time.Second
 )
 
 var settingsRoutes = map[string][]route{
 	settingsPath: {
-		{kind: fullKind, method: http.MethodGet, operationID: readSettingsOperation, summary: "Read editable portal settings", response: editableSettingsSchemaName, description: "Requires the settings.manage grant and a verified editor database login. Returns the draft, or the current publication if there is no draft, along with the enabled language directory."},
-		{kind: fullKind, method: http.MethodPut, operationID: saveSettingsOperation, summary: "Save a portal settings draft", response: "SettingsVersion", description: "Requires settings.manage, CSRF and fresh strong authentication. Replaces the full draft, with all selected interface catalogs, at the expected version. Public readers keep the previous publication."},
+		{kind: fullKind, method: http.MethodGet, operationID: readSettingsOperation, summary: "Read editable portal settings", response: editableSettingsSchemaName, description: "Requires the settings.manage grant and a verified editor database login. Returns pending settings when present, otherwise the current publication, along with the enabled language directory."},
 	},
-	publishSettingsPath: {
-		{kind: fullKind, method: http.MethodPost, operationID: publishSettingsOperation, summary: "Publish portal settings and translations", response: "SettingsPublication", description: "Requires settings.manage, CSRF and fresh strong authentication. Publishes the saved revision at the expected version. Publication and audit commit atomically."},
+	applySettingsPath: {
+		{kind: fullKind, method: http.MethodPut, operationID: applySettingsOperation, summary: "Apply portal settings", response: "SettingsPublication", description: "Requires a full session, settings.manage and CSRF. Validates and applies the complete settings and interface catalogs at the expected version. Settings and audit commit atomically. Omitted slug rules keep the editable revision's rules."},
 	},
 }
 
@@ -46,6 +44,7 @@ type editableSettingsResponse struct {
 	Catalogs    map[string]map[string]string `json:"catalogs"`
 	Languages   []siteconfig.Language        `json:"languages"`
 	MessageKeys []string                     `json:"message_keys"`
+	SlugRules   []siteconfig.SlugRule        `json:"slug_rules" nullable:"false" doc:"Slug suggestion rules from the same editable revision, ordered by content language code and source character."`
 }
 
 type settingsPublicationResponse struct {
@@ -57,6 +56,7 @@ type settingsInput struct {
 	ExpectedVersion int64                        `json:"expected_version,string"`
 	Settings        siteconfig.Settings          `json:"settings"`
 	Catalogs        map[string]map[string]string `json:"catalogs"`
+	SlugRules       []siteconfig.SlugRule        `json:"slug_rules"`
 }
 
 func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route, ip string) {
@@ -84,7 +84,7 @@ func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route
 		writeError(w, identity.ErrValidation)
 		return
 	}
-	h.changeSettings(ctx, w, req, rt.operationID, input)
+	h.applySettings(ctx, w, req, input)
 }
 
 func (h *handler) readSettings(ctx context.Context, w http.ResponseWriter, req identity.AuthRequest) {
@@ -101,36 +101,24 @@ func (h *handler) readSettings(ctx context.Context, w http.ResponseWriter, req i
 	respond(w, editableSettingsResponse{
 		settingsVersion: settingsVersion{editable.Version}, HasDraft: editable.HasDraft, PublishedID: editable.PublishedID,
 		Settings: editable.Settings, Catalogs: editable.Catalogs, Languages: editable.Languages, MessageKeys: editable.MessageKeys,
+		SlugRules: editable.SlugRules,
 	})
 }
 
-func (h *handler) changeSettings(ctx context.Context, w http.ResponseWriter, req identity.AuthRequest, operation string, input settingsInput) {
-	var publication string
-	var version int64
-	var err error
-	if operation == saveSettingsOperation {
-		err = h.settings.SaveSiteSettings(ctx, req, func(ctx context.Context, tx *sql.Tx) error {
-			var err error
-			version, err = siteconfig.SaveDraftTx(ctx, tx, input.ExpectedVersion, siteconfig.Draft{Settings: input.Settings, Catalogs: input.Catalogs})
-			return settingsCommandError(err)
+func (h *handler) applySettings(ctx context.Context, w http.ResponseWriter, req identity.AuthRequest, input settingsInput) {
+	var result settingsPublicationResponse
+	err := h.settings.ApplySiteSettings(ctx, req, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		result.PublicationID, result.Version, err = siteconfig.ApplyTx(ctx, tx, input.ExpectedVersion, siteconfig.Draft{
+			Settings: input.Settings, Catalogs: input.Catalogs, SlugRules: input.SlugRules,
 		})
-	} else {
-		err = h.settings.PublishSiteSettings(ctx, req, func(ctx context.Context, tx *sql.Tx) error {
-			var err error
-			publication, version, err = siteconfig.PublishTx(ctx, tx, input.ExpectedVersion)
-			return settingsCommandError(err)
-		})
-	}
+		return settingsCommandError(err)
+	})
 	if err != nil {
 		writeSettingsError(w, err)
 		return
 	}
-	result := settingsVersion{version}
-	if operation == saveSettingsOperation {
-		respond(w, result)
-	} else {
-		respond(w, settingsPublicationResponse{settingsVersion: result, PublicationID: publication})
-	}
+	respond(w, result)
 }
 
 func decodeSettings(raw []byte, schema *huma.Schema, input *settingsInput) bool {

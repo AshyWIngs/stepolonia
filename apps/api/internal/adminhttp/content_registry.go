@@ -44,12 +44,12 @@ var registryReadRoute = route{
 
 var registryCreateRoute = route{
 	kind: fullKind, method: http.MethodPost, operationID: registryCreateOperation, response: registryCollectionSchema,
-	summary: "Create a collection", description: "Requires content_types.manage, a full session, CSRF and fresh MFA. The registered renderer determines the collection key. Initial access is explicit, limited to the newly created collection and fields, and guarded by additional permissions.",
+	summary: "Create a collection", description: "Requires content_types.manage, a full session and CSRF. The registered renderer determines the collection key. Initial access is explicit, limited to the newly created collection and fields, and guarded by fresh MFA and additional permissions.",
 }
 
 var registryReviseRoute = route{
 	kind: fullKind, method: http.MethodPatch, operationID: registryReviseOperation, response: registryCollectionSchema,
-	summary: "Revise a collection schema", description: "Requires content_types.manage, a full session, CSRF, fresh MFA and the current collection version. Changes labels or adds optional fields. Explicit initial access applies only to new fields and existing operations and scopes within the actor's delegation authority.",
+	summary: "Revise a collection schema", description: "Requires content_types.manage, a full session, CSRF and the current collection version. Changes labels or adds optional fields. Explicit initial access requires fresh MFA and applies only to new fields and existing operations and scopes within the actor's delegation authority.",
 }
 
 func registryTarget(path, method string) (routeTarget, route, bool) {

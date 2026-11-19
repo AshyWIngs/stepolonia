@@ -138,7 +138,12 @@ func validateGrantReferences(ctx context.Context, tx *sql.Tx, g RoleGrant) error
 
 func queryRoleGrants(ctx context.Context, tx *sql.Tx, role string) ([]RoleGrant, error) {
 	out := []RoleGrant{}
-	rows, err := tx.QueryContext(ctx, `SELECT g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(g.object_scope,''),g.can_delegate,COALESCE(g.target_scope,''),COALESCE(g.object_ceiling,''),g.may_delegate_content,array_to_json(g.delegate_operations)::text,COALESCE((SELECT json_agg(f.field_id::text ORDER BY f.field_id)::text FROM public.grant_fields f WHERE f.grant_id=g.id),'[]') FROM public.role_grants g WHERE g.role_id=$1 ORDER BY g.operation,g.type_id,g.object_scope,g.id`, role)
+	rows, err := tx.QueryContext(ctx, `SELECT g.operation,g.scope,COALESCE(g.type_id::text,''),COALESCE(t.key,''),
+ COALESCE(g.object_scope,''),g.can_delegate,COALESCE(g.target_scope,''),COALESCE(g.object_ceiling,''),
+ g.may_delegate_content,array_to_json(g.delegate_operations)::text,
+ COALESCE((SELECT json_agg(f.field_id::text ORDER BY f.field_id)::text FROM public.grant_fields f WHERE f.grant_id=g.id),'[]')
+ FROM public.role_grants g LEFT JOIN public.content_types t ON t.id=g.type_id
+ WHERE g.role_id=$1 ORDER BY g.operation,g.type_id,g.object_scope,g.id`, role)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +151,7 @@ func queryRoleGrants(ctx context.Context, tx *sql.Tx, role string) ([]RoleGrant,
 	for rows.Next() {
 		var g RoleGrant
 		var operations, fields string
-		if err = rows.Scan(&g.Operation, &g.Scope, &g.TypeID, &g.ObjectScope, &g.CanDelegate, &g.TargetScope, &g.ObjectCeiling, &g.MayDelegateContent, &operations, &fields); err != nil {
+		if err = rows.Scan(&g.Operation, &g.Scope, &g.TypeID, &g.collectionKey, &g.ObjectScope, &g.CanDelegate, &g.TargetScope, &g.ObjectCeiling, &g.MayDelegateContent, &operations, &fields); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(operations), &g.DelegateOperations); err != nil {

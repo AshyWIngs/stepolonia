@@ -68,8 +68,6 @@
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: start;
   gap: .5rem 1rem;
-  max-width: 78rem;
-  margin-inline: auto;
 }
 
 .admin-name {
@@ -86,39 +84,64 @@
 .admin-brand small { color: var(--admin-muted); }
 
 .admin-preferences {
+  position: relative;
   display: grid;
   grid-auto-flow: column;
+  justify-self: end;
   gap: .5rem;
 }
 
+.admin-preferences :deep(.header-preference) { position: static; }
+
+.admin-header-action {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: .45rem;
+  background: var(--admin-card);
+  color: inherit;
+  cursor: pointer;
+}
+
+.admin-header-action:hover:not(:disabled) { background: var(--admin-bg); }
+
 .admin-workspace {
   display: grid;
-  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+  grid-template-columns: clamp(13rem, 16vw, 17rem) minmax(0, 1fr);
   align-items: start;
   gap: clamp(1rem, 3vw, 2rem);
-  max-width: 78rem;
-  margin: 1.5rem auto 0;
+  margin-block-start: 1.5rem;
 }
 
 .admin-navigation {
-  display: grid;
-  gap: .35rem;
   min-width: 0;
   padding: .5rem;
   border-radius: .65rem;
   background: var(--admin-card);
 }
 
-.admin-identity-actions {
+.admin-nav-domains, .admin-nav-children {
   display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  justify-self: end;
-  inline-size: min(100%, 17rem);
-  gap: .5rem;
+  gap: .125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.admin-navigation button, .admin-identity-actions button, .admin-leave button {
+.admin-nav-domains > li { min-inline-size: 0; }
+
+.admin-nav-children {
+  margin-block: .25rem .5rem;
+  margin-inline-start: 1rem;
+  padding-inline-start: .5rem;
+  border-inline-start: 1px solid var(--admin-border);
+}
+
+.admin-navigation button, .admin-leave button {
   min-height: 44px;
   min-width: 0;
   padding: .5rem .75rem;
@@ -132,35 +155,52 @@
   overflow-wrap: anywhere;
 }
 
-.admin-navigation button { text-align: start; }
+.admin-navigation button { inline-size: 100%; text-align: start; overflow-wrap: break-word; }
+.admin-navigation .admin-nav-parent { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.admin-nav-children button { font-weight: 500; }
+.admin-navigation .admin-nav-active:not([aria-current]), .admin-navigation button:not([aria-disabled="true"], [aria-current]):hover { background: var(--admin-bg); }
 
-.admin-identity-actions button {
-  box-sizing: border-box;
-  line-height: 1.2;
-  min-block-size: calc(2lh + 1rem + 2px);
+.admin-nav-chevron {
+  flex: 0 0 .45rem;
+  block-size: .45rem;
+  margin-inline-end: .2rem;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
 }
 
-:is(.admin-navigation, .admin-identity-actions) [aria-current="page"] {
+[aria-expanded="true"] > .admin-nav-chevron { transform: rotate(225deg); }
+
+.admin-navigation [aria-current="page"], .admin-header-action[aria-current="page"] {
   border-color: var(--admin-action);
   background: var(--admin-action);
   color: var(--admin-action-text);
 }
 
-:is(.admin-navigation, .admin-identity-actions) button:disabled {
+.admin-navigation button[aria-disabled="true"], .admin-header-action:disabled {
   opacity: .65;
   cursor: default;
 }
 
 @media (max-width: 48rem) {
   .admin-workspace { grid-template-columns: minmax(0, 1fr); }
-  .admin-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-nav-domains, .admin-nav-children { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-nav-open { grid-column: 1 / -1; }
+}
+
+@media (width > 48rem) {
+  .admin-navigation { position: sticky; inset-block-start: 1rem; max-block-size: calc(100dvh - 2rem); overflow: auto; }
 }
 
 @media (max-width: 40rem) {
   .admin-brand small { line-height: 1.2; min-block-size: 2.4em; }
 }
 
-.admin-leave {
+@media (max-width: 32rem) {
+  .admin-header--signed-in { grid-template-columns: minmax(0, 1fr); }
+}
+
+.admin-dialog {
   box-sizing: border-box;
   max-width: min(30rem, calc(100% - 2rem));
   padding: 1.25rem;
@@ -170,15 +210,15 @@
   color: var(--admin-text);
 }
 
-.admin-leave::backdrop {
+.admin-dialog::backdrop {
   background: rgb(0 0 0 / 55%);
 }
 
-.admin-leave h2 {
+.admin-dialog h2 {
   margin-block-start: 0;
 }
 
-.admin-leave form {
+:is(.admin-leave form, .admin-step-up-actions) {
   display: flex;
   flex-wrap: wrap;
   gap: .5rem;
@@ -211,17 +251,18 @@
   font: 700 clamp(1.55rem, 4vw, 2rem)/1.15 system-ui, sans-serif;
 }
 
-.admin-card form {
+.admin-card--workspace > h1 { inline-size: fit-content; max-inline-size: 100%; overflow-wrap: break-word; }
+
+:is(.admin-card, .admin-step-up) form {
   display: grid;
   gap: 0.55rem;
 }
 
-.admin-card p {
+:is(.admin-card, .admin-step-up) p {
   line-height: 1.5;
 }
 
-.admin-card input,
-.admin-card button {
+:is(.admin-card, .admin-step-up) :is(input, button) {
   box-sizing: border-box;
   min-height: 44px;
   min-width: 0;
@@ -234,12 +275,12 @@
   font: inherit;
 }
 
-.admin-card input {
+:is(.admin-card, .admin-step-up) input {
   width: 100%;
   margin-bottom: 0.5rem;
 }
 
-.admin-card button {
+:is(.admin-card, .admin-step-up) button {
   margin-top: 0.25rem;
   border-color: var(--admin-action);
   background: var(--admin-action);
@@ -248,12 +289,12 @@
   cursor: pointer;
 }
 
-.admin-card button:disabled {
+:is(.admin-card, .admin-step-up) button:disabled {
   opacity: 0.65;
   cursor: default;
 }
 
-.admin-card .admin-secondary {
+:is(.admin-card, .admin-step-up) .admin-secondary {
   background: var(--admin-card);
   color: var(--admin-text);
 }
@@ -274,22 +315,4 @@
   border-inline-start: 3px solid var(--admin-error);
   background: var(--admin-error-bg);
   color: var(--admin-error);
-}
-
-nav.access-navigation {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: .5rem;
-}
-
-nav.access-navigation button { overflow-wrap: anywhere; }
-
-@media (max-width: 38rem) {
-  nav.access-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-nav.access-navigation [aria-pressed="true"] {
-  border-color: var(--admin-action);
-  background: var(--admin-action);
-  color: var(--admin-action-text);
 }

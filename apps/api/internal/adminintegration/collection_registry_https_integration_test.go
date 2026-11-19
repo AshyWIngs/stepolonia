@@ -36,7 +36,7 @@ func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 		t.Fatalf("expected Event renderer to be available: %s", renderers)
 	}
 	expireSessionStepUp(t, f.state.db, actor.Token)
-	call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusForbidden)
+	assertPublicationProblem(t, call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusForbidden), stepUpRequiredProblem)
 	authRefreshStep(t, f.state.db, actor.Token)
 	call(http.MethodPost, managedCollectionsPath, strings.Replace(eventCreateBody, `"route_namespace"`, `"type_id":"injected","route_namespace"`, 1), http.StatusBadRequest)
 	verifyRegistryAuditRollback(t, f.state, func() {
@@ -54,10 +54,14 @@ func TestAdminCollectionInitialAccessHTTPSIntegration(t *testing.T) {
 	call(http.MethodPost, managedCollectionsPath, eventCreateBody, http.StatusConflict)
 	call(http.MethodPost, draftHTTPPrefix+"event", createDraftHTTPSBody, http.StatusCreated)
 	const revision = `{"expected_version":"1","initialize_new_field_access":true,"fields":[` + eventBaseFields + `,` + eventExtraField + `]}`
+	expireSessionStepUp(t, f.state.db, actor.Token)
+	assertPublicationProblem(t, call(http.MethodPatch, eventCollectionPath, revision, http.StatusForbidden), stepUpRequiredProblem)
+	authRefreshStep(t, f.state.db, actor.Token)
 	call(http.MethodPatch, eventCollectionPath, revision, http.StatusOK)
 	assertAddedFieldGrants(t, f.state, typeID, roleID)
 	call(http.MethodPatch, eventCollectionPath, revision, http.StatusConflict)
 	call(http.MethodPatch, eventCollectionPath, strings.Replace(revision, `"expected_version":"1"`, `"expected_version":"2"`, 1), http.StatusForbidden)
+	expireSessionStepUp(t, f.state.db, actor.Token)
 	assertUninitializedFieldAvailableToManagers(t, f.state, typeID, call)
 	assertBoundRoleGuard(t, f.state, typeID, roleID)
 }

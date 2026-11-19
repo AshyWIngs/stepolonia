@@ -23,7 +23,7 @@ type siteOutput struct{ Body siteconfig.Publication }
 
 func registerSite(api huma.API, reader *siteconfig.Reader, logger *slog.Logger) {
 	huma.Register(api, huma.Operation{Tags: []string{sitePublicationTag}, OperationID: "getSite", Method: http.MethodGet, Path: "/api/v1/site", Summary: "Read published site settings and one complete UI catalog",
-		Description: "One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
+		Description: "One atomic publication supplies settings, language-specific slug suggestion rules, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
 		Responses:   siteResponses(api), Middlewares: huma.Middlewares{siteQuery(api)}}, func(ctx context.Context, input *siteInput) (*siteOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -82,11 +82,12 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 		Language:          language,
 		Languages:         []siteconfig.Language{language},
 		Messages:          apiexamples.PortalMessageExample(),
+		SlugRules:         []siteconfig.SlugRule{{LanguageCode: "pl", Character: "ł", Replacement: "l"}},
 	}
 	omitted := value
 	omitted.RequestedLanguage = ""
 	responses["200"] = &huma.Response{
-		Description: "One atomic publication with settings and a complete UI catalog, possibly using the configured fallback.",
+		Description: "One atomic publication with settings, slug suggestion rules and a complete UI catalog, possibly using the configured fallback.",
 		Content: map[string]*huma.MediaType{
 			jsonMediaType: {
 				Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[siteconfig.Publication](), true, "Publication"),

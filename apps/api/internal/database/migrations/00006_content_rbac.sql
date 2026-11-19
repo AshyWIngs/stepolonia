@@ -290,6 +290,7 @@ INSERT INTO public.permission_operations (key, scope) VALUES
 ('roles.delete', 'installation'),
 ('sessions.revoke_any', 'installation'),
 ('audit.read', 'installation'),
+('security_policy.manage', 'installation'),
 ('settings.manage', 'installation');
 
 CREATE TRIGGER roles_write_mutex

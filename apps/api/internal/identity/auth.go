@@ -67,6 +67,7 @@ type Session struct {
 	version               int64
 	now, created, expires time.Time
 	stepUp                sql.NullTime
+	idleTimeoutMinutes    int
 }
 
 func (s Session) UserID() string { return s.user }
@@ -138,8 +139,30 @@ func authAudit(ctx context.Context, tx *sql.Tx, op, user string, denied bool) er
 	_, err = tx.ExecContext(ctx, `INSERT INTO public.security_audit(id,operation,actor_id,target_id,result,reason,request_id)VALUES($1,$2,$3,$3,$4,$5,$6)`, id, op, actor, result, reason, ctx.Value(auditRequestKey{}))
 	return err
 }
-func (s *AuthService) issue(ctx context.Context, tx *sql.Tx, user, kind string, version int64, step bool) (SessionTokens, error) {
-	var out SessionTokens
+
+type sessionLifetime struct {
+	ttlMinutes, idleTimeoutMinutes int
+	createdAt, expiresAt           sql.NullTime
+}
+
+func (s *AuthService) issue(ctx context.Context, tx *sql.Tx, user, kind string, version int64, strong bool) (SessionTokens, error) {
+	lifetime := sessionLifetime{ttlMinutes: 5, idleTimeoutMinutes: DefaultSessionIdleMinutes}
+	switch kind {
+	case sessionFull:
+		policy, err := readSessionPolicy(ctx, tx)
+		if err != nil {
+			return SessionTokens{}, err
+		}
+		lifetime.ttlMinutes = policy.AbsoluteTimeoutHours * 60
+		lifetime.idleTimeoutMinutes = policy.IdleTimeoutMinutes
+	case sessionRecovery, sessionEnrollment:
+		lifetime.ttlMinutes = 10
+	}
+	return issueSession(ctx, tx, user, kind, version, strong, lifetime)
+}
+
+func issueSession(ctx context.Context, tx *sql.Tx, user, kind string, version int64, strong bool, lifetime sessionLifetime) (SessionTokens, error) {
+	out := SessionTokens{Kind: kind}
 	var err error
 	out.Token, err = bearer()
 	if err != nil {
@@ -153,21 +176,23 @@ func (s *AuthService) issue(ctx context.Context, tx *sql.Tx, user, kind string, 
 	if err != nil {
 		return out, err
 	}
-	ttl := "5 minutes"
-	if kind == sessionFull {
-		ttl = "12 hours"
-	}
-	if kind == sessionRecovery || kind == sessionEnrollment {
-		ttl = "10 minutes"
-	}
 	var uid, cv any
 	if user != "" {
 		uid, cv = user, version
 	}
-	out.Kind = kind
-	err = tx.QueryRowContext(ctx, `INSERT INTO public.sessions(id,token_digest,csrf_digest,user_id,kind,credential_version,created_at,last_seen,expires_at,step_up_at) SELECT $1,$2,$3,$4,$5,$6,n,n,n+$7::interval,CASE WHEN $8 THEN n END FROM (SELECT clock_timestamp() n)t RETURNING expires_at`, id, digest(out.Token), digest(out.CSRF), uid, kind, cv, ttl, step).Scan(&out.ExpiresAt)
+	err = tx.QueryRowContext(ctx, `WITH stamp AS (SELECT clock_timestamp() AS now)
+ INSERT INTO public.sessions(id,token_digest,csrf_digest,user_id,kind,credential_version,
+ created_at,last_seen,expires_at,step_up_at,idle_timeout_minutes)
+ SELECT $1,$2,$3,$4,$5,$6,COALESCE($10,now),now,COALESCE($11,now+make_interval(mins=>$7)),
+ CASE WHEN $8 THEN now END,$9 FROM stamp WHERE $11::timestamptz IS NULL OR $11>now RETURNING expires_at`,
+		id, digest(out.Token), digest(out.CSRF), uid, kind, cv, lifetime.ttlMinutes, strong, lifetime.idleTimeoutMinutes,
+		lifetime.createdAt, lifetime.expiresAt).Scan(&out.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SessionTokens{}, ErrAuthenticationRequired
+	}
 	return out, err
 }
+
 func (s *AuthService) NewPreauth(ctx context.Context) (SessionTokens, error) {
 	var out SessionTokens
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -186,7 +211,7 @@ func (s *AuthService) session(ctx context.Context, tx *sql.Tx, req AuthRequest, 
 	if !validBearer(req.Token) {
 		return x, ErrAuthenticationRequired
 	}
-	err := tx.QueryRowContext(ctx, `SELECT s.id::text,COALESCE(s.user_id::text,''),s.kind,COALESCE(s.credential_version,0),s.step_up_at,s.csrf_digest,clock_timestamp(),s.created_at,s.expires_at FROM public.sessions s LEFT JOIN public.users u ON u.id=s.user_id WHERE s.token_digest=$1 AND s.kind=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND (s.kind<>'full' OR s.last_seen>clock_timestamp()-interval '30 minutes') AND (s.kind='preauth' OR (u.credential_version=s.credential_version AND ((s.kind='enrollment' AND u.state='pending' AND u.enrollment_completed_at IS NULL) OR (s.kind<>'enrollment' AND u.state='active')))) AND s.failed_attempts<5`, digest(req.Token), kind).Scan(&x.id, &x.user, &x.kind, &x.version, &x.stepUp, &expected, &x.now, &x.created, &x.expires)
+	err := tx.QueryRowContext(ctx, `SELECT s.id::text,COALESCE(s.user_id::text,''),s.kind,COALESCE(s.credential_version,0),s.step_up_at,s.csrf_digest,clock_timestamp(),s.created_at,s.expires_at,s.idle_timeout_minutes FROM public.sessions s LEFT JOIN public.users u ON u.id=s.user_id WHERE s.token_digest=$1 AND s.kind=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND (s.kind<>'full' OR s.last_seen>clock_timestamp()-make_interval(mins=>s.idle_timeout_minutes)) AND (s.kind='preauth' OR (u.credential_version=s.credential_version AND ((s.kind='enrollment' AND u.state='pending' AND u.enrollment_completed_at IS NULL) OR (s.kind<>'enrollment' AND u.state='active')))) AND s.failed_attempts<5`, digest(req.Token), kind).Scan(&x.id, &x.user, &x.kind, &x.version, &x.stepUp, &expected, &x.now, &x.created, &x.expires, &x.idleTimeoutMinutes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return x, ErrAuthenticationRequired
 	}
@@ -228,10 +253,13 @@ func revokeSession(ctx context.Context, tx *sql.Tx, id string) error {
 	return err
 }
 
-// CheckReady verifies installation binding and all confirmed MFA keys before
-// serving authentication. It performs no writes and accepts a startup context.
+// CheckReady verifies installation binding, session policy and confirmed MFA
+// keys before serving authentication. It performs no writes.
 func (s *AuthService) CheckReady(ctx context.Context) error {
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := readSessionPolicy(ctx, tx); err != nil {
+			return err
+		}
 		rows, err := tx.QueryContext(ctx, `SELECT user_id::text,ciphertext,key_version FROM public.mfa_totp WHERE confirmed_at IS NOT NULL`)
 		if err != nil {
 			return err

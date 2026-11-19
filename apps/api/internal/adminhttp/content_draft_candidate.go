@@ -46,7 +46,7 @@ func publishDraftRoute() route {
 
 func candidateRoute(operation, summary, detail string) route {
 	return route{kind: fullKind, method: http.MethodPost, operationID: operation, summary: summary, response: contentDraftSchema,
-		description: "Requires a verified draft database login, a full session, CSRF and strong authentication no older than five minutes. Rechecks the collection, item scope, required field permissions and expected versions under the shared security mutex. " + detail + " The result and its audit commit together."}
+		description: "Requires a verified draft database login, a full session and CSRF. Rechecks the collection, item scope, required field permissions and expected versions under the shared security mutex. " + detail + " The result and its audit commit together."}
 }
 
 func draftCandidateTarget(path string) (routeTarget, route, bool) {

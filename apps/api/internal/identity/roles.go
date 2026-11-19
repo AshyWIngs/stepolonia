@@ -41,6 +41,22 @@ type RoleGrant struct {
 	TargetScope, ObjectCeiling            string
 	MayDelegateContent                    bool
 	DelegateOperations, FieldIDs          []string
+	collectionKey                         string
+}
+
+// CollectionKeys identifies only the collections referenced by the role's grants.
+func (r Role) CollectionKeys() map[string]string {
+	var keys map[string]string
+	for _, grant := range r.Grants {
+		if grant.collectionKey == "" {
+			continue
+		}
+		if keys == nil {
+			keys = make(map[string]string)
+		}
+		keys[grant.TypeID] = grant.collectionKey
+	}
+	return keys
 }
 
 // RoleInput replaces the complete explicit name and grant set.

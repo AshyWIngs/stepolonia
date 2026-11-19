@@ -78,7 +78,7 @@ onBeforeUnmount(() => { active = false })
     <div class="access-actions">
       <button v-if="set && !confirm" type="button" :disabled="busy || additions + removals === 0" @click="confirm = true">{{ translate('admin.assignees_save') }}</button>
       <button v-if="failure" type="button" :disabled="busy" @click="load">{{ translate('admin.access_reload') }}</button>
-      <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
+      <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.content_editor') }}</button>
     </div>
   </section>
 </template>

@@ -4,7 +4,7 @@ COMPOSE = python3 scripts/site_config.py --site "$(SITE)"
 GRYPE_IMAGE = anchore/grype:v0.121.3
 SQL_MIGRATIONS = apps/api/internal/database/migrations
 
-.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate import-languages db-test publishing-test auth-test resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
+.PHONY: swagger swagger-assets-check setup up down config build docker-check test smoke lifecycle isolation e2e migrate import-languages db-test publishing-test auth-test browser-dependencies resource-test sdk sdk-check lint lint-go lint-python lint-web duplicates image-audit verify check-go check-python check-web check-db api-checks web-checks python-tests lint-sql ci-config ci-build ci-service-checks ci-db-test ci-publishing-test ci-image-audit python-version-check
 
 swagger:
 	python3 scripts/dev-swagger.py
@@ -67,8 +67,9 @@ duplicates:
 # Each prerequisite runs once, including duplicates through lint.
 verify: lint config test build db-test publishing-test auth-test image-audit
 
-auth-test:
-	python3 scripts/test-auth.py
+auth-test: browser-dependencies
+	cd apps/web && npm run build
+	ADMIN_UI_BROWSER_TEST=1 python3 scripts/test-auth.py
 
 resource-test:
 	python3 scripts/test-resources.py
@@ -159,10 +160,11 @@ ci-db-test:
 	python3 scripts/test-publishing.py
 
 publishing-test: sdk-check
-	$(MAKE) --no-print-directory ci-publishing-test
 
-ci-publishing-test:
+browser-dependencies:
 	cd apps/web && npm ci --ignore-scripts && node node_modules/playwright/cli.js install --with-deps --only-shell chromium
+
+publishing-test ci-publishing-test: browser-dependencies
 	python3 scripts/test-publishing.py --runtime
 
 sdk:

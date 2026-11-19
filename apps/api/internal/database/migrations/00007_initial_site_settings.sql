@@ -272,6 +272,12 @@ Ustawienia portalu
 Настройки портала
 Портал параметрлері
 
+admin.localization
+Languages and translations
+Języki i tłumaczenia
+Языки и переводы
+Тілдер мен аудармалар
+
 admin.portal_name
 Portal name
 Nazwa portalu
@@ -327,10 +333,16 @@ Zapisz szkic
 Нобайды сақтау
 
 admin.publish_draft
-Publish draft
-Opublikuj szkic
-Опубликовать черновик
-Нобайды жариялау
+Publish settings
+Opublikuj ustawienia
+Опубликовать настройки
+Параметрлерді жариялау
+
+admin.settings_review_publish
+Review publication
+Sprawdź przed publikacją
+Проверить перед публикацией
+Жариялау алдында тексеру
 
 admin.confirm_publish
 Publish the saved settings and interface texts?
@@ -349,6 +361,30 @@ Settings published.
 Ustawienia opublikowane.
 Настройки опубликованы.
 Параметрлер жарияланды.
+
+admin.settings_save_changes
+Save changes
+Zapisz zmiany
+Сохранить изменения
+Өзгерістерді сақтау
+
+admin.settings_saved
+Settings saved.
+Ustawienia zapisane.
+Настройки сохранены.
+Параметрлер сақталды.
+
+admin.settings_pending
+Saving also applies the previously saved changes in these sections.
+Zapis zastosuje także wcześniej zapisane zmiany w tych sekcjach.
+При сохранении также применятся ранее сохранённые изменения в этих разделах.
+Сақтағанда осы бөлімдердегі бұрын сақталған өзгерістер де қолданылады.
+
+admin.settings_remove_catalog
+Remove interface translations
+Usuń tłumaczenia interfejsu
+Убрать переводы интерфейса
+Интерфейс аудармаларын алып тастау
 
 admin.access_denied
 You do not have permission for this action.
@@ -397,6 +433,12 @@ Confirm identity
 Potwierdź tożsamość
 Подтвердить личность
 Жеке басты растау
+
+admin.identity_confirmed
+Identity confirmed. Repeat the action to continue.
+Potwierdzono tożsamość. Wykonaj czynność ponownie, aby kontynuować.
+Личность подтверждена. Повторите действие, чтобы продолжить.
+Жеке басыңыз расталды. Жалғастыру үшін әрекетті қайталаңыз.
 
 admin.add_catalog
 Add interface language
@@ -590,6 +632,108 @@ Brak opublikowanych tłumaczeń.
 Нет опубликованных переводов.
 Жарияланған аударма жоқ.
 
+admin.content_publication_heading
+Publication
+Publikacja
+Публикация
+Жариялау
+
+admin.content_save_before_publication
+Save the draft before checking or publishing it.
+Zapisz szkic przed sprawdzeniem lub publikacją.
+Сохраните черновик перед проверкой или публикацией.
+Тексеру немесе жариялау алдында нобайды сақтаңыз.
+
+admin.content_prepare_translation
+Check translation
+Sprawdź tłumaczenie
+Проверить перевод
+Аударманы тексеру
+
+admin.content_publication_publish_hint
+Saved translations can be checked and published here.
+Tutaj możesz sprawdzić i opublikować zapisane tłumaczenia.
+Здесь можно проверить и опубликовать сохранённые переводы.
+Сақталған аудармаларды осы жерде тексеріп, жариялауға болады.
+
+admin.content_publication_check_hint
+Check the draft to prepare it for publication.
+Sprawdź szkic, aby przygotować go do publikacji.
+Проверьте черновик перед передачей на публикацию.
+Жариялауға дайындау үшін нобайды тексеріңіз.
+
+admin.content_publication_handoff
+This translation is ready for someone with publishing access.
+Tłumaczenie jest gotowe do publikacji przez osobę z uprawnieniami.
+Перевод готов. Его может опубликовать сотрудник с нужными правами.
+Аударма дайын. Оны жариялау құқығы бар қызметкер жариялай алады.
+
+admin.content_publication_add_translation
+Fill in the translation and save the draft.
+Uzupełnij tłumaczenie i zapisz szkic.
+Заполните перевод и сохраните черновик.
+Аударманы толтырып, нобайды сақтаңыз.
+
+admin.content_publication_await_checks
+An editor must check the saved translation and shared fields before you can publish them.
+Przed publikacją redaktor musi sprawdzić zapisane tłumaczenie i pola wspólne.
+Перед публикацией редактор должен проверить сохранённый перевод и общие поля.
+Жариялау алдында редактор сақталған аударманы және ортақ өрістерді тексеруі керек.
+
+admin.content_publication_access
+This account cannot check or publish this draft.
+To konto nie może sprawdzić ani opublikować szkicu.
+У этой учётной записи нет прав на проверку или публикацию черновика.
+Бұл тіркелгі нобайды тексере немесе жариялай алмайды.
+
+admin.content_publication_schema_access
+The collection structure changed. Ask someone who can edit all fields to update the draft.
+Struktura kolekcji się zmieniła. Poproś osobę z prawem edycji wszystkich pól o aktualizację szkicu.
+Структура коллекции изменилась. Обновить черновик может сотрудник с правом редактирования всех полей.
+Жинақ құрылымы өзгерді. Нобайды барлық өрісті өңдей алатын қызметкер жаңартуы керек.
+
+admin.content_publication_translations_need_checks
+When publishing shared changes, include every translation that is already published.
+Publikując wspólne zmiany, uwzględnij wszystkie wcześniej opublikowane tłumaczenia.
+При публикации изменений в общих полях включите все уже опубликованные переводы.
+Ортақ өзгерістерді жариялағанда бұрын жарияланған барлық аударманы қосыңыз.
+
+admin.content_publication_await_published_checks
+Have every already published translation checked again before publishing shared changes.
+Przed publikacją wspólnych zmian poproś o ponowne sprawdzenie wszystkich opublikowanych tłumaczeń.
+Перед публикацией общих изменений нужно заново проверить все опубликованные переводы.
+Ортақ өзгерістерді жарияламас бұрын бұрын жарияланған барлық аударманы қайта тексеру керек.
+
+admin.content_publication_unknown
+Publication could not be confirmed. Reload the draft and check the published links before trying again.
+Nie można potwierdzić publikacji. Wczytaj szkic ponownie i sprawdź linki przed kolejną próbą.
+Подтвердить публикацию не удалось. Перед повторной попыткой перезагрузите черновик и проверьте ссылки.
+Жарияланымды растау мүмкін болмады. Қайталап көрмес бұрын нобайды жүктеп, сілтемелерді тексеріңіз.
+
+admin.content_publication_reload_links
+Reload the draft to view the published links.
+Wczytaj szkic ponownie, aby zobaczyć linki do publikacji.
+Перезагрузите черновик, чтобы увидеть ссылки на публикации.
+Жарияланым сілтемелерін көру үшін нобайды қайта жүктеңіз.
+
+admin.content_publication_route_conflict
+This page address is already in use. Change the title and save the draft.
+Ten adres strony jest już zajęty. Zmień tytuł i zapisz szkic.
+Этот адрес страницы уже занят. Измените заголовок и сохраните черновик.
+Бұл бет мекенжайы бос емес. Тақырыпты өзгертіп, нобайды сақтаңыз.
+
+admin.content_publication_relation_unavailable
+A linked item is unavailable. Check the linked items for the selected languages.
+Powiązany materiał jest niedostępny. Sprawdź powiązania w wybranych językach.
+Связанный материал недоступен. Проверьте связи для выбранных языков.
+Байланысқан материал қолжетімсіз. Таңдалған тілдердегі байланыстарды тексеріңіз.
+
+admin.content_publication_address_required
+Save the draft with a title so its page address can be generated.
+Zapisz szkic z tytułem, aby utworzyć adres strony.
+Сохраните черновик с заголовком, чтобы создать адрес страницы.
+Бет мекенжайын жасау үшін тақырыбы бар нобайды сақтаңыз.
+
 admin.content_publish
 Publish translations
 Opublikuj tłumaczenia
@@ -693,16 +837,142 @@ Kreator typów
 Түрлер құрастырғышы
 
 admin.registry_choose
-Renderer and collection
-Moduł prezentacji i kolekcja
-Компонент отображения и коллекция
-Көрсету модулі мен жинақ
+Collection to configure
+Kolekcja do skonfigurowania
+Коллекция для настройки
+Бапталатын жинақ
+
+admin.registry_article
+Article
+Artykuł
+Статья
+Мақала
+
+admin.registry_event
+Event
+Wydarzenie
+Событие
+Іс-шара
+
+admin.registry_translation_language
+Field translation language
+Język tłumaczenia pola
+Язык перевода поля
+Өріс аудармасының тілі
+
+admin.registry_translation_help
+Leave a translation blank to use the default when one is available.
+Pozostaw puste tłumaczenie, aby użyć tekstu domyślnego, jeśli jest dostępny.
+Оставьте перевод пустым, чтобы использовать текст по умолчанию, если он есть.
+Әдепкі мәтін бар болса, оны қолдану үшін аударманы бос қалдырыңыз.
+
+admin.registry_schema_help
+Adding an optional field creates a new schema version. Editing labels and help text leaves the version unchanged.
+Dodanie pola opcjonalnego tworzy nową wersję schematu. Etykiety i podpowiedzi można zmieniać w bieżącej wersji.
+Добавление необязательного поля создаёт новую версию структуры. Правка подписей и подсказок сохраняет версию.
+Міндетті емес өріс қосылса, құрылымның жаңа нұсқасы жасалады. Атаулар мен кеңестерді өзгерткенде нұсқа сақталады.
+
+admin.registry_field_locked
+The field structure is fixed to preserve compatibility with drafts and publications. You can edit its label and help text.
+Definicja pola jest stała, aby zachować zgodność ze szkicami i publikacjami. Można zmieniać etykietę i podpowiedź.
+Определение поля закреплено за черновиками и публикациями. Подпись и подсказку можно менять.
+Өріс анықтамасы нобайлармен және жарияланымдармен байланысты. Атауы мен кеңесін өзгертуге болады.
+
+admin.registry_template_locked
+The collection template defines this field. You can edit its label and help text.
+To pole pochodzi z szablonu kolekcji. Można zmieniać etykietę i podpowiedź.
+Поле задано шаблоном коллекции. Подпись и подсказку можно менять.
+Өріс жинақ үлгісінде берілген. Атауы мен кеңесін өзгертуге болады.
+
+admin.registry_scope_localized
+Per language
+Osobno dla każdego języka
+Отдельно для каждого языка
+Әр тілге бөлек
+
+admin.registry_scope_shared
+Shared across languages
+Wspólne dla wszystkich języków
+Общее для всех языков
+Барлық тілге ортақ
+
+admin.registry_required
+Required
+Wymagane
+Обязательное
+Міндетті
+
+admin.registry_optional
+Optional
+Opcjonalne
+Необязательное
+Міндетті емес
+
+admin.registry_unnamed_field
+Unnamed field
+Pole bez nazwy
+Поле без имени
+Атауы жоқ өріс
+
+admin.registry_kind_string
+Short text
+Krótki tekst
+Короткий текст
+Қысқа мәтін
+
+admin.registry_kind_text
+Long text
+Długi tekst
+Длинный текст
+Ұзын мәтін
+
+admin.registry_kind_markdown
+Markdown
+Markdown
+Markdown
+Markdown
+
+admin.registry_kind_boolean
+Yes or no
+Tak lub nie
+Да или нет
+Иә немесе жоқ
+
+admin.registry_kind_integer
+Whole number
+Liczba całkowita
+Целое число
+Бүтін сан
+
+admin.registry_kind_decimal
+Decimal number
+Liczba dziesiętna
+Десятичное число
+Ондық сан
+
+admin.registry_kind_datetime
+Date and time
+Data i godzina
+Дата и время
+Күн мен уақыт
+
+admin.registry_kind_enum
+List of values
+Lista wartości
+Список значений
+Мәндер тізімі
+
+admin.registry_kind_relation
+Link to another collection
+Powiązanie z inną kolekcją
+Связь с другой коллекцией
+Басқа жинақпен байланыс
 
 admin.registry_schema
 Current schema
-Aktualny schemat
-Текущая схема
-Ағымдағы схема
+Wersja struktury
+Версия структуры
+Құрылым нұсқасы
 
 admin.registry_field_key
 Field key
@@ -1196,11 +1466,11 @@ Wydaj zaproszenie
 Выдать приглашение
 Шақыру беру
 
-admin.users_manage_memberships
-Manage role memberships
-Zarządzaj członkostwem w rolach
-Управлять членством в ролях
-Рөл мүшелігін басқару
+admin.users_view_roles
+Manage roles
+Zarządzaj rolami
+Управлять ролями
+Рөлдерді басқару
 
 admin.users_activate
 Activate account
@@ -1214,23 +1484,65 @@ Role konta
 Роли учётной записи
 Тіркелгі рөлдері
 
-admin.users_save_memberships
-Review role changes
-Sprawdź zmiany ról
-Проверить изменения ролей
-Рөл өзгерістерін тексеру
+admin.users_apply_roles
+Save role assignments
+Zapisz przypisania ról
+Сохранить роли
+Рөл тағайындауларын сақтау
+
+admin.users_role_code
+Role code
+Kod roli
+Код роли
+Рөл коды
+
+admin.users_role_status
+Status
+Stan
+Состояние
+Күйі
+
+admin.users_roles_assigned
+Assigned
+Przypisana
+Назначена
+Тағайындалған
+
+admin.users_roles_mixed
+Multiple domains
+Wiele obszarów
+Несколько разделов
+Бірнеше бөлім
+
+admin.users_roles_other
+Other roles
+Pozostałe role
+Другие роли
+Басқа рөлдер
+
+admin.users_roles_none
+No roles are available.
+Brak dostępnych ról.
+Нет доступных ролей.
+Қолжетімді рөлдер жоқ.
+
+admin.users_roles_unavailable
+Some selected roles are no longer available. Review the remaining selection.
+Część wybranych ról nie jest już dostępna. Sprawdź pozostałe role.
+Некоторые выбранные роли больше недоступны. Проверьте оставшиеся роли.
+Таңдалған кейбір рөлдер енді қолжетімсіз. Қалған рөлдерді тексеріңіз.
+
+admin.users_roles_limit
+Uncheck a role to assign another.
+Odznacz rolę, aby przypisać inną.
+Снимите отметку с одной из ролей, чтобы назначить другую.
+Басқа рөлді тағайындау үшін бір рөлдің белгісін алып тастаңыз.
 
 admin.users_confirm_invite
 A new token replaces the previous invitation and interrupts any enrollment already in progress.
 Nowy token unieważni poprzednie zaproszenie i przerwie rozpoczętą konfigurację.
 Новый токен заменит прежнее приглашение и прервёт начатую настройку.
 Жаңа токен бұрынғы шақыруды ауыстырып, басталған баптауды тоқтатады.
-
-admin.users_confirm_memberships
-Replace the complete membership set with this selection?
-Zastąpić cały zestaw ról zgodnie z wyborem?
-Заменить весь список ролей выбранным набором?
-Рөлдердің толық тізімін осы таңдаумен ауыстыру керек пе?
 
 admin.users_confirm_activate
 Activate this account and enable its active role grants?
@@ -1255,6 +1567,288 @@ Roles
 Role
 Роли
 Рөлдер
+
+admin.role_rule_domain
+Permission area
+Obszar uprawnień
+Область доступа
+Қолжетімділік саласы
+
+admin.role_rule_field_help
+Access applies only to selected fields.
+Dostęp obejmuje tylko zaznaczone pola.
+Доступны только отмеченные поля.
+Тек белгіленген өрістерге қол жеткізуге болады.
+
+admin.role_rule_filter
+Collection or installation
+Kolekcja lub instalacja
+Коллекция или портал
+Жинақ немесе портал
+
+admin.role_rule_all_scopes
+All scopes
+Wszystkie zakresy
+Все области
+Барлық ауқым
+
+admin.role_rule_scope_installation
+Entire portal
+Cały portal
+Весь портал
+Бүкіл портал
+
+admin.role_rule_scope_type
+Collection
+Kolekcja
+Коллекция
+Жинақ
+
+admin.role_rule_scope_assigned
+Assigned items
+Przypisane materiały
+Назначенные материалы
+Тағайындалған материалдар
+
+admin.role_rule_scope_any
+All items
+Wszystkie materiały
+Все материалы
+Барлық материалдар
+
+admin.role_rule_group_content
+Content
+Treści
+Материалы
+Материалдар
+
+admin.role_rule_group_structure
+Collection structure
+Struktura kolekcji
+Структура коллекций
+Жинақ құрылымы
+
+admin.role_rule_group_accounts
+Accounts
+Konta
+Учётные записи
+Тіркелгілер
+
+admin.role_rule_group_roles
+Roles and delegation
+Role i delegowanie
+Роли и делегирование
+Рөлдер және өкілеттік беру
+
+admin.role_rule_group_portal
+Portal settings
+Ustawienia portalu
+Настройки портала
+Портал баптаулары
+
+admin.role_rule_group_security
+Security and audit
+Bezpieczeństwo i audyt
+Безопасность и аудит
+Қауіпсіздік және аудит
+
+admin.role_rule_group_other
+Other roles
+Pozostałe role
+Другие роли
+Басқа рөлдер
+
+admin.role_rule_group_mixed
+Multiple domains
+Kilka obszarów
+Несколько областей
+Бірнеше сала
+
+admin.role_rule_configure
+Configure
+Skonfiguruj
+Настроить
+Баптау
+
+admin.role_rule_coverage
+Available grant scope
+Dostępny zakres uprawnienia
+Доступный охват разрешения
+Рұқсаттың қолжетімді ауқымы
+
+admin.role_rule_limit
+This role has the maximum number of rules.
+Ta rola ma maksymalną liczbę reguł.
+В роли уже максимальное число правил.
+Бұл рөлде ережелер саны шегіне жетті.
+
+admin.role_rule_choose_delegated_operation
+Choose at least one operation for each delegation rule.
+Wybierz co najmniej jedną operację dla każdej reguły delegowania.
+Выберите хотя бы одну операцию для каждого правила делегирования.
+Өкілеттік берудің әр ережесі үшін кемінде бір операцияны таңдаңыз.
+
+admin.permission.content.items.create
+Create items
+Tworzenie materiałów
+Создание материалов
+Материал жасау
+
+admin.permission.content.items.read
+Read items
+Odczyt materiałów
+Просмотр материалов
+Материалдарды қарау
+
+admin.permission.content.items.update
+Edit items
+Edycja materiałów
+Редактирование материалов
+Материалдарды өңдеу
+
+admin.permission.content.items.ready
+Mark items ready
+Oznaczanie materiałów jako gotowe
+Отметка готовности материалов
+Материалдарды дайын деп белгілеу
+
+admin.permission.content.items.publish
+Publish items
+Publikowanie materiałów
+Публикация материалов
+Материалдарды жариялау
+
+admin.permission.content.items.unpublish
+Unpublish items
+Wycofywanie publikacji materiałów
+Снятие материалов с публикации
+Материалдарды жарияланымнан алу
+
+admin.permission.content.items.assign
+Assign items to users
+Przypisywanie materiałów użytkownikom
+Назначение материалов пользователям
+Материалдарды пайдаланушыларға тағайындау
+
+admin.permission.content_types.manage
+Manage collections and fields
+Zarządzanie kolekcjami i polami
+Управление коллекциями и полями
+Жинақтар мен өрістерді басқару
+
+admin.permission.content_types.initialize_access
+Set initial collection access
+Ustawianie początkowego dostępu do kolekcji
+Настройка начального доступа к коллекциям
+Жинақтарға бастапқы қолжетімділікті баптау
+
+admin.permission.content.permissions.delegate
+Delegate content permissions
+Delegowanie uprawnień do treści
+Делегирование прав на материалы
+Материалдарға құқықтарды беру
+
+admin.permission.users.create
+Create accounts and issue invitations
+Tworzenie kont i wysyłanie zaproszeń
+Создание учётных записей и выдача приглашений
+Тіркелгі жасау және шақыру беру
+
+admin.permission.users.read
+View accounts
+Przeglądanie kont
+Просмотр учётных записей
+Тіркелгілерді қарау
+
+admin.permission.users.activate
+Activate accounts
+Aktywowanie kont
+Активация учётных записей
+Тіркелгілерді белсендіру
+
+admin.permission.users.disable
+Disable accounts
+Wyłączanie kont
+Отключение учётных записей
+Тіркелгілерді өшіру
+
+admin.permission.roles.create
+Create and copy roles
+Tworzenie i kopiowanie ról
+Создание и копирование ролей
+Рөлдерді жасау және көшіру
+
+admin.permission.roles.read
+View roles
+Przeglądanie ról
+Просмотр ролей
+Рөлдерді қарау
+
+admin.permission.roles.edit
+Edit roles
+Edycja ról
+Редактирование ролей
+Рөлдерді өңдеу
+
+admin.permission.roles.assign
+Assign roles to accounts
+Przypisywanie ról do kont
+Назначение ролей учётным записям
+Тіркелгілерге рөл тағайындау
+
+admin.permission.roles.disable
+Disable roles
+Wyłączanie ról
+Отключение ролей
+Рөлдерді өшіру
+
+admin.permission.roles.enable
+Enable roles
+Włączanie ról
+Включение ролей
+Рөлдерді қосу
+
+admin.permission.roles.archive
+Archive roles
+Archiwizowanie ról
+Архивация ролей
+Рөлдерді мұрағаттау
+
+admin.permission.roles.restore
+Restore archived roles
+Przywracanie zarchiwizowanych ról
+Восстановление архивных ролей
+Мұрағатталған рөлдерді қалпына келтіру
+
+admin.permission.roles.delete
+Delete archived roles
+Usuwanie zarchiwizowanych ról
+Удаление архивных ролей
+Мұрағатталған рөлдерді жою
+
+admin.permission.sessions.revoke_any
+Revoke other users' sessions
+Unieważnianie sesji innych użytkowników
+Завершение сеансов других пользователей
+Басқа пайдаланушылардың сеанстарын аяқтау
+
+admin.permission.audit.read
+Read the audit log
+Odczyt dziennika audytu
+Просмотр журнала аудита
+Аудит журналын қарау
+
+admin.permission.settings.manage
+Manage portal settings
+Zarządzanie ustawieniami portalu
+Управление настройками портала
+Портал баптауларын басқару
+
+admin.permission.security_policy.manage
+Manage session limits
+Zarządzanie limitami sesji
+Управление сроками сеансов
+Сеанс шектеулерін басқару
 
 admin.roles_create
 Create role
@@ -1461,10 +2055,10 @@ Treść
 Мәтін
 
 admin.content_field_slug_help
-Use lowercase Latin letters, numbers and hyphens.
-Użyj małych liter łacińskich, cyfr i łączników.
-Используйте строчные латинские буквы, цифры и дефисы.
-Кіші латын әріптерін, сандарды және дефистерді қолданыңыз.
+The page address is generated automatically from the title.
+Adres strony powstaje automatycznie z tytułu.
+Адрес страницы создаётся автоматически из заголовка.
+Бет мекенжайы тақырыптан автоматты түрде жасалады.
 
 admin.leave_unsaved
 Leave this section without saving your changes?
@@ -1531,6 +2125,138 @@ No matching texts.
 Nie znaleziono pasujących tekstów.
 Подходящих текстов нет.
 Сәйкес мәтіндер табылмады.
+
+admin.slug_rules_title
+URL replacements
+Zamiany znaków w adresie
+Замены для адресов страниц
+Бет мекенжайларындағы алмастырулар
+
+admin.slug_rules_language
+Rule language
+Język reguł
+Язык правил
+Ережелер тілі
+
+admin.slug_rules_search
+Search rules
+Szukaj reguł
+Поиск правил
+Ережелерді іздеу
+
+admin.slug_rules_character
+Character
+Znak
+Символ
+Таңба
+
+admin.slug_rules_replacement
+Replacement
+Zamiana
+Замена
+Алмастыру
+
+admin.slug_rules_add
+Add rule
+Dodaj regułę
+Добавить правило
+Ереже қосу
+
+admin.slug_rules_remove
+Remove rule
+Usuń regułę
+Удалить правило
+Ережені жою
+
+admin.slug_rules_help
+Map one non-ASCII character to lowercase Latin letters, digits or hyphens. An empty replacement removes the character. Changes apply to new addresses after publication.
+Zastąp pojedynczy znak spoza ASCII małymi literami łacińskimi, cyframi lub łącznikami. Pusta zamiana pomija znak. Zmiany obowiązują dla nowych adresów po publikacji.
+Укажите замену для одного символа вне ASCII. В замене допустимы строчные латинские буквы, цифры и дефисы. Пустая замена пропускает символ. Правила применяются к новым адресам после публикации.
+ASCII-ден тыс бір таңбаны кіші латын әріптерімен, цифрлармен не дефистермен алмастырыңыз. Бос алмастыру таңбаны өткізіп жібереді. Өзгерістер жарияланғаннан кейін жаңа мекенжайларға қолданылады.
+
+admin.slug_rules_invalid
+Check the character and replacement. Characters must be unique within each language.
+Sprawdź znak i zamianę. W każdym języku znaki muszą być unikatowe.
+Проверьте символ и замену. В каждом языке символ должен встречаться только один раз.
+Таңба мен алмастыруды тексеріңіз. Әр тілде таңба бір рет қана кездесуі керек.
+
+admin.settings_all_texts
+All texts
+Wszystkie teksty
+Все тексты
+Барлық мәтіндер
+
+admin.settings_admin_texts
+Sign-in and common controls
+Logowanie i wspólne elementy
+Вход и общие элементы
+Кіру және ортақ элементтер
+
+admin.settings_content_texts
+Content editing
+Edycja materiałów
+Редактирование материалов
+Материалдарды өңдеу
+
+admin.settings_structure_texts
+Collection structure
+Struktura kolekcji
+Структура коллекций
+Жинақ құрылымы
+
+admin.settings_access_texts
+Users and access
+Użytkownicy i dostęp
+Пользователи и доступ
+Пайдаланушылар және қолжетімділік
+
+admin.settings_settings_texts
+Portal configuration
+Konfiguracja portalu
+Конфигурация портала
+Портал конфигурациясы
+
+admin.security
+Security
+Bezpieczeństwo
+Безопасность
+Қауіпсіздік
+
+admin.session_policy_heading
+Session duration
+Czas trwania sesji
+Длительность сеансов
+Сеанс ұзақтығы
+
+admin.session_policy_idle_minutes
+Inactivity limit (minutes)
+Limit bezczynności (minuty)
+Время бездействия (минуты)
+Әрекетсіздік шегі (минут)
+
+admin.session_policy_absolute_hours
+Maximum session length (hours)
+Maksymalny czas sesji (godziny)
+Максимальная длительность сеанса (часы)
+Сеанстың ең ұзақ мерзімі (сағат)
+
+admin.session_policy_help
+The inactivity limit signs users out after a period without activity. The maximum length applies even while they are active. Changes apply at the next sign-in.
+Limit bezczynności kończy sesję po okresie bez aktywności. Maksymalny czas sesji obowiązuje także podczas pracy. Zmiany zaczną obowiązywać po następnym zalogowaniu.
+Время бездействия отсчитывается от последнего действия. Максимальная длительность учитывается и при активной работе. Изменения вступают в силу при следующем входе.
+Әрекетсіздік уақыты соңғы әрекеттен бастап есептеледі. Ең ұзақ мерзім белсенді жұмыс кезінде де қолданылады. Өзгерістер келесі кірген кезде күшіне енеді.
+
+admin.session_policy_save
+Save session policy
+Zapisz zasady sesji
+Сохранить политику сеансов
+Сеанс саясатын сақтау
+
+admin.session_policy_saved
+Session policy saved.
+Zasady sesji zapisane.
+Политика сеансов сохранена.
+Сеанс саясаты сақталды.
 
 admin.settings_public_texts
 Public portal
@@ -1626,7 +2352,98 @@ END;
 $$;
 -- +goose StatementEnd
 
+-- Seed the content-language alphabets used by the demo portal.
+INSERT INTO public.initial_slug_rules (
+    language_code, source_character, replacement
+)
+VALUES
+('kk', 'а', 'a'),
+('kk', 'б', 'b'),
+('kk', 'в', 'v'),
+('kk', 'г', 'g'),
+('kk', 'д', 'd'),
+('kk', 'е', 'e'),
+('kk', 'ж', 'zh'),
+('kk', 'з', 'z'),
+('kk', 'и', 'i'),
+('kk', 'й', 'y'),
+('kk', 'к', 'k'),
+('kk', 'л', 'l'),
+('kk', 'м', 'm'),
+('kk', 'н', 'n'),
+('kk', 'о', 'o'),
+('kk', 'п', 'p'),
+('kk', 'р', 'r'),
+('kk', 'с', 's'),
+('kk', 'т', 't'),
+('kk', 'у', 'u'),
+('kk', 'ф', 'f'),
+('kk', 'х', 'kh'),
+('kk', 'ц', 'ts'),
+('kk', 'ч', 'ch'),
+('kk', 'ш', 'sh'),
+('kk', 'щ', 'shch'),
+('kk', 'ъ', ''),
+('kk', 'ы', 'y'),
+('kk', 'ь', ''),
+('kk', 'э', 'e'),
+('kk', 'ю', 'yu'),
+('kk', 'я', 'ya'),
+('kk', 'ё', 'yo'),
+('kk', 'і', 'i'),
+('kk', 'ғ', 'gh'),
+('kk', 'қ', 'q'),
+('kk', 'ң', 'ng'),
+('kk', 'ү', 'u'),
+('kk', 'ұ', 'u'),
+('kk', 'һ', 'h'),
+('kk', 'ә', 'a'),
+('kk', 'ө', 'o'),
+('pl', 'ą', 'a'),
+('pl', 'ć', 'c'),
+('pl', 'ę', 'e'),
+('pl', 'ł', 'l'),
+('pl', 'ń', 'n'),
+('pl', 'ó', 'o'),
+('pl', 'ś', 's'),
+('pl', 'ź', 'z'),
+('pl', 'ż', 'z'),
+('ru', 'а', 'a'),
+('ru', 'б', 'b'),
+('ru', 'в', 'v'),
+('ru', 'г', 'g'),
+('ru', 'д', 'd'),
+('ru', 'е', 'e'),
+('ru', 'ж', 'zh'),
+('ru', 'з', 'z'),
+('ru', 'и', 'i'),
+('ru', 'й', 'y'),
+('ru', 'к', 'k'),
+('ru', 'л', 'l'),
+('ru', 'м', 'm'),
+('ru', 'н', 'n'),
+('ru', 'о', 'o'),
+('ru', 'п', 'p'),
+('ru', 'р', 'r'),
+('ru', 'с', 's'),
+('ru', 'т', 't'),
+('ru', 'у', 'u'),
+('ru', 'ф', 'f'),
+('ru', 'х', 'kh'),
+('ru', 'ц', 'ts'),
+('ru', 'ч', 'ch'),
+('ru', 'ш', 'sh'),
+('ru', 'щ', 'shch'),
+('ru', 'ъ', ''),
+('ru', 'ы', 'y'),
+('ru', 'ь', ''),
+('ru', 'э', 'e'),
+('ru', 'ю', 'yu'),
+('ru', 'я', 'ya'),
+('ru', 'ё', 'yo');
+
 -- +goose Down
+DELETE FROM public.initial_slug_rules;
 DELETE FROM public.initial_ui_messages;
 DELETE FROM public.ui_message_keys;
 DELETE FROM public.initial_site_defaults;

@@ -36,13 +36,17 @@ func assertInitialSiteSettings(t *testing.T, db *sql.DB, populated bool) {
 	requireNoError(t, db.QueryRow(`SELECT
  NOT EXISTS (SELECT 1 FROM public.initial_site_defaults)
   AND NOT EXISTS (SELECT 1 FROM public.ui_message_keys)
-  AND NOT EXISTS (SELECT 1 FROM public.initial_ui_messages),
+  AND NOT EXISTS (SELECT 1 FROM public.initial_ui_messages)
+  AND NOT EXISTS (SELECT 1 FROM public.initial_slug_rules),
  EXISTS (SELECT 1 FROM public.initial_site_defaults WHERE singleton AND accent='#2563eb')
   AND (SELECT array_agg(language_code ORDER BY language_code)
          FROM (SELECT language_code FROM public.initial_ui_messages GROUP BY language_code
           HAVING count(*)=(SELECT count(*) FROM public.ui_message_keys)) AS catalogs)
       IS NOT DISTINCT FROM ARRAY['en','kk','pl','ru']
-  AND (SELECT count(DISTINCT language_code) FROM public.initial_ui_messages)=4,
+  AND (SELECT count(DISTINCT language_code) FROM public.initial_ui_messages)=4
+  AND (SELECT array_agg(language_code||':'||rules ORDER BY language_code)
+       FROM (SELECT language_code,count(*) AS rules FROM public.initial_slug_rules GROUP BY language_code) AS defaults)
+      IS NOT DISTINCT FROM ARRAY['kk:42','pl:9','ru:33'],
  EXISTS (SELECT 1 FROM public.site_state
           WHERE singleton AND version=1 AND draft_id IS NULL AND published_id IS NULL)
   AND NOT EXISTS (SELECT 1 FROM public.languages WHERE is_enabled)`).Scan(&empty, &complete, &pristine))
@@ -165,6 +169,10 @@ INSERT INTO public.security_audit(id,operation,reason)
 VALUES (gen_random_uuid(),'auth.denied','invalid_credentials')`)
 	requireNoError(t, tx.Commit())
 	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.users`, "42501")
+	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, languageImporterTestRole, `SELECT * FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, securityTestRole, `DELETE FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, securityTestRole, `UPDATE public.session_policy SET idle_timeout_minutes=61`, "23514")
 	auditRead := beginRoleTx(t, ctx, db, securityTestRole)
 	execSQL(t, ctx, auditRead, `SELECT operation,result,reason FROM public.security_audit`)
 	requireNoError(t, auditRead.Commit())

@@ -16,6 +16,7 @@ export interface AccessRole {
   state: 'disabled' | 'active' | 'archived'
   version: number
   grants: RoleGrant[]
+  collection_keys?: Record<string, string>
 }
 
 export interface RoleGrant {
@@ -43,6 +44,7 @@ export interface NamedSetOption {
 
 export interface Membership extends NamedSetOption {
   name: string
+  domain: 'content' | 'structure' | 'settings' | 'access' | 'mixed' | 'other'
 }
 
 export interface Assignee extends NamedSetOption {

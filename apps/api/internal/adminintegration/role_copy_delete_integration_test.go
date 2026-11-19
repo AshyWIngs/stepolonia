@@ -244,11 +244,11 @@ func TestAuthRoleCopyDeleteFreshMFAIntegration(t *testing.T) {
 	expireSessionStepUp(t, f.state.db, admin.Token)
 	path := rolesHTTPPath + "/" + role.ID
 	out, _ := f.roleHTTP(t, http.MethodPost, path+"/copy", `{"name":"Expired MFA","expected_version":2}`, admin, 403)
-	if out["code"] != rolesStepUpCode {
+	if out["code"] != stepUpRequiredProblem {
 		t.Fatal("copy accepted stale MFA or returned the wrong reason")
 	}
 	out, _ = f.roleHTTP(t, http.MethodDelete, path, onboardingVersionJSON(t, role.Version), admin, 403)
-	if out["code"] != rolesStepUpCode {
+	if out["code"] != stepUpRequiredProblem {
 		t.Fatal("delete accepted stale MFA or returned the wrong reason")
 	}
 	authRefreshStep(t, f.state.db, admin.Token)

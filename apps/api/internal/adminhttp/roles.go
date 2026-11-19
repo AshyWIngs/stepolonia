@@ -97,11 +97,12 @@ type roleWriteInput struct {
 }
 
 type roleResponse struct {
-	ID      string         `json:"id" format:"uuid" doc:"Stable role UUID."`
-	Name    string         `json:"name" minLength:"1" maxLength:"128" doc:"Stored role name without authorization meaning."`
-	State   string         `json:"state" enum:"disabled,active,archived" doc:"Current role lifecycle state; creation always returns disabled."`
-	Version int64          `json:"version" minimum:"1" doc:"Positive current role version."`
-	Grants  []roleGrantDTO `json:"grants"`
+	ID             string            `json:"id" format:"uuid" doc:"Stable role UUID."`
+	Name           string            `json:"name" minLength:"1" maxLength:"128" doc:"Stored role name without authorization meaning."`
+	State          string            `json:"state" enum:"disabled,active,archived" doc:"Current role lifecycle state; creation always returns disabled."`
+	Version        int64             `json:"version" minimum:"1" doc:"Positive current role version."`
+	Grants         []roleGrantDTO    `json:"grants"`
+	CollectionKeys map[string]string `json:"collection_keys,omitempty" doc:"Registered collection keys indexed by the collection UUIDs that this role's grants reference. Omitted for roles without collection grants."`
 }
 
 type roleListResponse struct {
@@ -247,7 +248,7 @@ func safeRole(role identity.Role) roleResponse {
 			grants[i].MayDelegateContent = &grant.MayDelegateContent
 		}
 	}
-	return roleResponse{ID: role.ID, Name: role.Name, State: role.State, Version: role.Version, Grants: grants}
+	return roleResponse{ID: role.ID, Name: role.Name, State: role.State, Version: role.Version, Grants: grants, CollectionKeys: role.CollectionKeys()}
 }
 
 func readRoleInput(w http.ResponseWriter, r *http.Request, operationID string) (roleWriteInput, string, int) {

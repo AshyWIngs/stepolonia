@@ -98,6 +98,12 @@ func checkRegistryOperation(t *testing.T, doc privateDocument, path string, rt r
 		checkManagedCollectionExample(t, op, rt)
 	case rt.operationID == accountFactorOperation:
 		checkFactorRequestExamples(t, doc, op, rt)
+	case rt.operationID == replaceSessionPolicyOperation:
+		raw, err := json.Marshal(op.RequestBody.Content[jsonMediaType].Example)
+		var input sessionPolicyInput
+		if err != nil || !decodeSessionPolicy(raw, &input) {
+			t.Fatal("documented session policy example rejected by transport")
+		}
 	default:
 		checkRegistryRequestExample(t, doc, op, rt)
 	}
@@ -342,7 +348,8 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
 		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesCopy", "rolesDelete"},
-		"portal-settings":         {"settingsReadEditable", "settingsSaveDraft", "settingsPublish"},
+		"portal-settings":         {"settingsReadEditable", "settingsApply"},
+		"security-policy":         {"readSessionPolicy", "replaceSessionPolicy"},
 		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
 		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
 		"account-security":        {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
@@ -417,8 +424,7 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 	privateSchemaRejects(t, registry, schema, map[string]any{})
 	example := media.Example.(map[string]any)
 	for field := range schema.Properties {
-		if (op.OperationID == registryCreateOperation && field == "initial_access") ||
-			(op.OperationID == registryReviseOperation && field == "initialize_new_field_access") {
+		if optionalRequestField(op.OperationID, field) {
 			validatePrivateValue(t, registry, schema, op.OperationID, copyWithoutField(example, field))
 			continue
 		}
@@ -434,6 +440,19 @@ func checkRequiredCredentials(t *testing.T, registry huma.Registry, op privateOp
 			missing[field] = invalid
 			privateSchemaRejects(t, registry, schema, missing)
 		}
+	}
+}
+
+func optionalRequestField(operation, field string) bool {
+	switch operation {
+	case registryCreateOperation:
+		return field == "initial_access"
+	case registryReviseOperation:
+		return field == "initialize_new_field_access"
+	case applySettingsOperation:
+		return field == slugRulesField
+	default:
+		return false
 	}
 }
 

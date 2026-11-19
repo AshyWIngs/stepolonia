@@ -36,6 +36,7 @@ func TestAdminDraftAdoptSchemaHTTPSIntegration(t *testing.T) {
 	f := newDraftEditorFixture(t)
 	server := newDraftTLSServer(t, f)
 	reviseMetadataFixture(t, f)
+	expireSessionStepUp(t, f.owner, f.actor.Token)
 	_, err := f.owner.Exec(`UPDATE public.content_drafts SET shared_ready_seq=shared_seq WHERE item_id=$1`, draftEditItem)
 	requireNoError(t, err)
 	const path = draftEditorialPath + draftEditItem + "/adopt-schema"
@@ -97,6 +98,7 @@ func TestAdminDraftUnpublishHTTPSIntegration(t *testing.T) {
  SELECT gen_random_uuid(),role_id,'content.items.unpublish','content',type_id,'any'
  FROM public.role_grants WHERE id=$1`, f.publisherGrant)
 	requireNoError(t, err)
+	expireSessionStepUp(t, f.owner, f.publisher.Token)
 	f.command(t, f.publisher, item, command, publishBody, http.StatusBadRequest)
 	f.command(t, f.publisher, item, command, request, http.StatusOK)
 	f.public(t, http.StatusNotFound)

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AdminSettingsError, getPortalSettings, publishPortalSettings, savePortalSettings } from '~/utils/admin-site-settings'
-import type { EditablePortal } from '~/utils/admin-site-settings'
+import { AdminSettingsError, getPortalSettings, savePortalSettings } from '~/utils/admin-site-settings'
+import type { EditablePortal, PortalSettingsPage } from '~/utils/admin-site-settings'
+import { invalidSlugRuleIndex, normalizeSlugCharacter, type SlugRule } from '~/utils/slug-suggestion'
 
 const props = defineProps<{
+  page: PortalSettingsPage
   csrf: string
   uiLanguage: string
   uiMessages: Record<string, string>
@@ -11,57 +13,44 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   published: []
+  'show-page': [page: PortalSettingsPage]
   'editing-state': [state: { dirty: boolean, busy: boolean }]
   'step-up': []
   'session-changed': []
-  close: []
 }>()
 
-const draft = ref<EditablePortal | null>(null)
+const editableSettings = ref<EditablePortal | null>(null)
 const selectedLanguage = ref('')
-const sections = [
-  { id: 'identity', label: 'admin.settings_identity' },
-  { id: 'appearance', label: 'admin.settings_appearance' },
-  { id: 'languages', label: 'admin.settings_languages' },
-  { id: 'translations', label: 'admin.interface_texts' },
-] as const
-type SettingsSection = typeof sections[number]['id']
-const section = ref<SettingsSection>('identity')
-const sectionLabel = computed(() => sections.find(item => item.id === section.value)?.label ?? sections[0].label)
-const heading = ref<HTMLElement | null>(null)
-const confirmationHeading = ref<HTMLElement | null>(null)
 const translations = ref<{ showMissing: () => Promise<void> }>()
-const publishButton = ref<HTMLButtonElement | null>(null)
+const slugRules = ref<{ showInvalid: (index: number) => Promise<void> }>()
 const publicationStatus = ref<HTMLOutputElement | null>(null)
 const busy = ref(false)
 const dirty = ref(false)
 watch([() => dirty.value, busy], ([edited, saving]) => {
   emit('editing-state', { dirty: edited, busy: saving })
 })
-const confirming = ref(false)
 const conflict = ref(false)
 const failure = ref('')
 const notice = ref('')
 let active = true
 
-const language = computed(() => draft.value?.languages.find(item => item.code === selectedLanguage.value))
-const catalogsByLanguage = computed(() => new Map(Object.entries(draft.value?.catalogs ?? {})))
+const language = computed(() => editableSettings.value?.languages.find(item => item.code === selectedLanguage.value))
+const catalogsByLanguage = computed(() => new Map(Object.entries(editableSettings.value?.catalogs ?? {})))
 const messages = computed(() => catalogsByLanguage.value.get(selectedLanguage.value))
-const reference = computed(() => catalogsByLanguage.value.get(draft.value?.settings.fallback_language ?? ''))
+const reference = computed(() => catalogsByLanguage.value.get(editableSettings.value?.settings.fallback_language ?? ''))
 const catalogLanguages = computed(() => {
-  const editable = draft.value
+  const editable = editableSettings.value
   return editable?.languages.filter(item => catalogsByLanguage.value.has(item.code)) ?? []
 })
 const disabledCatalogCodes = computed(() => {
-  const editable = draft.value
+  const editable = editableSettings.value
   if (!editable) return []
   const enabled = new Set(editable.languages.map(item => item.code))
   return Object.keys(editable.catalogs).filter(code => !enabled.has(code) && code !== editable.settings.fallback_language)
 })
-const publishDisabled = computed(() => busy.value || conflict.value || confirming.value || dirty.value || !draft.value?.has_draft)
 const accentPattern = /^#[\da-f]{6}$/iu
 const pickerColor = computed(() => {
-  const accent = draft.value?.settings.accent
+  const accent = editableSettings.value?.settings.accent
   return accent && accentPattern.test(accent) ? accent : undefined
 })
 
@@ -76,7 +65,6 @@ function handleFailure(error: unknown) {
   }
   if (error.code === 'step_up_required') {
     emit('step-up')
-    errorMessage('admin.step_up_required')
     return
   }
   if (error.status === 401 || error.code === 'csrf_failed') {
@@ -90,7 +78,8 @@ function handleFailure(error: unknown) {
       errorMessage('admin.settings_invalid')
       break
     case 403:
-      draft.value = null
+      editableSettings.value = null
+      dirty.value = false
       errorMessage('admin.access_denied')
       break
     case 409:
@@ -110,7 +99,7 @@ async function load() {
   try {
     const editable = await getPortalSettings()
     if (!active) return
-    draft.value = editable
+    editableSettings.value = editable
     selectedLanguage.value = editable.languages.some(item => item.code === props.uiLanguage)
       ? props.uiLanguage : editable.settings.fallback_language
     dirty.value = false
@@ -125,28 +114,27 @@ async function load() {
 }
 
 function addCatalog() {
-  const editable = draft.value
+  const editable = editableSettings.value
   if (!editable || !language.value || messages.value) return
   editable.catalogs = { ...editable.catalogs, [language.value.code]: {} }
   dirty.value = true
 }
 
 function removeCatalog(code: string) {
-  const editable = draft.value
+  const editable = editableSettings.value
   if (!editable || code === editable.settings.fallback_language) return
   editable.catalogs = Object.fromEntries(Object.entries(editable.catalogs).filter(([locale]) => locale !== code))
   dirty.value = true
 }
 
-async function showSection(target: SettingsSection) {
-  if (section.value === target) return
-  section.value = target
+async function showPage(target: PortalSettingsPage) {
+  if (props.page === target) return
+  emit('show-page', target)
   await nextTick()
-  heading.value?.focus()
 }
 
 function changeMessage(key: string, value: string) {
-  const editable = draft.value
+  const editable = editableSettings.value
   const entries = messages.value
   if (!editable || !entries || !editable.message_keys.includes(key)) return
   const updated = new Map(Object.entries(entries))
@@ -157,7 +145,14 @@ function changeMessage(key: string, value: string) {
   dirty.value = true
 }
 
-function invalidSettingsSection(editable: EditablePortal): SettingsSection | undefined {
+function updateSlugRules(rules: SlugRule[]) {
+  if (!editableSettings.value) return
+  editableSettings.value.slug_rules = rules
+  dirty.value = true
+  if (failure.value === 'admin.slug_rules_invalid') failure.value = ''
+}
+
+function invalidSettingsSection(editable: EditablePortal): PortalSettingsPage | undefined {
   const settings = editable.settings
   if (!settings.title.trim()) return 'identity'
   if (!accentPattern.test(settings.accent)) return 'appearance'
@@ -166,29 +161,56 @@ function invalidSettingsSection(editable: EditablePortal): SettingsSection | und
   return undefined
 }
 
-async function save() {
-  const editable = draft.value
-  if (!editable || busy.value || conflict.value || confirming.value || !dirty.value) return
+async function validateSettings(editable: EditablePortal) {
   const invalidSection = invalidSettingsSection(editable)
   if (invalidSection) {
     errorMessage('admin.settings_invalid')
-    await showSection(invalidSection)
-    return
+    await showPage(invalidSection)
+    return false
   }
+  const invalidRule = invalidSlugRuleIndex(editable.slug_rules)
+  if (invalidRule >= 0) {
+    notice.value = ''
+    errorMessage('admin.slug_rules_invalid')
+    await showPage('languages')
+    await slugRules.value?.showInvalid(invalidRule)
+    return false
+  }
+  const incomplete = incompleteCatalog(editable)
+  if (incomplete) {
+    selectedLanguage.value = incomplete
+    notice.value = ''
+    errorMessage('admin.settings_complete_catalog')
+    await showPage('translations')
+    await translations.value?.showMissing()
+    return false
+  }
+  return true
+}
+
+async function save() {
+  const editable = editableSettings.value
+  if (!editable || busy.value || conflict.value || (!dirty.value && !editable.has_draft)) return
+  if (!await validateSettings(editable)) return
+  const rules = editable.slug_rules.map(rule => ({ ...rule, character: normalizeSlugCharacter(rule.character) }))
   busy.value = true
   failure.value = ''
   notice.value = ''
   try {
-    const version = await savePortalSettings(props.csrf, {
+    const result = await savePortalSettings(props.csrf, {
       expected_version: editable.version,
       settings: editable.settings,
-      catalogs: draftCatalogs(editable.catalogs),
+      catalogs: editable.catalogs,
+      slug_rules: rules,
     })
     if (!active) return
-    editable.version = version
-    editable.has_draft = true
+    editable.version = result.version
+    editable.published_id = result.publicationID
+    editable.has_draft = false
+    editable.slug_rules = rules
     dirty.value = false
-    notice.value = 'admin.draft_saved'
+    notice.value = 'admin.settings_saved'
+    emit('published')
   }
   catch (error: unknown) {
     if (active) handleFailure(error)
@@ -196,13 +218,10 @@ async function save() {
   finally {
     busy.value = false
   }
-}
-
-function draftCatalogs(catalogs: EditablePortal['catalogs']): EditablePortal['catalogs'] {
-  return Object.fromEntries(Object.entries(catalogs).map(([code, entries]) => [
-    code,
-    Object.fromEntries(Object.entries(entries).filter(([, text]) => text.trim() !== '')),
-  ]))
+  if (active && notice.value === 'admin.settings_saved') {
+    await nextTick()
+    publicationStatus.value?.focus()
+  }
 }
 
 function incompleteCatalog(editable: EditablePortal): string | undefined {
@@ -212,53 +231,6 @@ function incompleteCatalog(editable: EditablePortal): string | undefined {
   })?.[0]
 }
 
-async function confirmPublication() {
-  if (publishDisabled.value || !draft.value) return
-  const incomplete = incompleteCatalog(draft.value)
-  if (incomplete) {
-    selectedLanguage.value = incomplete
-    notice.value = ''
-    errorMessage('admin.settings_complete_catalog')
-    await showSection('translations')
-    await translations.value?.showMissing()
-    return
-  }
-  confirming.value = true
-  await nextTick()
-  confirmationHeading.value?.focus()
-}
-
-async function cancelPublication() {
-  confirming.value = false
-  await nextTick()
-  publishButton.value?.focus()
-}
-
-async function publish() {
-  const editable = draft.value
-  if (!editable?.has_draft || busy.value || conflict.value || !confirming.value || dirty.value) return
-  busy.value = true
-  failure.value = ''
-  notice.value = ''
-  try {
-    const version = await publishPortalSettings(props.csrf, editable.version)
-    if (!active) return
-    editable.version = version
-    editable.has_draft = false
-    notice.value = 'admin.published'
-    emit('published')
-    await nextTick()
-    publicationStatus.value?.focus()
-  }
-  catch (error: unknown) {
-    if (active) handleFailure(error)
-  }
-  finally {
-    busy.value = false
-    confirming.value = false
-  }
-}
-
 onMounted(async () => {
   await load()
 })
@@ -266,121 +238,102 @@ onBeforeUnmount(() => { active = false })
 </script>
 
 <template>
-  <section class="portal-settings" :aria-label="translate('admin.settings')" :aria-busy="busy">
-    <div class="settings-header">
-      <nav v-if="draft" :aria-label="translate('admin.settings')" class="settings-navigation">
-        <button
-          v-for="item in sections" :key="item.id" type="button" class="admin-secondary"
-          :disabled="busy || confirming" :aria-current="section === item.id ? 'page' : undefined"
-          @click="showSection(item.id)">{{ translate(item.label) }}</button>
-      </nav>
-      <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
-    </div>
+  <div class="portal-settings" :aria-busy="busy">
     <output v-if="notice" ref="publicationStatus" tabindex="-1">{{ translate(notice) }}</output>
     <output v-if="busy">{{ translate('admin.working') }}</output>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
     <button v-if="conflict" type="button" :disabled="busy" @click="load">{{ translate('admin.reload_settings') }}</button>
-    <button v-else-if="!draft && failure" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
+    <button v-else-if="!editableSettings && failure" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
 
-    <form v-if="draft" @submit.prevent="save">
-      <h2 id="portal-settings-heading" ref="heading" tabindex="-1">{{ translate(sectionLabel) }}</h2>
-      <fieldset v-if="section === 'identity'" class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
-        <label for="portal-title">{{ translate('admin.portal_name') }}</label>
-        <input id="portal-title" v-model="draft.settings.title" maxlength="200" required>
-
-        <label for="portal-tagline">{{ translate('admin.tagline') }}</label>
-        <input id="portal-tagline" v-model="draft.settings.tagline" maxlength="300">
-
-        <label for="portal-description">{{ translate('admin.description') }}</label>
-        <textarea id="portal-description" v-model="draft.settings.description" maxlength="2000" rows="4" />
-
-        <label for="portal-notice">{{ translate('admin.notice') }}</label>
-        <textarea id="portal-notice" v-model="draft.settings.notice" maxlength="2000" rows="3" />
+    <form v-if="editableSettings" @submit.prevent="save">
+      <fieldset v-if="page === 'identity'" class="settings-fields settings-field-grid" :disabled="busy" @input="dirty = true">
+        <div class="settings-field">
+          <label for="portal-title">{{ translate('admin.portal_name') }}</label>
+          <input id="portal-title" v-model="editableSettings.settings.title" maxlength="200" required>
+        </div>
+        <div class="settings-field">
+          <label for="portal-tagline">{{ translate('admin.tagline') }}</label>
+          <input id="portal-tagline" v-model="editableSettings.settings.tagline" maxlength="300">
+        </div>
+        <div class="settings-field">
+          <label for="portal-description">{{ translate('admin.description') }}</label>
+          <textarea id="portal-description" v-model="editableSettings.settings.description" maxlength="2000" rows="4" />
+        </div>
+        <div class="settings-field">
+          <label for="portal-notice">{{ translate('admin.notice') }}</label>
+          <textarea id="portal-notice" v-model="editableSettings.settings.notice" maxlength="2000" rows="4" />
+        </div>
       </fieldset>
 
-      <fieldset v-else-if="section === 'appearance'" class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
+      <fieldset v-else-if="page === 'appearance'" class="settings-fields" :disabled="busy" @input="dirty = true">
         <label for="portal-accent">{{ translate('admin.accent') }}</label>
         <div class="settings-accent">
-          <input id="portal-accent" v-model="draft.settings.accent" pattern="#[0-9a-fA-F]{6}" required>
+          <input id="portal-accent" v-model="editableSettings.settings.accent" pattern="#[0-9a-fA-F]{6}" required>
           <input
             type="color" :aria-label="translate('admin.settings_choose_accent')" :value="pickerColor"
-            @input="draft.settings.accent = ($event.target as HTMLInputElement).value"
+            @input="editableSettings.settings.accent = ($event.target as HTMLInputElement).value"
           >
         </div>
       </fieldset>
 
-      <fieldset v-else-if="section === 'languages'" class="settings-fields" :disabled="busy || confirming" @change="dirty = true">
-        <label for="portal-default-language">{{ translate('admin.default_language') }}</label>
-        <select id="portal-default-language" v-model="draft.settings.default_language" required>
-          <option v-for="item in draft.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
-
-        <label for="portal-fallback-language">{{ translate('admin.fallback_language') }}</label>
-        <select id="portal-fallback-language" v-model="draft.settings.fallback_language" required>
-          <option v-for="item in catalogLanguages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
+      <fieldset v-else-if="page === 'languages'" class="settings-fields settings-field-grid" :disabled="busy" @change="dirty = true">
+        <div class="settings-field">
+          <label for="portal-default-language">{{ translate('admin.default_language') }}</label>
+          <select id="portal-default-language" v-model="editableSettings.settings.default_language" required>
+            <option v-for="item in editableSettings.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
+              {{ item.native_name }}
+            </option>
+          </select>
+        </div>
+        <div class="settings-field">
+          <label for="portal-fallback-language">{{ translate('admin.fallback_language') }}</label>
+          <select id="portal-fallback-language" v-model="editableSettings.settings.fallback_language" required>
+            <option v-for="item in catalogLanguages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
+              {{ item.native_name }}
+            </option>
+          </select>
+        </div>
       </fieldset>
 
-      <fieldset v-show="section === 'translations'" class="settings-fields" :disabled="busy || confirming">
+      <fieldset v-show="page === 'languages'" class="settings-fields" :disabled="busy">
+        <PortalSlugRules
+          ref="slugRules" :rules="editableSettings.slug_rules" :languages="editableSettings.languages"
+          :default-language="editableSettings.settings.default_language" :translate="translate" @update:rules="updateSlugRules"
+        />
+      </fieldset>
+
+      <fieldset v-show="page === 'translations'" class="settings-translations" :disabled="busy">
         <PortalTranslationSettings
-          ref="translations" v-model:language="selectedLanguage" :languages="draft.languages" :keys="draft.message_keys"
-          :messages="messages" :reference="reference" :reference-language="draft.settings.fallback_language"
+          ref="translations" v-model:language="selectedLanguage" :languages="editableSettings.languages" :keys="editableSettings.message_keys"
+          :messages="messages" :reference="reference" :reference-language="editableSettings.settings.fallback_language"
           :ui-language="uiLanguage" :ui-messages="uiMessages" :disabled-catalogs="disabledCatalogCodes" :translate="translate"
           @add-catalog="addCatalog" @remove-catalog="removeCatalog" @update:message="changeMessage"
         />
       </fieldset>
 
-      <div class="settings-actions">
-        <button type="submit" :disabled="busy || confirming || conflict || !dirty">{{ translate('admin.save_draft') }}</button>
-        <button ref="publishButton" type="button" :disabled="publishDisabled" @click="confirmPublication">
-          {{ translate('admin.publish_draft') }}
-        </button>
+      <p v-if="editableSettings.has_draft">{{ translate('admin.settings_pending') }}</p>
+      <div v-if="!conflict && (dirty || editableSettings.has_draft)" class="settings-actions">
+        <button type="submit" class="settings-primary" :disabled="busy">{{ translate('admin.settings_save_changes') }}</button>
       </div>
     </form>
-    <section v-if="confirming && draft" class="settings-confirmation" aria-labelledby="publication-confirmation-heading">
-      <h3 id="publication-confirmation-heading" ref="confirmationHeading" tabindex="-1">{{ translate('admin.confirm_publish') }}</h3>
-      <dl>
-        <dt>{{ translate('admin.portal_name') }}</dt>
-        <dd>{{ draft.settings.title }}</dd>
-        <dt>{{ translate('admin.interface_texts') }}</dt>
-        <dd>{{ Object.keys(draft.catalogs).length }}</dd>
-      </dl>
-      <div class="settings-actions">
-        <button type="button" :disabled="busy" @click="publish">{{ translate('admin.publish_draft') }}</button>
-        <button type="button" :disabled="busy" @click="cancelPublication">{{ translate('admin.cancel') }}</button>
-      </div>
-    </section>
-  </section>
+  </div>
 </template>
 
 <style scoped>
 .portal-settings {
   display: grid;
-  gap: 1rem;
+  align-items: start;
+  gap: .75rem;
   min-inline-size: 0;
 }
 
-.settings-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 7rem);
-  gap: 0.75rem;
-  align-items: start;
-}
-
 .settings-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 11rem));
+  display: flex;
+  flex-wrap: wrap;
   gap: .5rem;
 }
 
-.portal-settings h2,
-.settings-confirmation h3,
-.settings-confirmation dl,
-.settings-confirmation dd {
+.portal-settings p {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -390,6 +343,12 @@ onBeforeUnmount(() => { active = false })
   display: grid;
   gap: 0.65rem;
   min-inline-size: 0;
+}
+
+.settings-field { display: grid; align-self: start; gap: .35rem; min-inline-size: 0; }
+
+@media (min-width: 62rem) {
+  .settings-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.5rem; }
 }
 
 .settings-accent {
@@ -437,32 +396,17 @@ onBeforeUnmount(() => { active = false })
   resize: vertical;
 }
 
-.settings-navigation {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.settings-translations {
   min-inline-size: 0;
-  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.settings-navigation button,
-.settings-actions button { overflow-wrap: anywhere; }
+.settings-actions button { overflow-wrap: break-word; }
 
-@media (max-width: 40rem) {
-  .settings-header { grid-template-columns: minmax(0, 1fr); }
-  .settings-header > button { justify-self: start; }
-  .settings-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-.settings-navigation [aria-current="page"] {
+.portal-settings .settings-primary {
   background: var(--admin-action);
   color: var(--admin-action-text);
-}
-
-.settings-confirmation {
-  display: grid;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--admin-border);
-  border-radius: 0.4rem;
 }
 </style>

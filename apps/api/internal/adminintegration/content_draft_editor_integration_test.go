@@ -142,9 +142,6 @@ func TestAdminDraftEditorFieldAuthorizationIntegration(t *testing.T) {
 		t.Fatal("denial returned a draft")
 	}
 	expireSessionStepUp(t, f.owner, f.actor.Token)
-	_, err = f.editor.SaveDraft(ctx, f.actor, draftEditItem, 1, editDraftField(draftHeadlineKey, `"Stale MFA"`))
-	onboardingError(t, err, identity.ErrStepUpRequired)
-	authRefreshStep(t, f.owner, f.actor.Token)
 
 	_, err = f.editor.SaveDraft(ctx, f.actor, draftOtherItem, 999, editDraftField(draftNoteKey, `"Without assignment"`))
 	onboardingError(t, err, identity.ErrPermissionDenied)

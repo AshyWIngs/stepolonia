@@ -24,9 +24,6 @@ func (s *AuthService) WithDraftCreate(ctx context.Context, req AuthRequest, type
 		return ErrSecurityUnavailable
 	}
 	return s.auditedCommand(ctx, req, draftCreatedEvent, func(ctx context.Context, tx *sql.Tx, session Session) error {
-		if !session.FreshStepUp() {
-			return ErrStepUpRequired
-		}
 		typeID, schemaNo, err := draftCreateTarget(ctx, tx, session.user, typeKey)
 		if err != nil {
 			return err
@@ -65,7 +62,7 @@ func draftCreateTarget(ctx context.Context, tx *sql.Tx, userID, typeKey string) 
 	return typeID, schemaNo, err
 }
 
-// WithDraftUpdate checks the full session, CSRF and step-up under the installation
+// WithDraftUpdate checks the full session and CSRF under the installation
 // mutex, and audits a successful Engine update in the same transaction.
 func (s *AuthService) WithDraftUpdate(ctx context.Context, req AuthRequest, itemID string, update func(context.Context, *sql.Tx, Session, string) error) error {
 	return s.withDraftCommand(ctx, req, draftSavedEvent, itemID, update)
@@ -97,9 +94,6 @@ func (s *AuthService) withDraftCommand(ctx context.Context, req AuthRequest, eve
 		return ErrSecurityUnavailable
 	}
 	return s.auditedCommand(ctx, req, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
-		if !session.FreshStepUp() {
-			return ErrStepUpRequired
-		}
 		id, valid := canonicalMembershipID(itemID)
 		if !valid {
 			return ErrNotFound

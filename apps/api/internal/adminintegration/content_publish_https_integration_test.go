@@ -229,6 +229,7 @@ func TestAdminReadyPublishHTTPSIntegration(t *testing.T) {
 			f.public(t, http.StatusNotFound)
 			verifyNotReady(t, f, item)
 			verifyReadyRequiresAssignment(t, f, item)
+			expireSessionStepUp(t, f.owner, f.author.Token)
 			f.command(t, f.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
 			f.command(t, f.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)
 			f.public(t, http.StatusNotFound)
@@ -296,8 +297,6 @@ func verifyPublishRefusals(t *testing.T, f publicationFixture, item string) {
 	badCSRF.CSRF = strings.Repeat("A", len(badCSRF.CSRF))
 	f.command(t, badCSRF, item, sharedReadyCommand, sharedReadyBody, http.StatusForbidden)
 	expireSessionStepUp(t, f.owner, f.publisher.Token)
-	f.command(t, f.publisher, item, publishCommand, publishBody, http.StatusForbidden)
-	authRefreshStep(t, f.owner, f.publisher.Token)
 	wrongType := draftHTTPPrefix + "missing/" + item + "/publish"
 	sendDraftRequest(t, f.server, http.MethodPost, f.publisher.Token, draftHTTPRequest{wrongType, publishBody, f.publisher.CSRF, http.StatusNotFound})
 	stale := `{"expected_version":"3","schema_no":"1"}`

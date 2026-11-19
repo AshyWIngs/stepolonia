@@ -62,11 +62,11 @@ func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
 		mux.Handle("/api/v1/admin/auth/", auth)
-		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit"} {
+		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit", "security/session-policy"} {
 			mux.Handle("/api/v1/admin/"+path, auth)
 		}
 		mux.Handle("/api/v1/admin/settings", auth)
-		mux.Handle("/api/v1/admin/settings/publish", auth)
+		mux.Handle("/api/v1/admin/settings/publication", auth)
 		mux.Handle("/api/v1/admin/users", auth)
 		mux.Handle("/api/v1/admin/users/", auth)
 		mux.Handle("/api/v1/admin/roles", auth)

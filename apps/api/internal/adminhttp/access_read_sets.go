@@ -17,7 +17,7 @@ const (
 var readUserRolesRoute = route{
 	kind: fullKind, method: http.MethodGet, operationID: readUserRolesOperation, response: roleMembershipSetSchema,
 	summary:     "Read an account's role membership set",
-	description: "Requires a full session and current roles.assign permission. Returns the current account version, complete membership set and eligible named role choices. Targets outside the actor's delegation envelope are hidden. A subsequent replacement requires fresh strong authentication and revalidates the whole set.",
+	description: "Requires a full session and current roles.assign permission. Returns the account version, complete membership set and eligible role choices grouped by permission domain. Targets outside the actor's delegation envelope are hidden. Replacement requires fresh strong authentication and revalidates the whole set.",
 }
 
 var readContentAssigneesRoute = route{
@@ -34,9 +34,10 @@ type accessReadSetsService interface {
 var _ accessReadSetsService = (*identity.AuthService)(nil)
 
 type roleMembershipOption struct {
-	ID    string `json:"id" format:"uuid"`
-	Name  string `json:"name"`
-	State string `json:"state" enum:"active,disabled,archived"`
+	ID     string `json:"id" format:"uuid"`
+	Name   string `json:"name"`
+	State  string `json:"state" enum:"active,disabled,archived"`
+	Domain string `json:"domain" enum:"content,structure,settings,access,mixed,other" doc:"Display category based on explicit role grants. Mixed roles span several domains. Other roles have no grants."`
 }
 
 type roleMembershipSetResponse struct {

@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"stepolonia/apps/api/internal/identity"
+	"reflect"
 	"strings"
 	"testing"
+
+	"stepolonia/apps/api/internal/identity"
 )
 
 const rolesHTTPPath = "/api/v1/admin/roles"
-const rolesStepUpCode = "step_up_required"
+const stepUpRequiredProblem = "step_up_required"
 
 func (f authHTTPFixture) roleHTTP(t *testing.T, method, path, body string, session identity.SessionTokens, status int) (map[string]any, string) {
 	t.Helper()
@@ -43,7 +45,7 @@ func (f authHTTPFixture) roleHTTP(t *testing.T, method, path, body string, sessi
 func TestAuthRolesHTTPAtomicEditorIntegration(t *testing.T) {
 	f := newAuthHTTPFixture(t)
 	full := authFull(t, f.state)
-	created, requestID := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"http-policy","grants":[{"operation":"users.read","scope":"installation","can_delegate":false}]}`, full, 200)
+	created, requestID := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"http-policy","grants":[{"operation":"security_policy.manage","scope":"installation","can_delegate":false}]}`, full, 200)
 	if len(created) != 5 || created["state"] != "disabled" || created["version"] != float64(1) {
 		t.Fatal("role creation projection/state/version drifted")
 	}
@@ -86,6 +88,7 @@ func assertMalformedRolesHTTP(t *testing.T, f authHTTPFixture, full identity.Ses
 		`{"name":"bad-policy","grants":[{"operation":"users.read","scope":"installation","can_delegate":false,"can_delegate":true}]}`,
 		`{"name":"bad-policy","grants":[{"operation":"content.items.read","scope":"content","can_delegate":false,"type_id":"00000000-0000-4000-8000-000000000099","object_scope":"any"}]}`,
 		`{"name":"bad-policy","grants":[{"operation":"users.read","scope":"installation","can_delegate":false,"field_ids":[]}]}`,
+		`{"name":"bad-policy","grants":[],"collection_keys":{"00000000-0000-4000-8000-000000000099":"article"}}`,
 	} {
 		f.roleHTTP(t, http.MethodPost, rolesHTTPPath, body, full, 400)
 	}
@@ -106,14 +109,10 @@ func TestAuthRolesHTTPReadOnlySessionIntegration(t *testing.T) {
 	requireNoError(t, err)
 	var superior string
 	requireNoError(t, f.state.db.QueryRow(`SELECT id::text FROM public.roles WHERE name='Site Admin'`).Scan(&superior))
-	out, _ := f.roleHTTP(t, http.MethodGet, rolesHTTPPath+"/"+superior, "", reader, 200)
-	if len(out) != 5 || len(out["grants"].([]any)) < 1 {
-		t.Fatal("roles.read failed independent safe policy access")
-	}
-	f.roleHTTP(t, http.MethodGet, rolesHTTPPath, "", reader, 200)
+	assertRoleCollectionKeysHTTP(t, f, reader, superior)
 	f.roleHTTP(t, http.MethodGet, rolesHTTPPath, "", full, 200)
 	stale, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"stale-admin","grants":[]}`, full, 403)
-	if stale["code"] != rolesStepUpCode {
+	if stale["code"] != stepUpRequiredProblem {
 		t.Fatal("stale administrator bypassed role freshness")
 	}
 	problem, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"forbidden","grants":[]}`, reader, 403)
@@ -124,5 +123,34 @@ func TestAuthRolesHTTPReadOnlySessionIntegration(t *testing.T) {
 	problem, _ = f.roleHTTP(t, http.MethodPatch, rolesHTTPPath+"/"+superior, `{"name":"forbidden","grants":[],"expected_version":1}`, reader, 403)
 	if problem["code"] != "permission_denied" {
 		t.Fatal("reader acquired edit permission")
+	}
+}
+
+func assertRoleCollectionKeysHTTP(t *testing.T, f authHTTPFixture, reader identity.SessionTokens, roleID string) {
+	t.Helper()
+	_, err := f.state.db.Exec(`WITH new_types AS (
+ INSERT INTO public.content_types(id,key,route_namespace)
+ VALUES ($1,'editorial_article','editorial-article'),($2,'other_collection','other-collection') RETURNING id
+) INSERT INTO public.content_schemas(type_id,schema_no,sealed) SELECT id,1,true FROM new_types`, lifecycleType, lifecycleOtherType)
+	requireNoError(t, err)
+	_, err = f.state.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope)
+ VALUES(gen_random_uuid(),$1,'content.items.read','content',$2,'assigned'),
+ (gen_random_uuid(),$1,'content.items.update','content',$2,'assigned')`, roleID, lifecycleType)
+	requireNoError(t, err)
+	wantKeys := map[string]any{lifecycleType: "editorial_article"}
+	out, _ := f.roleHTTP(t, http.MethodGet, rolesHTTPPath+"/"+roleID, "", reader, 200)
+	if len(out) != 6 || len(out["grants"].([]any)) < 2 || !reflect.DeepEqual(out["collection_keys"], wantKeys) {
+		t.Fatalf("role projection has unexpected collection keys: %v", out["collection_keys"])
+	}
+	page, _ := f.roleHTTP(t, http.MethodGet, rolesHTTPPath, "", reader, 200)
+	var listed any
+	for _, item := range page["items"].([]any) {
+		entry := item.(map[string]any)
+		if entry["id"] == roleID {
+			listed = entry["collection_keys"]
+		}
+	}
+	if !reflect.DeepEqual(listed, wantKeys) {
+		t.Fatalf("listed role has unexpected collection keys: %v", listed)
 	}
 }

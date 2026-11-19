@@ -119,6 +119,56 @@ CREATE TABLE public.site_revision_messages (
 );
 
 -- +goose StatementBegin
+CREATE FUNCTION public.valid_slug_rule(source_character text, replacement text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp AS $$
+ SELECT length(source_character) = 1 AND ascii(source_character) > 127
+  AND source_character = normalize(source_character)
+  AND source_character = lower(source_character COLLATE pg_catalog.pg_unicode_fast)
+  AND source_character COLLATE pg_catalog.unicode ~ '^[[:graph:]]$'
+  -- ICU's graphical class includes Unicode private-use areas.
+  AND ascii(source_character) NOT BETWEEN 57344 AND 63743
+  AND ascii(source_character) NOT BETWEEN 983040 AND 1048573
+  AND ascii(source_character) NOT BETWEEN 1048576 AND 1114109
+  AND length(replacement) <= 16 AND replacement COLLATE "C" !~ '[^a-z0-9-]'
+$$;
+-- +goose StatementEnd
+
+CREATE TABLE public.initial_slug_rules (
+    language_code text COLLATE "C" NOT NULL,
+    source_character text COLLATE "C" NOT NULL,
+    replacement text NOT NULL,
+    CONSTRAINT initial_slug_rules_pkey PRIMARY KEY (
+        language_code, source_character
+    ),
+    CONSTRAINT initial_slug_rules_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code),
+    CONSTRAINT initial_slug_rules_rule_check CHECK (
+        public.valid_slug_rule(source_character, replacement)
+    )
+);
+
+CREATE TABLE public.site_revision_slug_rules (
+    revision_id uuid NOT NULL,
+    language_code text COLLATE "C" NOT NULL,
+    source_character text COLLATE "C" NOT NULL,
+    replacement text NOT NULL,
+    CONSTRAINT site_revision_slug_rules_pkey PRIMARY KEY (
+        revision_id, language_code, source_character
+    ),
+    CONSTRAINT site_revision_slug_rules_revision_fkey FOREIGN KEY (
+        revision_id
+    ) REFERENCES public.site_revisions (id),
+    CONSTRAINT site_revision_slug_rules_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code),
+    CONSTRAINT site_revision_slug_rules_rule_check CHECK (
+        public.valid_slug_rule(source_character, replacement)
+    )
+);
+
+-- +goose StatementBegin
 DO $$
 DECLARE
     -- Match Go strings.TrimSpace independently of the database locale.
@@ -188,6 +238,9 @@ BEGIN
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  IF NEW.sealed THEN
+  IF (SELECT count(*) FROM public.site_revision_slug_rules WHERE revision_id=NEW.id)>512 THEN
+   RAISE EXCEPTION 'too many slug rules to publish' USING ERRCODE='23514';
+  END IF;
   -- Hold language locks through publication so eligible languages cannot change.
   PERFORM public.lock_languages(ARRAY(SELECT code FROM public.languages
    WHERE code IN (NEW.default_language,NEW.fallback_language)
@@ -255,6 +308,11 @@ BEFORE INSERT OR UPDATE OR DELETE
 ON public.site_revision_messages
 FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
 
+CREATE TRIGGER site_revision_slug_rules_guard
+BEFORE INSERT OR UPDATE OR DELETE
+ON public.site_revision_slug_rules
+FOR EACH ROW EXECUTE FUNCTION public.guard_site_child();
+
 CREATE VIEW public.public_site WITH (security_barrier = true) AS
 SELECT
     r.id,
@@ -293,6 +351,15 @@ FROM public.site_revision_messages AS m
 INNER JOIN
     public.public_ui_languages AS c
     ON m.revision_id = c.revision_id AND m.language_code = c.language_code;
+
+CREATE VIEW public.public_slug_rules WITH (security_barrier = true) AS
+SELECT
+    r.revision_id,
+    r.language_code,
+    r.source_character,
+    r.replacement
+FROM public.site_revision_slug_rules AS r
+INNER JOIN public.public_site AS s ON r.revision_id = s.id;
 
 COMMENT ON TABLE public.ui_message_keys IS
 'Application-required message keys with their placeholder signatures.';
@@ -336,6 +403,15 @@ COMMENT ON TABLE public.site_revision_languages IS
 COMMENT ON TABLE public.site_revision_messages IS
 'Editor-authored messages for a draft or sealed UI catalog.';
 
+COMMENT ON TABLE public.site_revision_slug_rules IS
+'Character replacement for slug suggestions in one settings revision.';
+
+COMMENT ON COLUMN public.site_revision_slug_rules.source_character IS
+'Source stored as one lowercase NFC Unicode character.';
+
+COMMENT ON COLUMN public.site_revision_slug_rules.replacement IS
+'An empty replacement removes the source character from the suggestion.';
+
 COMMENT ON COLUMN public.site_revision_messages.message_value IS
 'Plain text with optional {name} placeholders.';
 
@@ -348,6 +424,16 @@ COMMENT ON VIEW public.public_ui_languages IS
 COMMENT ON VIEW public.public_ui_messages IS
 'Messages for enabled UI languages in the current publication.';
 
+COMMENT ON VIEW public.public_slug_rules IS
+'Language-specific rules from the current sealed settings publication.';
+
+COMMENT ON FUNCTION public.valid_slug_rule(text, text) IS
+'Validates a canonical Unicode source character and its ASCII replacement.';
+
+REVOKE ALL ON FUNCTION public.valid_slug_rule(text, text) FROM public;
+
+GRANT EXECUTE ON FUNCTION public.valid_slug_rule(text, text) TO sp_publisher;
+
 COMMENT ON FUNCTION public.ui_placeholders(
     text
 ) IS
@@ -358,14 +444,14 @@ REVOKE ALL ON FUNCTION public.ui_placeholders(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.ui_placeholders(text) TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_child() IS
-'Locks the parent revision and prevents changes to sealed catalogs.';
+'Locks the parent revision and prevents changes to sealed settings data.';
 
 REVOKE ALL ON FUNCTION public.guard_site_child() FROM public;
 
 GRANT EXECUTE ON FUNCTION public.guard_site_child() TO sp_publisher;
 
 COMMENT ON FUNCTION public.guard_site_revision() IS
-'Validates the complete catalog at sealing and protects sealed revisions.';
+'Validates the catalog and slug rule limit and protects sealed revisions.';
 
 REVOKE ALL ON FUNCTION public.guard_site_revision() FROM public;
 
@@ -380,14 +466,18 @@ GRANT EXECUTE ON FUNCTION public.guard_site_state() TO sp_publisher;
 
 REVOKE ALL ON public.initial_site_defaults,
 public.initial_ui_messages,
+public.initial_slug_rules,
 public.ui_message_keys,
 public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
-public.site_revision_messages FROM public;
+public.site_revision_messages,
+public.site_revision_slug_rules FROM public;
 
 GRANT SELECT ON public.ui_message_keys TO sp_publisher;
+
+GRANT SELECT ON public.initial_slug_rules TO sp_publisher;
 
 GRANT SELECT,
 INSERT,
@@ -396,17 +486,22 @@ DELETE ON public.site_revisions,
 public.site_state,
 public.site_revision_keys,
 public.site_revision_languages,
-public.site_revision_messages TO sp_publisher;
+public.site_revision_messages,
+public.site_revision_slug_rules TO sp_publisher;
 
 REVOKE ALL ON public.public_site,
 public.public_ui_languages,
-public.public_ui_messages FROM public;
+public.public_ui_messages,
+public.public_slug_rules FROM public;
 
 COMMENT ON TABLE public.initial_site_defaults IS
 'Portal settings defaults used before the first site publication.';
 
 COMMENT ON TABLE public.initial_ui_messages IS
 'UI messages for the initial site publication, readable only by the owner.';
+
+COMMENT ON TABLE public.initial_slug_rules IS
+'Language-specific slug rules for the first settings revision.';
 
 COMMENT ON COLUMN public.site_revisions.notice IS
 'An empty value hides the public notice.';
@@ -415,18 +510,22 @@ COMMENT ON COLUMN public.site_revisions.accent IS
 'Theme accent as a hexadecimal RGB color (#RRGGBB).';
 
 -- +goose Down
+DROP VIEW public.public_slug_rules;
 DROP VIEW public.public_ui_messages;
 DROP VIEW public.public_ui_languages;
 DROP VIEW public.public_site;
 DROP TABLE public.site_state;
+DROP TABLE public.site_revision_slug_rules;
 DROP TABLE public.site_revision_messages;
 DROP TABLE public.site_revision_languages;
 DROP TABLE public.site_revision_keys;
 DROP TABLE public.site_revisions;
 DROP TABLE public.initial_site_defaults;
 DROP TABLE public.initial_ui_messages;
+DROP TABLE public.initial_slug_rules;
 DROP TABLE public.ui_message_keys;
 DROP FUNCTION public.guard_site_state();
 DROP FUNCTION public.guard_site_revision();
 DROP FUNCTION public.guard_site_child();
 DROP FUNCTION public.ui_placeholders(text);
+DROP FUNCTION public.valid_slug_rule(text, text);

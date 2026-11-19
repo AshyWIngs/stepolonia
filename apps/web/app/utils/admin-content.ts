@@ -19,6 +19,7 @@ export interface DraftSummary {
   version: string
   titles?: Record<string, string>
   published_locales?: string[]
+  publication_id?: string
 }
 
 export interface DraftRelation {
@@ -33,7 +34,6 @@ export interface EditableDraft extends DraftSummary {
   shared_ready_seq: string | null
   locales: Record<string, { values: Record<string, Scalar>, ready: object | null } | undefined>
   relations: DraftRelation[]
-  publication_id?: string
 }
 
 export type Scalar = string | boolean
@@ -121,7 +121,7 @@ export function saveDraft(type: string, draft: EditableDraft, csrf: string, patc
 
 export function commandDraft(
   type: string,
-  draft: EditableDraft,
+  draft: DraftSummary,
   action: DraftCommand,
   csrf: string,
   input: { locale?: string, intended_locales?: string[], schema_no?: string } = {},

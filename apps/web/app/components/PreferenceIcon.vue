@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: 'language' | 'system' | 'light' | 'dark' }>()
+defineProps<{ name: 'language' | 'system' | 'light' | 'dark' | 'account' | 'sign-out' }>()
 </script>
 
 <template>
@@ -17,6 +17,11 @@ defineProps<{ name: 'language' | 'system' | 'light' | 'dark' }>()
       <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19" />
     </g>
     <path v-else-if="name === 'dark'" d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a9 9 0 1 0 11 11Z" />
+    <g v-else-if="name === 'account'">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 21v-1.5a5 5 0 0 1 5-5h5a5 5 0 0 1 5 5V21" />
+    </g>
+    <path v-else-if="name === 'sign-out'" d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5m4-12 4 4-4 4m4-4H9" />
     <g v-else>
       <rect x="3" y="4" width="18" height="13" rx="2" />
       <path d="M12 17v3m-4 0h8" />

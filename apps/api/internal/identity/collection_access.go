@@ -53,7 +53,7 @@ func (s *AuthService) WithCollectionRevision(ctx context.Context, req AuthReques
 func (s *AuthService) withCollectionMutation(ctx context.Context, req AuthRequest, event string, initialize bool, write collectionWriter) (CollectionAccess, error) {
 	permissions := collectionWritePermissions(event, initialize)
 	var access CollectionAccess
-	err := s.authorizedCommand(ctx, req, permissions, event, func(ctx context.Context, tx *sql.Tx, session Session) error {
+	err := s.authorizedCommandWithFreshness(ctx, req, permissions, event, initialize, func(ctx context.Context, tx *sql.Tx, session Session) error {
 		var before accessSnapshot
 		if initialize {
 			var err error

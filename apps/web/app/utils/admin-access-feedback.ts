@@ -3,7 +3,6 @@ import { AdminContentError } from './admin-request'
 
 const explanations: Record<string, string> = {
   permission_denied: 'admin.access_denied',
-  step_up_required: 'admin.step_up_required',
   version_conflict: 'admin.access_version_conflict',
   last_admin_required: 'admin.access_last_admin',
   invalid_transition: 'admin.access_transition',
@@ -17,8 +16,11 @@ const explanations: Record<string, string> = {
 
 export function accessNotice(error: unknown, stepUp: () => void, sessionChanged: () => void) {
   if (!(error instanceof AdminContentError)) return 'admin.unavailable'
-  if (error.code === 'step_up_required') stepUp()
-  else if (error.code === 'csrf_failed' || error.status === 401) sessionChanged()
+  if (error.code === 'step_up_required') {
+    stepUp()
+    return ''
+  }
+  if (error.code === 'csrf_failed' || error.status === 401) sessionChanged()
   return explanations[error.code ?? ''] ?? (error.status === 403 ? 'admin.access_denied' : 'admin.unavailable')
 }
 

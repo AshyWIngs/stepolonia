@@ -38,6 +38,7 @@ CREATE TABLE public.sessions (
     credential_version bigint,
     step_up_at timestamptz,
     failed_attempts integer NOT NULL DEFAULT 0,
+    idle_timeout_minutes integer NOT NULL DEFAULT 30,
     created_at timestamptz NOT NULL DEFAULT current_timestamp,
     last_seen timestamptz NOT NULL DEFAULT current_timestamp,
     expires_at timestamptz NOT NULL,
@@ -56,6 +57,9 @@ CREATE TABLE public.sessions (
         AND (step_up_at IS null OR kind = 'full')
         AND failed_attempts BETWEEN 0 AND 5
     ),
+    CONSTRAINT sessions_idle_timeout_check CHECK (
+        idle_timeout_minutes BETWEEN 15 AND 60
+    ),
     CONSTRAINT sessions_time_check CHECK (
         last_seen >= created_at AND expires_at > last_seen
         AND expires_at <= created_at + CASE kind
@@ -70,6 +74,40 @@ CREATE TABLE public.sessions (
 );
 
 CREATE INDEX sessions_user_idx ON public.sessions (user_id);
+
+CREATE TABLE public.session_policy (
+    id integer CONSTRAINT session_policy_pkey PRIMARY KEY,
+    version bigint NOT NULL DEFAULT 1,
+    idle_timeout_minutes integer NOT NULL DEFAULT 30,
+    absolute_timeout_hours integer NOT NULL DEFAULT 12,
+    CONSTRAINT session_policy_singleton_check CHECK (id = 1),
+    CONSTRAINT session_policy_version_check CHECK (version > 0),
+    CONSTRAINT session_policy_duration_check CHECK (
+        idle_timeout_minutes BETWEEN 15 AND 60
+        AND absolute_timeout_hours BETWEEN 1 AND 12
+        AND idle_timeout_minutes <= absolute_timeout_hours * 60
+    )
+);
+
+INSERT INTO public.session_policy (id) VALUES (1);
+
+COMMENT ON TABLE public.session_policy IS
+'Installation policy applied when issuing a new full session.';
+
+COMMENT ON COLUMN public.sessions.idle_timeout_minutes IS
+'Idle timeout captured at full-session issuance '
+'and retained on token rotation.';
+
+CREATE TRIGGER session_policy_write_mutex
+BEFORE UPDATE OR INSERT OR DELETE OR TRUNCATE
+ON public.session_policy
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
+
+REVOKE ALL ON public.session_policy FROM
+public, sp_publisher, sp_language_importer;
+GRANT SELECT ON public.session_policy TO sp_security;
+GRANT UPDATE (version, idle_timeout_minutes, absolute_timeout_hours)
+ON public.session_policy TO sp_security;
 
 CREATE TABLE public.security_state (
     id integer CONSTRAINT security_state_pkey PRIMARY KEY,
@@ -295,7 +333,7 @@ CREATE TABLE public.security_audit (
             'content.initial_access_granted',
             'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
-            'settings.initialized',
+            'settings.initialized', 'security.session_policy_changed',
             'auth.enrollment_started', 'auth.enrollment_completed',
             'auth.enrollment_cancelled',
             'mfa.recovery_started', 'mfa.recovery_cancelled',
@@ -549,6 +587,7 @@ DROP TABLE public.security_audit;
 DROP TABLE public.recovery_codes;
 DROP TABLE public.mfa_totp;
 DROP TABLE public.security_state;
+DROP TABLE public.session_policy;
 DROP TABLE public.sessions;
 DROP TABLE public.users;
 DROP FUNCTION public.guard_security_state();

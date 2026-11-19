@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { assertEditorMutationBlocksNavigation, eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
+import { assertEditorMutationBlocksNavigation, assertSavedAddress, eachInOrder, expectedTitleSlug, verifyAccessAdministration, waitForContentMutation } from './admin-access.mjs'
 import { assertStablePreferences, chooseTheme, headerGeometry } from './header-preferences.mjs'
 
 const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
@@ -88,7 +88,10 @@ async function signIn(page, context) {
   await page.getByRole('alert').waitFor()
   await heading(page, 'Sign in').waitFor()
   assert.equal(await password.inputValue(), '')
-  await password.fill(process.env.QA_ADMIN_PASSWORD)
+  await loginField.evaluate((element, credentials) => {
+    element.value = credentials.login
+    element.form.elements.namedItem('password').value = credentials.password
+  }, { login: process.env.QA_ADMIN_LOGIN, password: process.env.QA_ADMIN_PASSWORD })
   const login = waitForAuth(page, 'login', 200)
   await password.press('Enter')
   await login
@@ -127,13 +130,26 @@ async function readPublicSite(context) {
   return result.json()
 }
 
-async function verifySettingsPublication(page, context) {
+async function reopenMissingText(page, sourceText) {
+  const messageAlert = page.getByRole('alert')
+  await messageAlert.waitFor()
+  assert.equal(await messageAlert.textContent(), 'Fill in the missing texts or remove this language.')
+  await page.getByRole('button', { name: 'Back to texts', exact: true }).click()
+  assert.ok(await page.getByRole('checkbox', { name: 'Only untranslated texts', exact: true }).isChecked())
+  assert.equal(await page.getByRole('searchbox', { name: 'Search texts', exact: true }).inputValue(), '')
+  await page.getByRole('list', { name: 'Text to edit', exact: true }).getByRole('button', { name: sourceText, exact: true }).click()
+}
+
+async function verifySettingsSave(page, context) {
   const oldSite = await readPublicSite(context)
   const newTitle = 'Polacy w Kazachstanie'
   const newMessage = 'Enter your code to open the community portal.'
   await page.getByRole('button', { name: 'Portal settings', exact: true }).click()
   const portalName = page.getByLabel('Portal name', { exact: true })
   assert.equal(await portalName.inputValue(), oldSite.settings.title)
+  const save = page.getByRole('button', { name: 'Save changes', exact: true })
+  assert.equal(await save.count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
   await page.setViewportSize({ width: 320, height: 844 })
   await assertFit(page)
   await portalName.fill(newTitle)
@@ -144,29 +160,15 @@ async function verifySettingsPublication(page, context) {
   assert.equal(await portalName.inputValue(), newTitle)
   const message = await findSettingsTranslation(page, oldSite.messages['admin.code_help'])
   await message.fill('   ')
-  const saveDraft = page.getByRole('button', { name: 'Save draft', exact: true })
-  const publishDraft = page.getByRole('button', { name: 'Publish draft', exact: true })
-  const confirmation = page.getByRole('region', { name: 'Publish the saved settings and interface texts?', exact: true })
-  await saveDraft.click()
-  await page.getByText('Draft saved.', { exact: true }).waitFor()
-  await publishDraft.click()
-  const messageAlert = page.getByRole('alert')
-  await messageAlert.waitFor()
-  assert.equal(await messageAlert.textContent(), 'Fill in the missing texts or remove this language.')
-  assert.ok(await page.getByRole('checkbox', { name: 'Only untranslated texts', exact: true }).isChecked())
-  assert.equal(await page.getByRole('searchbox', { name: 'Search texts', exact: true }).inputValue(), '')
-  assert.equal(await confirmation.count(), 0)
+  assert.equal(await save.count(), 1)
+  await save.click()
+  await reopenMissingText(page, oldSite.messages['admin.code_help'])
   assert.deepEqual(await readPublicSite(context), oldSite)
 
   await message.fill(newMessage)
-  await saveDraft.click()
-  await page.getByText('Draft saved.', { exact: true }).waitFor()
-  assert.deepEqual(await readPublicSite(context), oldSite)
-
-  await publishDraft.click()
-  await confirmation.getByText(newTitle, { exact: true }).waitFor()
-  await confirmation.getByRole('button', { name: 'Publish draft', exact: true }).click()
-  await page.getByText('Settings published.', { exact: true }).waitFor()
+  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/settings/publication', 'PUT', () => save.click(), ['Content', 'Sign out'])
+  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  assert.equal(await save.count(), 0)
   await page.locator('.admin-name').getByText(newTitle, { exact: false }).waitFor()
   const published = await readPublicSite(context)
   assert.notEqual(published.version, oldSite.version)
@@ -178,27 +180,170 @@ async function verifySettingsPublication(page, context) {
   await heading(page, 'Signed in').waitFor()
 }
 
+async function verifySlugRuleSettings(page, context) {
+  const snapshot = await readPublicSite(context)
+  const polish = snapshot.slug_rules.filter(rule => rule.language_code === 'pl')
+  assert.deepEqual(Object.fromEntries(polish.map(rule => [rule.character, rule.replacement])),
+    { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' })
+  await page.getByRole('button', { name: 'Languages and translations', exact: true }).click()
+  const language = page.getByLabel('Rule language', { exact: true })
+  const search = page.getByRole('searchbox', { name: 'Search rules', exact: true })
+  const replacement = page.getByLabel('Replacement', { exact: true })
+  const save = page.getByRole('button', { name: 'Save changes', exact: true })
+  await language.selectOption('pl')
+  await search.fill('ł')
+  assert.equal(await replacement.inputValue(), 'l')
+  assert.equal(await save.count(), 0)
+  await replacement.fill('ll')
+  const publishedReplacement = async () => (await readPublicSite(context)).slug_rules.find(rule =>
+    rule.language_code === 'pl' && rule.character === 'ł')?.replacement
+  assert.equal(await publishedReplacement(), 'l')
+  await save.click()
+  await page.getByText('Settings saved.', { exact: true }).waitFor()
+  assert.equal(await publishedReplacement(), 'll')
+}
+
+async function verifyNestedNavigation(page) {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  const sidebar = page.locator('.admin-navigation')
+  const settings = sidebar.getByRole('button', { name: 'Portal settings', exact: true })
+  const localization = sidebar.getByRole('button', { name: 'Languages and translations', exact: true })
+  const details = sidebar.getByRole('button', { name: 'Portal details', exact: true })
+  const appearance = sidebar.getByRole('button', { name: 'Appearance', exact: true })
+  await settings.press('Enter')
+  assert.equal(await settings.getAttribute('aria-expanded'), 'true')
+  assert.equal(await appearance.isVisible(), true)
+  assert.equal(await details.getAttribute('aria-current'), 'page')
+  await page.keyboard.press('Tab')
+  assert.ok(await details.evaluate(element => element === document.activeElement))
+  await appearance.click()
+  await heading(page, 'Appearance').waitFor()
+  assert.equal(await appearance.getAttribute('aria-current'), 'page')
+  await localization.click()
+  assert.equal(await settings.getAttribute('aria-expanded'), 'false')
+  assert.equal(await localization.getAttribute('aria-expanded'), 'true')
+  assert.equal(await appearance.isVisible(), false)
+  assert.equal(await sidebar.getByRole('button', { name: 'Languages', exact: true }).getAttribute('aria-current'), 'page')
+  assert.equal(await sidebar.locator('[aria-current="page"]:visible').count(), 1)
+  await page.getByRole('button', { name: 'Content', exact: true }).click()
+}
+
+async function verifyTextSearchAfterResize(page) {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await selectInterfaceLanguage(page, 'ru')
+  await page.getByRole('button', { name: 'Языки и переводы', exact: true }).click()
+  await page.getByRole('button', { name: 'Тексты интерфейса', exact: true }).click()
+  const search = page.getByRole('searchbox', { name: 'Поиск текстов', exact: true })
+  const signOutText = page.getByRole('list', { name: 'Текст для редактирования', exact: true }).getByRole('button', { name: 'Выйти', exact: true })
+  await search.fill('Выйти')
+  await signOutText.click()
+  const list = await page.locator('.catalog-list-pane').boundingBox()
+  const editor = await page.locator('.catalog-editor').boundingBox()
+  assert.ok(list && editor && editor.x >= list.x + list.width && editor.width > 760)
+  await page.getByRole('button', { name: 'К списку текстов', exact: true }).click()
+  await search.clear()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await page.evaluate(() => scrollTo(0, 0))
+  const box = await search.boundingBox()
+  assert.ok(box && box.y >= 0 && box.y + box.height <= 700)
+  await search.focus()
+  await page.keyboard.insertText('Выйти')
+  await signOutText.click()
+  await page.getByRole('button', { name: 'К списку текстов', exact: true }).click()
+  assert.equal(await search.inputValue(), 'Выйти')
+  await selectInterfaceLanguage(page, 'en')
+  await page.getByRole('button', { name: 'Content', exact: true }).click()
+}
+
+async function openIdentityChallenge(page, path, button) {
+  let csrf
+  const requireConfirmation = async route => {
+    if (route.request().method() !== 'POST') return route.continue()
+    csrf = route.request().headers()['x-csrf-token']
+    return route.fulfill({ status: 403, json: { code: 'step_up_required' } })
+  }
+  const dialog = page.getByRole('dialog', { name: 'Confirm your identity', exact: true })
+  await page.route(path, requireConfirmation)
+  try {
+    await button.click()
+    await dialog.waitFor()
+    assert.ok(await page.locator('.admin-navigation').isVisible())
+    assert.ok(await dialog.getByLabel('Password', { exact: true }).evaluate(element => element === document.activeElement))
+    await assertFit(page)
+    return { dialog, csrf }
+  } finally {
+    await page.unroute(path, requireConfirmation)
+  }
+}
+
+async function confirmIdentityInBrowser(page, dialog, csrf) {
+  const path = '**/api/v1/admin/auth/step-up'
+  const password = dialog.getByLabel('Password', { exact: true })
+  const code = dialog.getByLabel('Verification code', { exact: true })
+  const confirm = dialog.getByRole('button', { name: 'Confirm identity', exact: true })
+  const reject = route => route.fulfill({ status: 401, json: { code: 'invalid_credentials' } })
+  await page.route(path, reject, { times: 1 })
+  await password.fill('Invalid test password')
+  await code.fill('123456')
+  await confirm.click()
+  await dialog.getByRole('alert').getByText('We could not verify your credentials. Check your entries and try again.').waitFor()
+  assert.equal(await password.inputValue(), '')
+  assert.equal(await code.inputValue(), '')
+  assert.ok(csrf, 'The original protected request carried a CSRF token')
+  // Exercise the browser workflow independently of the server's TOTP replay checks.
+  await page.route(path, (route) => {
+    assert.deepEqual(route.request().postDataJSON(), { password: 'Valid test password', code: '654321' })
+    return route.fulfill({ status: 200, json: { csrf_token: csrf } })
+  }, { times: 1 })
+  await password.evaluate((element) => {
+    element.value = 'Valid test password'
+    element.form.elements.namedItem('code').value = '654321'
+  })
+  await confirm.click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByRole('status').getByText('Identity confirmed. Repeat the action to continue.').waitFor()
+}
+
+async function verifyCatalogGroups(page) {
+  const group = page.getByRole('combobox', { name: 'Section', exact: true })
+  const search = page.getByRole('searchbox', { name: 'Search texts', exact: true })
+  const results = page.getByRole('list', { name: 'Text to edit', exact: true })
+  assert.equal(await group.inputValue(), 'all')
+  await group.selectOption({ label: 'Collection structure' })
+  await search.fill('admin.registry_article')
+  await results.getByRole('button', { name: 'Article', exact: true }).waitFor()
+  assert.equal(await results.getByText('admin.registry_article', { exact: true }).count(), 0)
+  await search.fill('admin.sign_out')
+  await page.getByText('No matching texts.', { exact: true }).waitFor()
+  await group.selectOption({ label: 'All texts' })
+  assert.equal(await search.inputValue(), 'admin.sign_out')
+  await results.getByRole('button', { name: 'Sign out', exact: true }).waitFor()
+  await group.selectOption({ label: 'Users and access' })
+  await search.fill('Multiple domains')
+  await results.getByRole('button', { name: 'Multiple domains Accounts', exact: true }).waitFor()
+  assert.ok(await results.getByRole('button', { name: 'Multiple domains Roles', exact: true }).isVisible())
+  await group.selectOption({ label: 'All texts' })
+  await search.clear()
+}
+
 async function findSettingsTranslation(page, sourceText) {
+  await page.getByRole('button', { name: 'Languages and translations', exact: true }).click()
   await page.getByRole('button', { name: 'Interface texts', exact: true }).click()
+  await verifyCatalogGroups(page)
   const language = page.getByRole('combobox', { name: 'Language to edit', exact: true })
   assert.equal(await language.inputValue(), 'en')
   const search = page.getByRole('searchbox', { name: 'Search texts', exact: true })
   await selectInterfaceLanguage(page, 'pl')
-  const visibleWording = await page.getByRole('button', { name: 'Wyloguj się', exact: true }).textContent()
-  await page.getByRole('searchbox').fill(visibleWording)
-  await page.getByRole('button', { name: 'Wyloguj się admin.sign_out', exact: true }).waitFor()
+  assert.ok(await page.getByRole('button', { name: 'Wyloguj się', exact: true }).isVisible())
+  await page.getByRole('searchbox').fill('Wyloguj się')
+  await page.getByRole('list', { name: 'Tekst do edycji', exact: true }).getByRole('button', { name: 'Wyloguj się', exact: true }).waitFor()
   await selectInterfaceLanguage(page, 'en')
   assert.equal(await language.inputValue(), 'en')
-  await language.selectOption('pl')
-  await page.getByRole('button', { name: 'Remove catalog from draft', exact: true }).click()
-  const removal = page.getByRole('region', { name: 'Remove this language and its translations from the draft?', exact: true })
-  await removal.getByText('Polski', { exact: true }).waitFor()
-  await removal.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await language.selectOption('en')
   await search.fill(sourceText)
+  assert.equal(await search.inputValue(), sourceText)
   await search.press('Enter')
-  assert.equal(await page.getByText('Draft saved.', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: `${sourceText} admin.code_help`, exact: true }).click()
+  assert.equal(await page.getByText('Settings saved.', { exact: true }).count(), 0)
+  await page.getByRole('list', { name: 'Text to edit', exact: true }).getByRole('button', { name: sourceText, exact: true }).click()
   const message = page.getByLabel('Translation', { exact: true })
   assert.equal(await message.inputValue(), sourceText)
   assert.equal(await page.getByRole('textbox', { name: 'Translation', exact: true }).count(), 1)
@@ -225,69 +370,234 @@ async function signOut(page, context, revokedCookie) {
 
 async function verifyTypeBuilder(page) {
   await page.getByRole('button', { name: 'Structure', exact: true }).click()
-  const renderer = page.getByRole('combobox', { name: 'Renderer and collection', exact: true })
-  await renderer.selectOption('event')
+  const renderer = page.getByRole('combobox', { name: 'Collection to configure', exact: true })
+  await renderer.locator('option[value="article"]').waitFor({ state: 'attached' })
+  const titleField = page.getByRole('group', { name: 'Title', exact: true })
+  await titleField.waitFor()
+  assert.equal(await titleField.locator('summary').getByText('title', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('group', { name: 'URL slug', exact: true }).count(), 0)
+  assert.equal(await page.locator('.builder-field summary').getByText('slug', { exact: true }).count(), 0)
+  assert.equal(await renderer.inputValue(), 'article')
+  assert.deepEqual(await renderer.locator('optgroup[label="Collections"] option').allTextContents(), ['Article'])
+  assert.deepEqual(await renderer.locator('optgroup[label="Create collection"] option').allTextContents(), ['Event'])
+  await renderer.selectOption({ label: 'Event' })
+  assert.equal(await renderer.isEnabled(), true)
   const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
   assert.equal(await initial.isChecked(), false)
   await initial.check()
-  await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+  assert.equal(await renderer.isDisabled(), true)
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click()
+  assert.equal(await initial.isChecked(), false)
+  assert.ok(await renderer.evaluate(element => element === document.activeElement))
+  await initial.check()
+  const create = page.getByRole('button', { name: 'Create collection', exact: true })
+  await verifyCollectionAccessChallenge(page, initial, create)
+  await create.click()
   await page.getByText('Collection created.', { exact: true }).waitFor()
+  assert.deepEqual(await renderer.locator('optgroup[label="Collections"] option').allTextContents(), ['Article', 'Event'])
   await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
-  await page.getByLabel('Field key', { exact: true }).fill('subtitle')
+  const key = page.getByLabel('Field key', { exact: true })
+  assert.ok(await key.evaluate(element => element === document.activeElement))
+  await key.fill('subtitle')
   await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
-  await page.getByRole('button', { name: 'Save schema changes', exact: true }).click()
+  const save = page.getByRole('button', { name: 'Save schema changes', exact: true })
+  await assertEditorMutationBlocksNavigation(page, '**/api/v1/admin/content-types/event', 'PATCH', () => save.click(), ['Content', 'Sign out'])
   await page.getByText('Current schema 2', { exact: true }).waitFor()
   await page.getByText('Collection changes saved.', { exact: true }).waitFor()
+  await page.getByRole('group', { name: 'subtitle', exact: true }).waitFor()
+  await verifyFieldTranslations(page, save)
   const articleSchema = '**/api/v1/admin/content-types/article'
   await page.route(articleSchema, route => route.fulfill({ status: 503, json: { code: 'security_unavailable' } }))
   await renderer.selectOption('article')
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByRole('button', { name: 'Save schema changes', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Create collection', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
+  assert.equal(await page.locator('summary').getByText('subtitle', { exact: true }).count(), 0)
   await page.unroute(articleSchema)
   await page.getByRole('button', { name: 'Reload collection', exact: true }).click()
-  await page.getByRole('group', { name: 'title', exact: true }).waitFor()
-  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('group', { name: 'Title', exact: true }).waitFor()
+  assert.equal(await page.locator('summary').getByText('subtitle', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
 }
 
-async function verifyContentWorkflow(page, context, { type, namespace, slug, title, checkLayout = false }) {
+async function verifyFieldTranslations(page, save) {
+  const field = page.getByRole('group', { name: 'Title', exact: true })
+  const summary = field.locator('summary')
+  await summary.click()
+  assert.ok(await summary.getByText('Required', { exact: true }).isVisible())
+  const language = page.getByLabel('Field translation language', { exact: true })
+  const label = field.getByLabel('Field label', { exact: true })
+  await language.selectOption('ru')
+  await label.fill('Заголовок события')
+  await language.selectOption('kk')
+  await label.fill('Іс-шара атауы')
+  await language.selectOption('ru')
+  assert.equal(await label.inputValue(), 'Заголовок события')
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en')
+  await save.click()
+  await page.getByText('Collection changes saved.', { exact: true }).waitFor()
+  await page.getByText('Current schema 2', { exact: true }).waitFor()
+}
+
+async function createContentDraftWithKeyboard(page, type) {
   await page.getByRole('button', { name: 'Content', exact: true }).click()
   const collection = page.getByRole('combobox', { name: 'Collection', exact: true })
   await collection.selectOption(type)
   const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
   await create.waitFor()
   await create.focus()
+  const creating = waitForContentMutation(page, `/api/v1/admin/content/${type}`, 'POST', 201)
   await assertEditorMutationBlocksNavigation(page, `**/api/v1/admin/content/${type}`, 'POST',
     () => page.keyboard.press('Enter'), ['Portal settings', 'Sign out'])
+  return (await creating).json()
+}
+
+async function verifyContentWorkflow(page, context, { type, namespace, slugBase, title, checkLayout = false }) {
+  const { item_id: id } = await createContentDraftWithKeyboard(page, type)
+  const slug = expectedTitleSlug(slugBase, id)
   const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
   await editor.getByLabel(/^Title(?: \(|$)/).waitFor()
+  await editor.getByText('Fill in the translation and save the draft.', { exact: true }).waitFor()
+  assert.equal(await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).count(), 0)
   await editor.getByLabel(/^Title(?: \(|$)/).fill(title)
-  await editor.getByLabel(/^URL slug(?: \(|$)/).fill(slug)
+  assert.equal(await editor.getByLabel(/^URL slug(?: \(|$)/).count(), 0)
+  const save = editor.getByRole('button', { name: 'Save draft', exact: true })
   const bodyField = editor.getByLabel(/^Body(?: \(|$)/)
+  if (type === 'article') await verifyIncompletePublication(editor, save, bodyField)
   if (await bodyField.count()) await bodyField.fill('An editorial draft.')
   const optionalField = editor.getByLabel('subtitle', { exact: true })
   if (await optionalField.count()) await optionalField.fill('Private editor text.')
   if (checkLayout) await assertEditorLayouts(page, editor)
-  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await assertSavedAddress(page, type, id, save, 'en', slug)
   await editor.getByText('Draft saved.', { exact: true }).waitFor()
 
   const apiPath = `/api/v1/content/${type}/${slug}?language=en`
   const publicPath = `/en/${namespace}/${slug}`
   const request = path => context.request.get(new URL(path, origin).href)
   assert.equal((await request(apiPath)).status(), 404)
-  await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).click()
-  await editor.getByText('Shared fields are ready.', { exact: true }).waitFor()
-  await editor.getByRole('button', { name: 'Mark translation ready', exact: true }).click()
-  await editor.getByText('This translation is ready.', { exact: true }).waitFor()
-
+  if (type === 'event') await addSecondTranslation(page, editor, id)
+  else await interruptPublicationRefresh(page, type, id)
   await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
   const publish = editor.getByRole('region', { name: 'Publish the selected translations?', exact: true })
-  await publish.getByRole('button', { name: 'Confirm', exact: true }).click()
-  const link = editor.getByRole('link', { name: publicPath, exact: true })
+  if (type === 'event') {
+    await publish.getByRole('checkbox', { name: 'Polski', exact: true }).uncheck()
+    await publish.getByRole('checkbox', { name: 'English', exact: true }).check()
+    await publish.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  }
+  else await reconcilePublishedArticle(editor, publish)
+  const link = editor.getByRole('link', { name: 'English', exact: true })
   await link.waitFor()
   assert.equal(await link.getAttribute('href'), publicPath)
+  await assertPublishedDraft(request, apiPath, publicPath, title)
+  if (type === 'event') {
+    const omitted = `/api/v1/content/event/${expectedTitleSlug('warsztaty-spolleczne', id)}?language=pl`
+    assert.equal((await request(omitted)).status(), 404)
+    await publishOtherTranslation(page, editor, id, request, omitted, apiPath, title)
+  }
+  await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
+  const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
+  await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
+  await editor.getByText('Publication removed.', { exact: true }).waitFor()
+  assert.equal((await request(apiPath)).status(), 404)
+  assert.equal((await request(publicPath)).status(), 404)
+  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
+  await editor.waitFor({ state: 'hidden' })
+  assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).count(), 0)
+}
+
+async function interruptPublicationRefresh(page, type, id) {
+  await page.route(`**/api/v1/admin/content/${type}/${id}/schema`, route => route.fulfill({
+    status: 503, json: { code: 'security_unavailable' },
+  }), { times: 1 })
+}
+
+async function reconcilePublishedArticle(editor, publish) {
+  assert.equal(await publish.count(), 0)
+  await editor.getByText('Translations published.', { exact: true }).waitFor()
+  await editor.getByText('Reload the draft to view the published links.', { exact: true }).waitFor()
+  assert.equal(await editor.getByRole('button', { name: 'Publish translations', exact: true }).isDisabled(), true)
+  await editor.getByRole('button', { name: 'Reload draft', exact: true }).click()
+}
+
+async function publishOtherTranslation(page, editor, id, request, polishPath, englishPath, oldTitle) {
+  const language = editor.getByLabel('Language', { exact: true })
+  await language.selectOption('en')
+  await editor.getByLabel(/^Title(?: \(|$)/).fill('Unpublished headline')
+  const saved = waitForContentMutation(page, `/api/v1/admin/content/event/${id}`, 'PATCH', 200)
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+  await recordReadyUnpublishedChange(page, editor, id, await saved)
+  await language.selectOption('pl')
+  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  const publish = editor.getByRole('region', { name: 'Publish the selected translations?', exact: true })
+  assert.equal(await publish.getByRole('checkbox', { name: 'Polski', exact: true }).isChecked(), true)
+  assert.equal(await publish.getByRole('checkbox', { name: 'English', exact: true }).isChecked(), false)
+  await losePublicationResponse(page, id, publish, editor)
+  assert.equal(await editor.getByRole('button', { name: 'Publish translations', exact: true }).isDisabled(), true)
+  await editor.getByRole('button', { name: 'Reload draft', exact: true }).click()
+  await editor.getByRole('link', { name: 'Polski', exact: true }).waitFor()
+  const polish = await request(polishPath)
+  assert.equal(polish.status(), 200)
+  assert.equal((await polish.json()).localized.title.value, 'Warsztaty społeczne')
+  const english = await request(englishPath)
+  assert.equal(english.status(), 200)
+  assert.equal((await english.json()).localized.title.value, oldTitle)
+}
+
+async function losePublicationResponse(page, itemID, publish, editor) {
+  const session = await page.context().newCDPSession(page)
+  const urlPattern = new URL(`/api/v1/admin/content/event/${itemID}/publish`, origin).href
+  let serverStatus
+  let deliveryError
+  session.once('Fetch.requestPaused', ({ requestId, responseStatusCode }) => {
+    serverStatus = responseStatusCode
+    return session.send('Fetch.failRequest', { requestId, errorReason: 'Failed' }).catch(error => { deliveryError = error })
+  })
+  try {
+    await session.send('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Response' }] })
+    await publish.getByRole('button', { name: 'Publish translations', exact: true }).click()
+    const notice = editor.getByText('Publication could not be confirmed. Reload the draft and check the published links before trying again.', { exact: true })
+    await notice.waitFor().catch(async (error) => {
+      const alerts = await editor.getByRole('alert').allTextContents()
+      throw new Error(`Publication response ${serverStatus ?? 'not observed'}, alerts ${JSON.stringify(alerts)}`, { cause: deliveryError ?? error })
+    })
+    assert.equal(serverStatus, 200, 'Chromium dropped a successful server response')
+  }
+  finally {
+    await session.detach()
+  }
+}
+
+async function recordReadyUnpublishedChange(page, editor, itemID, saved) {
+  // Reuse the live token. Reading /auth/csrf rotates it out from under the open editor.
+  const csrf = await saved.request().headerValue('x-csrf-token')
+  assert.ok(csrf, 'The saved draft used a live CSRF token')
+  const draft = await saved.json()
+  const result = await page.evaluate(async ({ id, csrf, version, schemaNo }) => {
+    return (await fetch(`/api/v1/admin/content/event/${id}/ready`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
+      body: JSON.stringify({ expected_version: version, schema_no: schemaNo, locale: 'en' }),
+    })).status
+  }, { id: itemID, csrf, version: draft.version, schemaNo: draft.schema_no })
+  assert.equal(result, 200)
+  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
+  await page.getByRole('button', { name: /^Unpublished headline(?: |$)/u }).click()
+  await editor.getByText('This translation is ready.', { exact: true }).waitFor()
+}
+
+async function verifyIncompletePublication(editor, save, body) {
+  await save.click()
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
+  const failure = editor.getByRole('alert')
+  await failure.waitFor()
+  assert.equal(await failure.textContent(), 'Complete the highlighted fields before marking the draft ready.')
+  assert.equal(await body.getAttribute('aria-invalid'), 'true')
+  assert.ok(await body.evaluate(element => element === document.activeElement))
+  assert.equal(await editor.getByRole('link', { name: 'English', exact: true }).count(), 0)
+}
+
+async function assertPublishedDraft(request, apiPath, publicPath, title) {
   const published = await request(apiPath)
   assert.equal(published.status(), 200)
   const body = await published.json()
@@ -296,15 +606,31 @@ async function verifyContentWorkflow(page, context, { type, namespace, slug, tit
   const rendered = await request(publicPath)
   assert.equal(rendered.status(), 200)
   assert.ok((await rendered.text()).includes(title))
+}
 
-  await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
-  const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
-  await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
-  await editor.getByText('Publication removed.', { exact: true }).waitFor()
-  assert.equal((await request(apiPath)).status(), 404)
-  assert.equal((await request(publicPath)).status(), 404)
-  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+async function addSecondTranslation(page, editor, id) {
+  await editor.getByLabel('Language', { exact: true }).selectOption('pl')
+  await editor.getByLabel(/^Title(?: \(|$)/).fill('Warsztaty społeczne')
+  const save = editor.getByRole('button', { name: 'Save draft', exact: true })
+  await assertSavedAddress(page, 'event', id, save, 'pl', expectedTitleSlug('warsztaty-spolleczne', id))
+  await editor.getByText('Draft saved.', { exact: true }).waitFor()
+}
+
+async function verifyCollectionAccessChallenge(page, initial, create) {
+  const challenge = () => openIdentityChallenge(page, '**/api/v1/admin/content-types', create)
+  const { dialog } = await challenge()
+  await dialog.getByLabel('Password', { exact: true }).fill('Cancel this confirmation')
+  await dialog.getByLabel('Verification code', { exact: true }).fill('123456')
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(await page.locator('#admin-step-up-password').count(), 0)
+  assert.ok(await create.evaluate(element => element === document.activeElement))
+  const { csrf } = await challenge()
+  assert.equal(await dialog.getByLabel('Password', { exact: true }).inputValue(), '')
+  assert.equal(await dialog.getByLabel('Verification code', { exact: true }).inputValue(), '')
+  await confirmIdentityInBrowser(page, dialog, csrf)
+  assert.ok(await initial.isChecked())
+  assert.ok(await create.isVisible())
 }
 
 async function assertEditorLayouts(page, editor) {
@@ -352,21 +678,38 @@ async function switchLanguageWithUnsavedDraft(page, title, expected) {
   assert.equal(await title.inputValue(), expected)
 }
 
+async function assertTitleAddresses(page, editor, locale, title, id, original) {
+  const save = editor.getByRole('button', { name: 'Zapisz szkic', exact: true })
+  const samples = [
+    ['ru', 'Весенний праздник', expectedTitleSlug('vesenniy-prazdnik', id)],
+    ['kk', 'Қазақша сөз', expectedTitleSlug('qazaqsha-soz', id)],
+    ['pl', '🌿', `item-${id}`],
+    ['pl', original, expectedTitleSlug('spacer-po-allmaty', id)],
+  ]
+  assert.equal(await editor.getByLabel(/^Adres URL/u).count(), 0)
+  await eachInOrder(samples, async ([code, text, slug]) => {
+    await locale.selectOption(code)
+    await title.fill(text)
+    await assertSavedAddress(page, 'article', id, save, code, slug)
+    await editor.getByRole('status').getByText('Zapisano szkic.').waitFor()
+  })
+}
+
 async function verifyEditorialNavigation(page) {
   await selectInterfaceLanguage(page, 'pl')
   await page.getByRole('button', { name: 'Materiały', exact: true }).click()
   const collection = page.getByRole('combobox', { name: 'Kolekcja', exact: true })
   await collection.selectOption('article')
+  const creating = waitForContentMutation(page, '/api/v1/admin/content/article', 'POST', 201)
   await page.getByRole('button', { name: 'Utwórz szkic', exact: true }).click()
+  const { item_id: id } = await (await creating).json()
   const editor = page.getByRole('region', { name: 'Edytor szkicu', exact: true })
   const locale = editor.getByLabel('Język', { exact: true })
   const title = editor.getByLabel(/^Tytuł/u)
   const original = 'Spacer po Ałmaty'
   const updated = 'Jesienny spacer po Ałmaty'
-  await locale.selectOption('pl')
-  await title.fill(original)
-  await editor.getByRole('button', { name: 'Zapisz szkic', exact: true }).click()
-  await editor.getByRole('status').getByText('Zapisano szkic.').waitFor()
+  await locale.waitFor()
+  await assertTitleAddresses(page, editor, locale, title, id, original)
   await editor.getByRole('button', { name: 'Wróć do szkiców', exact: true }).click()
   await page.getByRole('button', { name: /Portal workflow verification/u }).waitFor()
   await page.getByRole('button', { name: /Spacer po Ałmaty.*Polski.*Brak publikacji/u }).click()
@@ -386,7 +729,8 @@ async function verifyEditorialNavigation(page) {
   await leave.getByRole('button', { name: 'Wróć do edycji', exact: true }).click()
   assert.equal(await title.inputValue(), updated)
   assert.ok(await settings.evaluate(element => element === document.activeElement))
-  await editor.getByRole('button', { name: 'Zapisz szkic', exact: true }).click()
+  const save = editor.getByRole('button', { name: 'Zapisz szkic', exact: true })
+  await assertSavedAddress(page, 'article', id, save, 'pl', expectedTitleSlug('jesienny-spacer-po-allmaty', id))
   await editor.getByRole('status').getByText('Zapisano szkic.').waitFor()
   await editor.getByRole('button', { name: 'Wróć do szkiców', exact: true }).click()
   const row = page.getByRole('button', { name: /Jesienny spacer po Ałmaty.*Polski.*Brak publikacji/u })
@@ -399,10 +743,9 @@ async function verifyEditorialNavigation(page) {
   await title.fill('Niezapisana zmiana')
   await settings.click()
   await leave.getByRole('button', { name: 'Odrzuć zmiany', exact: true }).click()
-  await page.getByRole('heading', { name: 'Ustawienia portalu', level: 1, exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Informacje o portalu', level: 1, exact: true }).waitFor()
   await selectInterfaceLanguage(page, 'en')
-  await heading(page, 'Portal settings').first().waitFor()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await heading(page, 'Portal details').waitFor()
 }
 
 async function assertPublishedLocales(page) {
@@ -441,6 +784,7 @@ async function verifyWorkspaceGeometry(page) {
     await page.setViewportSize({ width, height })
     await eachInOrder(['light', 'dark'], async (theme) => {
       await chooseTheme(page, theme)
+      await assertHeaderIcons(page)
       const initialHeader = await headerGeometry(page)
       const initialTop = await workspaceTop()
       await eachInOrder(['kk', 'pl', 'ru', 'en'], async (locale) => {
@@ -453,6 +797,44 @@ async function verifyWorkspaceGeometry(page) {
   })
   await chooseTheme(page, 'system')
   await page.setViewportSize({ width: 768, height: 1024 })
+}
+
+async function assertHeaderIcons(page) {
+  const utilities = page.locator('.admin-preferences')
+  const boxes = await utilities.locator(':scope > button, .header-preference-trigger').evaluateAll(elements =>
+    elements.map(element => {
+      const { width, height, top, left, right } = element.getBoundingClientRect()
+      return { width, height, top, left, right, svg: element.querySelector('svg')?.getAttribute('aria-hidden') }
+    }))
+  assert.equal(boxes.length, 4)
+  const viewportWidth = await page.evaluate(() => innerWidth)
+  for (const box of boxes) {
+    assert.ok(box.width >= 44 && box.height >= 44)
+    assert.equal(box.svg, 'true')
+    assert.ok(Math.abs(box.top - boxes[0].top) <= 1)
+    assert.ok(box.left >= 0 && box.right <= viewportWidth)
+  }
+}
+
+async function verifySessionPolicy(page) {
+  const action = name => page.getByRole('button', { name, exact: true })
+  await page.locator('header').getByRole('button', { name: 'My account', exact: true }).click()
+  await heading(page, 'Active sessions').waitFor()
+  await action('Access').click()
+  await action('Security').click()
+  const idle = page.getByLabel('Inactivity limit (minutes)', { exact: true })
+  const absolute = page.getByLabel('Maximum session length (hours)', { exact: true })
+  assert.equal(await idle.inputValue(), '30')
+  assert.equal(await absolute.inputValue(), '12')
+  await idle.fill('45')
+  await absolute.fill('8')
+  const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/admin/security/session-policy' &&
+    response.request().method() === 'PUT' && response.status() === 200)
+  await action('Save session policy').click()
+  const policy = await (await saved).json()
+  assert.equal(policy.idle_timeout_minutes, 45)
+  assert.equal(policy.absolute_timeout_hours, 8)
+  await page.getByText('Session policy saved.', { exact: true }).waitFor()
 }
 
 const browser = await chromium.launch()
@@ -470,10 +852,14 @@ try {
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
   await verifyWorkspaceGeometry(page)
-  await verifySettingsPublication(page, context)
+  await verifySessionPolicy(page)
+  await verifyNestedNavigation(page)
+  await verifyTextSearchAfterResize(page)
+  await verifySettingsSave(page, context)
+  await verifySlugRuleSettings(page, context)
   await verifyTypeBuilder(page)
-  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })
-  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slug: 'community-workshop', title: 'Community workshop' })
+  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slugBase: 'portal-workflow-verification', title: 'Portal workflow verification', checkLayout: true })
+  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slugBase: 'community-workshop', title: 'Community workshop' })
   await verifyEditorialNavigation(page)
   await verifyAccessAdministration(browser, page, origin, assertTheme, assertFit)
   await signOut(page, context, cookie)

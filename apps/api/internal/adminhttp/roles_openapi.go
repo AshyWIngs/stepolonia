@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"stepolonia/apps/api/internal/apiexamples"
 	"stepolonia/apps/api/internal/identity"
 )
 
@@ -60,7 +61,11 @@ func replaceRoleGrantSchema(schema *huma.Schema) {
 
 func addRoleSchemas(schemas map[string]*huma.Schema) {
 	schemas[roleGrantSchema] = roleGrantContract()
-	example := roleResponse{ID: exampleUUID, Name: "docs-reviewer", State: roleDisabled, Version: 1, Grants: []roleGrantDTO{roleGrantExample()}}
+	example := roleResponse{
+		ID: exampleUUID, Name: "docs-reviewer", State: roleDisabled, Version: 1,
+		Grants:         []roleGrantDTO{{Operation: string(identity.OpContentRead), Scope: roleContentScope, TypeID: exampleUUID, ObjectScope: roleAssignedObjects}},
+		CollectionKeys: map[string]string{exampleUUID: apiexamples.Article().TypeKey},
+	}
 	schema := responseDTOSchema("Safe role policy metadata including explicit grants and latent disabled/archived grants. No credentials, memberships, recipients, content values or field labels are exposed.", example)
 	replaceRoleGrantSchema(schema)
 	schemas[roleSchema] = schema
@@ -69,7 +74,7 @@ func addRoleSchemas(schemas map[string]*huma.Schema) {
 
 func roleGrantContract() *huma.Schema {
 	mayDelegate := false
-	installation := []string{"content_types.manage", "content_types.initialize_access", "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage"}
+	installation := []string{"content_types.manage", "content_types.initialize_access", "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage", "security_policy.manage"}
 	content := []string{string(identity.OpContentRead), "content.items.update", "content.items.ready", "content.items.publish", "content.items.unpublish", "content.items.assign"}
 	allContent := append([]string{"content.items.create"}, content...)
 	security := roleGrantVariant(installation, roleInstallationScope)

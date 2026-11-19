@@ -97,6 +97,35 @@ func saveNormalizedDraft(ctx context.Context, tx *sql.Tx, expected int64, input 
 	return expected + 1, nil
 }
 
+// ApplyTx validates and activates a complete settings revision. The caller
+// owns account authorization, audit and commit.
+func ApplyTx(ctx context.Context, tx *sql.Tx, expected int64, input Draft) (string, int64, error) {
+	input, err := normalizeDraft(input)
+	if err != nil {
+		return "", 0, err
+	}
+	old, err := lockDraft(ctx, tx, expected)
+	if err != nil {
+		return "", 0, err
+	}
+	id, err := identifier()
+	if err != nil {
+		return "", 0, err
+	}
+	if err := storeDraft(ctx, tx, id, input); err != nil {
+		return "", 0, err
+	}
+	if err := activateRevision(ctx, tx, id); err != nil {
+		return "", 0, err
+	}
+	if old.Valid {
+		if err := deleteDraft(ctx, tx, old.String); err != nil {
+			return "", 0, err
+		}
+	}
+	return id, expected + 1, nil
+}
+
 func (s *Service) Publish(ctx context.Context, expected int64) (string, int64, error) {
 	if expected < 1 {
 		return "", 0, failure(400, invalidVersionCode)
@@ -126,13 +155,18 @@ func PublishTx(ctx context.Context, tx *sql.Tx, expected int64) (string, int64, 
 	if !draft.Valid {
 		return "", 0, failure(409, "site_draft_missing")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_revisions SET sealed=true WHERE id=$1`, draft.String); err != nil {
-		return "", 0, dbError(err)
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE public.site_state SET published_id=$1,draft_id=NULL,version=version+1 WHERE singleton`, draft.String); err != nil {
-		return "", 0, dbError(err)
+	if err := activateRevision(ctx, tx, draft.String); err != nil {
+		return "", 0, err
 	}
 	return draft.String, expected + 1, nil
+}
+
+func activateRevision(ctx context.Context, tx *sql.Tx, id string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE public.site_revisions SET sealed=true WHERE id=$1`, id); err != nil {
+		return dbError(err)
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE public.site_state SET published_id=$1,draft_id=NULL,version=version+1 WHERE singleton`, id)
+	return dbError(err)
 }
 
 type Editable struct {
@@ -143,6 +177,7 @@ type Editable struct {
 	Catalogs    map[string]map[string]string `json:"catalogs"`
 	Languages   []Language                   `json:"languages"`
 	MessageKeys []string                     `json:"message_keys"`
+	SlugRules   []SlugRule                   `json:"slug_rules"`
 }
 
 // ReadEditable returns the current draft, or the current publication if there
@@ -173,7 +208,12 @@ func ReadEditable(ctx context.Context, tx *sql.Tx) (Editable, error) {
 		revision = draft
 	}
 	if !revision.Valid {
-		return result, nil
+		result.SlugRules, err = readSlugRules(ctx, tx, initialSlugRulesQuery)
+		return result, dbError(err)
+	}
+	result.SlugRules, err = readSlugRules(ctx, tx, editableSlugRulesQuery, revision.String)
+	if err != nil {
+		return Editable{}, dbError(err)
 	}
 	if err := readEditorRevision(ctx, tx, revision.String, &result); err != nil {
 		return Editable{}, err

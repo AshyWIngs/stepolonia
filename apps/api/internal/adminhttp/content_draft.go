@@ -54,7 +54,7 @@ type draftLocalePatch struct {
 var saveDraftRoute = route{
 	kind: fullKind, method: http.MethodPatch, operationID: saveDraftOperation,
 	summary: "Save content draft changes", response: contentDraftSchema,
-	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session, CSRF and strong authentication no older than five minutes. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. A relation change requires read access to any newly selected target. Changes and their audit commit together.",
+	description: "Available only when the installation configures and verifies its separate draft database login. Requires a full session and CSRF. Checks the item's actual collection, scope, each touched field and the expected versions in one transaction. A relation change requires read access to any newly selected target. Changes and their audit commit together.",
 }
 
 var readDraftRoute = route{

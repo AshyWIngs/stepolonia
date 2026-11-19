@@ -21,7 +21,7 @@ func TestAuthRoleStateHTTPIntegration(t *testing.T) {
 	}
 	expireSessionStepUp(t, f.state.db, admin.Token)
 	problem, _ := f.roleHTTP(t, http.MethodPost, path+"/enable", `{"expected_version":1}`, admin, 403)
-	if problem["code"] != rolesStepUpCode {
+	if problem["code"] != stepUpRequiredProblem {
 		t.Fatalf("expired step-up: %v", problem["code"])
 	}
 	authRefreshStep(t, f.state.db, admin.Token)

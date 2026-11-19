@@ -265,15 +265,19 @@ func (s *AuthService) rotateFull(ctx context.Context, tx *sql.Tx, x Session, ste
 		return err
 	}
 	var err error
-	*out, err = s.issue(ctx, tx, x.user, sessionFull, x.version, true)
+	// Step-up rotates credentials without extending the original session lifetime.
+	if step {
+		lifetime := sessionLifetime{
+			idleTimeoutMinutes: x.idleTimeoutMinutes,
+			createdAt:          sql.NullTime{Time: x.created, Valid: true},
+			expiresAt:          sql.NullTime{Time: x.expires, Valid: true},
+		}
+		*out, err = issueSession(ctx, tx, x.user, sessionFull, x.version, true, lifetime)
+	} else {
+		*out, err = s.issue(ctx, tx, x.user, sessionFull, x.version, true)
+	}
 	if err != nil {
 		return err
-	}
-	if step { // Rotation must not restart the original absolute lifetime.
-		if _, err = tx.ExecContext(ctx, `UPDATE public.sessions SET created_at=$2,expires_at=$3 WHERE token_digest=$1`, digest(out.Token), x.created, x.expires); err != nil {
-			return err
-		}
-		out.ExpiresAt = x.expires
 	}
 	if err = budget.success(ctx, tx); err != nil {
 		return err

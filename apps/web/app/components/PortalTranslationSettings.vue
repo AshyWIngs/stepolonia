@@ -21,59 +21,92 @@ const emit = defineEmits<{
   'remove-catalog': [code: string]
 }>()
 
-const groups = ['all', 'admin.settings_public_texts', 'admin.content', 'admin.workspace_structure', 'admin.access', 'admin.settings', 'admin.name']
+const groupLabels = {
+  all: 'admin.settings_all_texts',
+  public: 'admin.settings_public_texts',
+  content: 'admin.settings_content_texts',
+  structure: 'admin.settings_structure_texts',
+  access: 'admin.settings_access_texts',
+  settings: 'admin.settings_settings_texts',
+  common: 'admin.settings_admin_texts',
+}
+const settingsControls = new Set([
+  'admin.tagline', 'admin.description', 'admin.notice', 'admin.accent', 'admin.default_language', 'admin.fallback_language',
+  'admin.localization', 'admin.interface_texts', 'admin.save_draft', 'admin.draft_saved', 'admin.publish_draft', 'admin.confirm_publish',
+  'admin.published', 'admin.reload_settings', 'admin.add_catalog', 'admin.remove_catalog',
+])
+type CatalogGroup = keyof typeof groupLabels
 const query = ref('')
-const group = ref('all')
+const group = ref<CatalogGroup>('all')
 const missingOnly = ref(false)
 const selected = ref('')
-const removal = ref('')
 const input = ref<HTMLTextAreaElement>()
 const search = ref<HTMLInputElement>()
-const removalHeading = ref<HTMLElement>()
+const results = ref<HTMLElement>()
 const languageInput = ref<HTMLSelectElement>()
-const pageSize = 8
+const pageSize = 16
 const offset = ref(0)
 const messages = computed(() => new Map(Object.entries(props.messages ?? {})))
 const reference = computed(() => new Map(Object.entries(props.reference ?? {})))
 const activeLanguage = computed(() => props.languages.find(language => language.code === props.language))
 const referenceLanguage = computed(() => props.languages.find(language => language.code === props.referenceLanguage))
-const filtered = computed(() => {
-  const term = query.value.trim().toLowerCase()
-  return props.keys.filter((key) => {
-    const value = messages.value.get(key) ?? ''
-    return (group.value === 'all' || domain(key) === group.value) &&
-      (!missingOnly.value || !value.trim()) &&
-      (!term || [key, value, reference.value.get(key), props.uiMessages[key]]
-        .some(text => text?.toLowerCase().includes(term)))
-  })
-})
+const term = computed(() => query.value.trim().toLowerCase())
+const filtered = computed(() => props.keys.filter((key) => {
+  const value = messages.value.get(key) ?? ''
+  return (group.value === 'all' || domain(key) === group.value) &&
+    (!missingOnly.value || !value.trim()) &&
+    (!term.value || [key, value, reference.value.get(key), props.uiMessages[key]]
+      .some(text => text?.toLowerCase().includes(term.value)))
+}))
 const visible = computed(() => filtered.value.slice(offset.value, offset.value + pageSize))
+const duplicateContexts = computed(() => {
+  const byName = Map.groupBy(filtered.value, messageName)
+  const contexts = new Map<string, string>()
+  for (const keys of byName.values()) {
+    if (keys.length < 2) continue
+    for (const [label, matchingKeys] of Map.groupBy(keys, messageContext)) {
+      for (const key of matchingKeys) contexts.set(key, matchingKeys.length === 1 ? label : key)
+    }
+  }
+  return contexts
+})
+const selectedReference = computed(() => props.language === props.referenceLanguage ? '' : reference.value.get(selected.value))
 watch([query, group, missingOnly, () => props.language], () => { offset.value = 0 })
 watch(() => props.language, () => {
   selected.value = ''
-  removal.value = ''
 })
 watch(filtered, (keys) => {
   if (keys.length <= offset.value) offset.value = Math.max(0, Math.ceil(keys.length / pageSize - 1) * pageSize)
 })
 
-function domain(key: string) {
-  if (!key.startsWith('admin.')) return 'admin.settings_public_texts'
-  if (/^admin\.(content|draft|field)_/u.test(key)) return 'admin.content'
-  if (key.startsWith('admin.registry_')) return 'admin.workspace_structure'
-  if (/^admin\.(access|users|roles|audit|assignees|account)_/u.test(key)) return 'admin.access'
-  if (/^admin\.(settings|portal|catalog)_/u.test(key)) return 'admin.settings'
-  return 'admin.name'
+function domain(key: string): CatalogGroup {
+  if (!key.startsWith('admin.')) return 'public'
+  if (settingsControls.has(key) || /^admin\.(settings|portal|catalog|slug_rules)(?:_|$)/u.test(key)) return 'settings'
+  if (/^admin\.(content|draft|field)(?:_|$)/u.test(key)) return 'content'
+  if (key === 'admin.workspace_structure' || /^admin\.registry(?:_|$)/u.test(key)) return 'structure'
+  if (/^admin\.(access|users|roles|role_rule|permission|audit|assignees|security|session_policy)(?:[_.]|$)/u.test(key)) return 'access'
+  return 'common'
 }
 
 function messageName(key: string) {
   return props.uiMessages[key] || reference.value.get(key) || messages.value.get(key) || key
 }
 
+function messageContext(key: string) {
+  if (/^admin\.users(?:_|$)/u.test(key)) return props.translate('admin.users')
+  if (/^admin\.(roles|role_rule)(?:_|$)/u.test(key)) return props.translate('admin.roles')
+  return props.translate(groupLabels[domain(key)])
+}
+
 function messageLanguage(key: string) {
   if (props.uiMessages[key]) return props.uiLanguage
   if (reference.value.get(key)) return props.referenceLanguage
   return props.language
+}
+
+function translationPreview(key: string) {
+  const translation = messages.value.get(key)
+  return translation && translation !== messageName(key) ? translation : ''
 }
 
 async function edit(key: string) {
@@ -83,9 +116,11 @@ async function edit(key: string) {
 }
 
 async function closeEditor() {
+  const opener = results.value?.querySelector<HTMLElement>('button[aria-pressed="true"]')
   selected.value = ''
   await nextTick()
-  search.value?.focus()
+  const destination = opener?.isConnected ? opener : search.value
+  destination?.focus()
 }
 
 async function showMissing() {
@@ -93,30 +128,20 @@ async function showMissing() {
   group.value = 'all'
   missingOnly.value = true
   offset.value = 0
-  removal.value = ''
   await nextTick()
   if (selected.value && filtered.value.includes(selected.value)) {
     input.value?.focus()
     return
   }
   selected.value = ''
+  await nextTick()
   const field = search.value ?? languageInput.value
   field?.focus()
 }
 
-async function confirmRemoval(code: string) {
-  removal.value = code
-  await nextTick()
-  removalHeading.value?.focus()
-}
-
-async function closeRemoval(remove: boolean) {
-  const code = removal.value
-  removal.value = ''
-  if (remove) {
-    if (code === props.language) selected.value = ''
-    emit('remove-catalog', code)
-  }
+async function removeCatalog(code: string) {
+  if (code === props.language) selected.value = ''
+  emit('remove-catalog', code)
   await nextTick()
   languageInput.value?.focus()
 }
@@ -125,158 +150,213 @@ defineExpose({ showMissing })
 </script>
 
 <template>
-  <div class="catalog-workspace">
-    <div class="catalog-controls">
-      <label for="portal-catalog-language">{{ translate('admin.settings_translation_language') }}</label>
-      <select
-        id="portal-catalog-language" ref="languageInput" :value="language"
-        @change="emit('update:language', ($event.target as HTMLSelectElement).value)">
-        <option v-for="item in languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-          {{ item.native_name }}
-        </option>
-      </select>
-      <button v-if="activeLanguage && !props.messages" type="button" @click="emit('add-catalog')">
-        {{ translate('admin.add_catalog') }}
-      </button>
-      <button v-if="activeLanguage && props.messages && language !== props.referenceLanguage" type="button" @click="confirmRemoval(language)">
-        {{ translate('admin.remove_catalog') }}
-      </button>
-      <button v-for="code in disabledCatalogs" :key="code" type="button" @click="confirmRemoval(code)">
-        {{ translate('admin.remove_catalog') }} ({{ code }})
-      </button>
-    </div>
-    <section v-if="removal" class="catalog-editor" aria-labelledby="catalog-removal-heading">
-      <h3 id="catalog-removal-heading" ref="removalHeading" tabindex="-1">{{ translate('admin.settings_confirm_remove_catalog') }}</h3>
-      <p :lang="removal">{{ languages.find(item => item.code === removal)?.native_name ?? removal }}</p>
-      <div class="catalog-pagination">
-        <button type="button" @click="closeRemoval(false)">{{ translate('admin.cancel') }}</button>
-        <button type="button" @click="closeRemoval(true)">{{ translate('admin.remove_catalog') }}</button>
-      </div>
-    </section>
-    <template v-if="props.messages">
-      <div class="catalog-controls catalog-filters">
-        <div>
+  <div class="catalog-workspace" :class="{ 'catalog-workspace--editing': selected }">
+    <div class="catalog-toolbar">
+      <div v-if="props.messages" class="catalog-control catalog-search">
         <label for="portal-message-search">{{ translate('admin.settings_search_messages') }}</label>
         <input
           id="portal-message-search" ref="search" v-model="query" type="search"
           @input="selected = ''" @keydown.enter.prevent
         >
-        </div>
-        <div>
+      </div>
+      <div class="catalog-control">
+        <label for="portal-catalog-language">{{ translate('admin.settings_translation_language') }}</label>
+        <select
+          id="portal-catalog-language" ref="languageInput" :value="language"
+          @change="emit('update:language', ($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="item in languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
+            {{ item.native_name }}
+          </option>
+        </select>
+      </div>
+      <div v-if="props.messages" class="catalog-control">
         <label for="portal-message-group">{{ translate('admin.settings_message_group') }}</label>
         <select id="portal-message-group" v-model="group" @change="selected = ''">
-          <option v-for="item in groups" :key="item" :value="item">{{ translate(item) }}</option>
+          <option v-for="(label, choice) in groupLabels" :key="choice" :value="choice">{{ translate(label) }}</option>
         </select>
-        </div>
-        <label class="catalog-filter">
+      </div>
+      <div class="catalog-actions">
+        <label v-if="props.messages" class="catalog-filter">
           <input v-model="missingOnly" type="checkbox" @change="selected = ''">
           {{ translate('admin.settings_missing_only') }}
         </label>
+        <button v-if="activeLanguage && !props.messages" type="button" @click="emit('add-catalog')">
+          {{ translate('admin.add_catalog') }}
+        </button>
+        <button v-if="activeLanguage && props.messages && language !== props.referenceLanguage" type="button" @click="removeCatalog(language)">
+          {{ translate('admin.settings_remove_catalog') }}
+        </button>
+        <button v-for="code in disabledCatalogs" :key="code" type="button" @click="removeCatalog(code)">
+          {{ translate('admin.settings_remove_catalog') }} ({{ code }})
+        </button>
       </div>
-      <div class="catalog-browser" :class="{ 'catalog-browser--editing': selected }">
-        <div class="catalog-result-set">
-          <output v-if="!visible.length">{{ translate('admin.settings_no_messages') }}</output>
-          <ul v-else class="catalog-results" :aria-label="translate('admin.settings_select_message')">
-            <li v-for="key in visible" :key="key">
-              <button type="button" :aria-pressed="selected === key" @click="edit(key)">
-                <span :lang="messageLanguage(key)" dir="auto">{{ messageName(key) }}</span>
-                <small>{{ key }}</small>
-              </button>
-            </li>
-          </ul>
-          <div v-if="offset || filtered.length > pageSize" class="catalog-pagination">
-            <button type="button" :disabled="!offset" @click="offset -= pageSize">{{ translate('previous') }}</button>
-            <button type="button" :disabled="offset + pageSize >= filtered.length" @click="offset += pageSize">{{ translate('next') }}</button>
-          </div>
+    </div>
+    <div class="catalog-browser" :class="{ 'catalog-browser--editing': selected }">
+      <div v-if="props.messages" ref="results" class="catalog-list-pane">
+        <output v-if="!visible.length">{{ translate('admin.settings_no_messages') }}</output>
+        <ul v-else class="catalog-results" :aria-label="translate('admin.settings_select_message')">
+          <li v-for="key in visible" :key="key">
+            <button type="button" :aria-pressed="selected === key" @click="edit(key)">
+              <span :lang="messageLanguage(key)" dir="auto">{{ messageName(key) }}</span>
+              <small v-if="duplicateContexts.has(key)">{{ duplicateContexts.get(key) }}</small>
+              <small v-if="translationPreview(key)" :lang="language" dir="auto" aria-hidden="true">{{ translationPreview(key) }}</small>
+            </button>
+          </li>
+        </ul>
+        <div v-if="offset || filtered.length > pageSize" class="catalog-pagination">
+          <button type="button" :disabled="!offset" @click="offset -= pageSize">{{ translate('previous') }}</button>
+          <button type="button" :disabled="offset + pageSize >= filtered.length" @click="offset += pageSize">{{ translate('next') }}</button>
         </div>
-        <div v-if="selected" class="catalog-editor">
-          <button type="button" class="catalog-back" @click="closeEditor">{{ translate('admin.settings_back_to_texts') }}</button>
-          <label for="portal-message-value">{{ translate('admin.settings_message_value') }}</label>
-          <textarea
-            id="portal-message-value" ref="input" :value="messages.get(selected) ?? ''"
-            :lang="activeLanguage?.code" :dir="activeLanguage?.direction" rows="4" maxlength="4000"
-            @input="emit('update:message', selected, ($event.target as HTMLTextAreaElement).value)"
-          />
-          <template v-if="reference.get(selected)">
-            <p class="catalog-reference">
+      </div>
+      <div v-if="selected" class="catalog-editor">
+        <button type="button" class="catalog-back" @click="closeEditor">{{ translate('admin.settings_back_to_texts') }}</button>
+        <h3 :lang="messageLanguage(selected)" dir="auto">{{ messageName(selected) }}</h3>
+        <small v-if="duplicateContexts.has(selected)">{{ duplicateContexts.get(selected) }}</small>
+        <div class="catalog-values" :class="{ 'catalog-values--with-reference': selectedReference }">
+          <div v-if="selectedReference" class="catalog-control">
+            <p class="catalog-editor-label">
               <strong>{{ translate('admin.settings_reference_text') }}</strong>
               <span :lang="referenceLanguage?.code" :dir="referenceLanguage?.direction">{{ referenceLanguage?.native_name }}</span>
             </p>
-            <p :lang="referenceLanguage?.code" dir="auto">{{ reference.get(selected) }}</p>
-          </template>
+            <p class="catalog-reference" :lang="referenceLanguage?.code" dir="auto">{{ selectedReference }}</p>
+          </div>
+          <div class="catalog-control">
+            <div class="catalog-editor-label">
+              <label for="portal-message-value">{{ translate('admin.settings_message_value') }}</label>
+              <span :lang="activeLanguage?.code" :dir="activeLanguage?.direction">{{ activeLanguage?.native_name }}</span>
+            </div>
+            <textarea
+              id="portal-message-value" ref="input" :value="messages.get(selected) ?? ''"
+              :lang="activeLanguage?.code" :dir="activeLanguage?.direction" rows="4" maxlength="4000"
+              @input="emit('update:message', selected, ($event.target as HTMLTextAreaElement).value)"
+            />
+          </div>
         </div>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.catalog-workspace, .catalog-controls, .catalog-filters > div, .catalog-editor, .catalog-results, .catalog-browser, .catalog-result-set {
+.catalog-workspace, .catalog-control, .catalog-editor, .catalog-browser, .catalog-list-pane, .catalog-values {
   display: grid;
-  gap: .5rem;
+  align-items: start;
+  gap: .75rem;
   min-inline-size: 0;
 }
 
-.catalog-browser {
-  align-items: start;
+.catalog-workspace { gap: 1.25rem; }
+.catalog-control { align-content: start; gap: .35rem; }
+
+.catalog-toolbar {
+  display: grid;
+  gap: .75rem 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
 }
 
-.catalog-workspace button {
+.catalog-search, .catalog-actions { grid-column: 1 / -1; }
+
+.catalog-workspace :is(button, input:not([type='checkbox']), select, textarea) {
   box-sizing: border-box;
   min-block-size: 44px;
-  padding: .5rem .65rem;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  padding: .55rem .7rem;
   border: 1px solid var(--admin-border);
   border-radius: .4rem;
   background: var(--admin-card);
   color: var(--admin-text);
   font: inherit;
-  overflow-wrap: anywhere;
 }
 
-.catalog-workspace button:not(:disabled):hover {
-  background: var(--admin-bg);
+.catalog-workspace :is(input:not([type='checkbox']), select, textarea) { inline-size: 100%; }
+.catalog-workspace button { overflow-wrap: anywhere; }
+.catalog-workspace button:not(:disabled):hover { background: var(--admin-bg); }
+.catalog-workspace button:disabled { color: var(--admin-muted); }
+
+.catalog-actions, .catalog-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
 }
 
-.catalog-workspace button:disabled {
-  color: var(--admin-muted);
-}
+.catalog-actions button { border-color: transparent; }
+.catalog-filter { display: flex; align-items: center; min-block-size: 44px; gap: .5rem; }
+.catalog-filter input { width: auto; margin: 0; }
 
+.catalog-list-pane { gap: .5rem; }
 .catalog-results {
   list-style: none;
   padding: 0;
   margin: 0;
+  border-block-start: 1px solid var(--admin-border);
 }
 
-.catalog-results button {
+.catalog-results li {
+  min-inline-size: 0;
+  border-block-end: 1px solid var(--admin-border);
+}
+
+.catalog-workspace .catalog-results button {
   display: grid;
-  width: 100%;
+  gap: .15rem .85rem;
+  align-items: center;
+  inline-size: 100%;
   text-align: start;
-  overflow-wrap: anywhere;
+  border: 0;
+  border-inline-start: .2rem solid transparent;
+  border-radius: 0;
 }
 
-.catalog-results button[aria-pressed="true"] {
-  border-color: var(--admin-action);
-  box-shadow: inset .2rem 0 var(--admin-action);
+.catalog-workspace .catalog-results button[aria-pressed="true"] {
+  border-inline-start-color: var(--admin-action);
   background: var(--admin-bg);
 }
 
-.catalog-results small, .catalog-reference { color: var(--admin-muted); }
-.catalog-editor h3 { margin: 0; overflow-wrap: anywhere; }
-.catalog-editor p { margin: 0; overflow-wrap: anywhere; }
-.catalog-editor textarea { resize: vertical; }
-.catalog-reference { display: flex; flex-wrap: wrap; gap: .35rem; }
-.catalog-pagination { display: flex; flex-wrap: wrap; gap: .5rem; }
-.catalog-filter { display: flex; align-items: center; gap: .5rem; }
-.catalog-filter input { width: auto; margin: 0; }
-.catalog-back { justify-self: start; }
-
-@media (min-width: 68rem) {
-  .catalog-filters { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-  .catalog-filter { grid-column: 1 / -1; }
-  .catalog-browser--editing { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.catalog-results :is(span, small) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
-@media (max-width: 43.99rem) {
-  .catalog-browser--editing .catalog-result-set { display: none; }
+.catalog-results small, .catalog-editor-label span { color: var(--admin-muted); }
+.catalog-editor :is(h3, p) { margin: 0; overflow-wrap: anywhere; }
+.catalog-editor textarea { resize: vertical; min-block-size: 9rem; }
+.catalog-editor-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; }
+.catalog-reference { padding: .7rem; background: var(--admin-bg); border-radius: .4rem; white-space: pre-wrap; }
+.catalog-back { justify-self: start; }
+
+@media (max-width: 27rem) {
+  .catalog-toolbar { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (min-width: 56rem) {
+  .catalog-toolbar { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); }
+  .catalog-search { grid-column: auto; }
+}
+
+@media (min-width: 76rem) {
+  .catalog-browser--editing { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); gap: 1.75rem; }
+  .catalog-browser--editing .catalog-results { max-block-size: clamp(18rem, 60vh, 40rem); overflow: auto; }
+  .catalog-browser:not(.catalog-browser--editing) .catalog-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; }
+}
+
+@media (min-width: 86rem) {
+  .catalog-values--with-reference { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+}
+
+@media (min-width: 94rem) {
+  .catalog-browser:not(.catalog-browser--editing) .catalog-results button:has(small) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width < 76rem) {
+  .catalog-workspace--editing .catalog-toolbar,
+  .catalog-browser--editing .catalog-list-pane { display: none; }
 }
 </style>

@@ -5,7 +5,7 @@ import type { AccountProfile, AccountSession, FactorPreparation } from '~/utils/
 import { AdminContentError } from '~/utils/admin-request'
 
 const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 
 const profile = ref<AccountProfile>()
 const sessions = ref<AccountSession[]>([])
@@ -22,13 +22,23 @@ watch([() => Boolean(password.value || code.value || factor.value || codes.value
 })
 const sensitiveHeading = ref<HTMLElement>()
 let active = true
+let sessionsNeedRefresh = false
 
 function clearFactor() {
   factor.value = undefined
   code.value = ''
 }
 
-watch(() => props.csrf, clearFactor)
+watch([() => props.csrf, busy], ([token, working], [previousToken]) => {
+  if (token !== previousToken) {
+    clearFactor()
+    sessionsNeedRefresh = Boolean(token)
+  }
+  if (!working && sessionsNeedRefresh && profile.value) {
+    sessionsNeedRefresh = false
+    void run(() => loadSessions(offset.value))
+  }
+})
 onBeforeUnmount(() => {
   active = false
   clearFactor()
@@ -41,7 +51,7 @@ function showError(error: unknown) {
   if (!(error instanceof AdminContentError)) return
   if (error.code === 'step_up_required') {
     if (factor.value) clearFactor()
-    errorKey.value = 'admin.step_up_required'
+    errorKey.value = ''
     emit('step-up')
   } else if (error.code === 'invalid_credentials') {
     errorKey.value = 'admin.invalid_code'
@@ -66,10 +76,14 @@ async function run(action: () => Promise<void>) {
 }
 
 async function loadSessions(next: number) {
+  const token = props.csrf
   const out = await listSessions(next)
-  if (!active) return
+  if (!active || props.csrf !== token) return
   sessions.value = out.items
   offset.value = next
+  if (typeof confirmation.value === 'object' && confirmation.value.current) {
+    confirmation.value = out.items.find(session => session.current)
+  }
 }
 
 function load() {
@@ -122,9 +136,8 @@ async function confirmAction() {
   await run(async () => {
     switch (action) {
       case 'password': {
-        const newPassword = password.value
+        await changePassword(password.value, props.csrf)
         password.value = ''
-        await changePassword(newPassword, props.csrf)
         if (active) emit('session-changed')
         return
       }
@@ -171,7 +184,6 @@ onMounted(() => { void load() })
       <button type="button" @click="finishCodes">{{ translate('admin.account_done') }}</button>
     </template>
     <template v-else>
-      <button type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
       <p v-if="errorKey" role="alert">{{ translate(errorKey) }}</p>
       <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
       <button v-if="!profile && errorKey" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
@@ -216,7 +228,7 @@ onMounted(() => { void load() })
                 <div><dt>{{ translate('admin.account_expires') }}</dt><dd>{{ date(session.expires_at) }}</dd></div>
               </dl>
               <button type="button" class="admin-secondary" :disabled="busy" @click="selectAction(session)">
-                {{ translate(session.current ? 'admin.sign_out' : 'admin.account_revoke_session') }}
+                {{ translate('admin.account_revoke_session') }}
               </button>
             </li>
           </ul>

@@ -30,8 +30,12 @@ function assertPublication(result, version, language, requestedLanguage) {
   assert.equal(site.settings.default_language, 'pl')
   assert.equal(site.settings.fallback_language, 'en')
   assert.equal(site.settings.title, 'Fixture title')
-  assert.deepEqual(new Set(Object.keys(site)), new Set(['language', 'languages', 'messages', 'requested_language', 'settings', 'version']))
+  assert.deepEqual(new Set(Object.keys(site)), new Set(['language', 'languages', 'messages', 'requested_language', 'settings', 'slug_rules', 'version']))
   assert.deepEqual(new Set(Object.keys(site.settings)), new Set(['accent', 'default_language', 'description', 'fallback_language', 'notice', 'tagline', 'title']))
+  assert.ok(Array.isArray(site.slug_rules))
+  assert.deepEqual(site.slug_rules.find(rule => rule.language_code === 'pl' && rule.character === 'ł'), {
+    language_code: 'pl', character: 'ł', replacement: 'l',
+  })
   assert.equal(site.languages.length, 2)
   assert.deepEqual(new Set(site.languages.map(item => item.code)), new Set(['en', 'pl']))
   for (const item of [site.language, ...site.languages]) {

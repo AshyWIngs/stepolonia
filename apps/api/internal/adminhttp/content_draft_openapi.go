@@ -224,7 +224,7 @@ func draftErrorCodes(rt route) map[int][]string {
 	}
 	if rt.operationID == createDraftOperation {
 		return map[int][]string{
-			400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, stepUpRequiredCode},
+			400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode},
 			404: {notFoundCode}, 405: {methodNotAllowedCode}, 409: {schemaConflictCode},
 			413: {bodyTooLargeCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode},
 		}
@@ -236,7 +236,7 @@ func draftErrorCodes(rt route) map[int][]string {
 		}
 	}
 	return map[int][]string{
-		400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, permissionCode, stepUpRequiredCode},
+		400: {validationCode}, 401: {authenticationCode}, 403: {originCode, csrfCode, permissionCode},
 		404: {notFoundCode}, 405: {methodNotAllowedCode}, 409: {versionConflictCode, schemaConflictCode},
 		413: {bodyTooLargeCode}, 429: {rateLimitedCode}, 503: {securityUnavailableCode},
 	}

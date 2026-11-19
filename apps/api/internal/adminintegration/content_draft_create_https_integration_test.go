@@ -72,8 +72,6 @@ func TestAdminDraftCreateHTTPSIntegration(t *testing.T) {
 	forgedCSRF := strings.Repeat("A", len(f.actor.CSRF))
 	post(createDraftCurrentBody, forgedCSRF, http.StatusForbidden)
 	expireSessionStepUp(t, f.owner, f.actor.Token)
-	post(createDraftCurrentBody, f.actor.CSRF, http.StatusForbidden)
-	authRefreshStep(t, f.owner, f.actor.Token)
 	stale := post(createDraftHTTPSBody, f.actor.CSRF, http.StatusConflict)
 	if !strings.Contains(stale, `"schema_conflict"`) {
 		t.Fatalf("expected schema conflict, got %s", stale)

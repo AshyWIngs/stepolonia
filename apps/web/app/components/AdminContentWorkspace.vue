@@ -6,14 +6,16 @@ import { usePublicApi } from '~/composables/usePublicApi'
 import { createDraft, listCollections, listDrafts } from '~/utils/admin-content'
 import type { CollectionChoice, DraftSummary } from '~/utils/admin-content'
 import { ownValue } from '~/utils/draft-edit-buffer'
+import type { SlugRule } from '~/utils/slug-suggestion'
 
 const props = defineProps<{
   csrf: string
   uiLanguage: string
   defaultLanguage: string
+  slugRules: SlugRule[]
   translate: (key: string) => string
 }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const { client, request } = usePublicApi()
 const collections = ref<CollectionChoice[]>([])
 const languages = ref<components['schemas']['Language'][]>([])
@@ -70,7 +72,7 @@ function showError(error: unknown) {
   failure.value = 'admin.unavailable'
   if (!(error instanceof AdminContentError)) return
   if (error.code === 'step_up_required') {
-    failure.value = 'admin.step_up_required'
+    failure.value = ''
     emit('step-up')
   }
   else if (error.status === 401 || error.code === 'csrf_failed') {
@@ -142,6 +144,7 @@ function rememberDraftLanguage(language: string) {
 
 async function closeDraft() {
   const closedItem = selectedItem.value
+  const focusAtClose = document.activeElement
   selectedItem.value = ''
   openedType.value = ''
   editorState.value = { dirty: false, busy: false }
@@ -158,6 +161,7 @@ async function closeDraft() {
     }
   })
   await nextTick()
+  if (!active.value || selectedItem.value || (document.activeElement !== document.body && document.activeElement !== focusAtClose)) return
   if (opener.value?.isConnected) opener.value.focus()
   else heading.value?.focus()
 }
@@ -186,12 +190,7 @@ onBeforeUnmount(() => { active.value = false })
 <template>
   <section :class="['content-workspace', { 'has-draft': selectedItem }]" aria-labelledby="content-workspace-title">
     <div class="workspace-list" :aria-busy="busy">
-      <header class="content-bar">
-        <h2 id="content-workspace-title" ref="heading" tabindex="-1">{{ translate('admin.content_collections') }}</h2>
-        <button v-if="!selectedItem" type="button" class="admin-secondary" :disabled="busy" @click="emit('close')">
-          {{ translate('admin.close') }}
-        </button>
-      </header>
+      <h2 id="content-workspace-title" ref="heading" tabindex="-1">{{ translate('admin.content_collections') }}</h2>
       <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
       <p v-if="failure" role="alert">{{ translate(failure) }}</p>
       <button v-if="failure && !selectedItem" type="button" :disabled="busy" @click="loadWorkspace">{{ translate('admin.retry') }}</button>
@@ -236,7 +235,7 @@ onBeforeUnmount(() => { active.value = false })
     </div>
     <AdminDraftEditor
       v-if="selectedItem" :key="selectedItem" :type-key="openedType" :item-id="selectedItem" :csrf="csrf"
-      :translate="translate" :ui-language="uiLanguage" :languages="languages"
+      :translate="translate" :ui-language="uiLanguage" :languages="languages" :slug-rules="slugRules"
       :initial-language="initialLanguage" :default-language="defaultLanguage"
       @language-changed="rememberDraftLanguage" @changed="draftChanged = true"
       @editing-state="editorState = $event"
@@ -281,14 +280,6 @@ onBeforeUnmount(() => { active.value = false })
   outline-offset: 3px;
 }
 
-.content-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: .65rem;
-}
-
 .workspace-list select {
   min-width: 0;
   min-height: 44px;
@@ -329,7 +320,7 @@ onBeforeUnmount(() => { active.value = false })
 
 @media (min-width: 70rem) {
   .content-workspace.has-draft {
-    grid-template-columns: minmax(13rem, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(13rem, 20rem) minmax(0, 1fr);
     align-items: start;
     gap: 1.5rem;
   }

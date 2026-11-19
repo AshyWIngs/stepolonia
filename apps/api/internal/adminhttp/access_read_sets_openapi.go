@@ -8,8 +8,8 @@ import (
 const accessEditorOptionsField = "options"
 
 func addAccessReadSetSchemas(schemas map[string]*huma.Schema) {
-	roleOption := roleMembershipOption{ID: exampleUUID, Name: "Editors", State: "disabled"}
-	schemas["RoleMembershipOption"] = responseDTOSchema("Named role and lifecycle state for account membership selection.", roleOption)
+	roleOption := roleMembershipOption{ID: exampleUUID, Name: "Editors", State: "disabled", Domain: "content"}
+	schemas["RoleMembershipOption"] = responseDTOSchema("Named role, lifecycle state and display category for account membership selection.", roleOption)
 	roleSet := roleMembershipSetResponse{UserID: exampleUUID, Version: 2, RoleIDs: []string{exampleUUID}, Options: []roleMembershipOption{roleOption}, MaxRoles: identity.MaxUserRoles}
 	schema := responseDTOSchema("Complete account membership set and bounded named choices.", roleSet)
 	schema.Properties[roleIDsField] = accessReadSetIDs(identity.MaxUserRoles)

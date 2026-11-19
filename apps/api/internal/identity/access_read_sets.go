@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"slices"
+	"strings"
 )
 
 // RoleMembershipSet provides the current full replacement set and visible role choices.
@@ -14,9 +15,9 @@ type RoleMembershipSet struct {
 	Options []RoleMembershipOption
 }
 
-// RoleMembershipOption contains only the identity, display name and lifecycle state.
+// RoleMembershipOption identifies a role and its display category for assignment.
 type RoleMembershipOption struct {
-	ID, Name, State string
+	ID, Name, State, Domain string
 }
 
 // ReadUserRoleMemberships checks the same effective assignment authority and
@@ -68,15 +69,38 @@ func readRoleMembershipOptions(ctx context.Context, tx *sql.Tx, user User, actor
 		if err := rows.Scan(&option.ID, &option.Name, &option.State, &bound, &existing); err != nil {
 			return RoleMembershipSet{}, err
 		}
+		policy := policies[option.ID]
 		if existing {
 			out.RoleIDs = append(out.RoleIDs, option.ID)
-		} else if bound || user.State == userStatePending || !roleMembershipChoice(policies[option.ID], option.State, user.ID == actorID, actor) {
+		} else if bound || user.State == userStatePending || !roleMembershipChoice(policy, option.State, user.ID == actorID, actor) {
 			continue
 		}
+		option.Domain = membershipDomain(policy)
 		out.Options = append(out.Options, option)
 	}
 	slices.Sort(out.RoleIDs)
 	return out, rows.Err()
+}
+
+func membershipDomain(policy []accessGrant) string {
+	domain := "other"
+	for index, grant := range policy {
+		family, _, _ := strings.Cut(grant.operation, ".")
+		next := "access"
+		switch {
+		case grant.scope == grantScopeContent:
+			next = "content"
+		case family == "content_types":
+			next = "structure"
+		case family == "settings":
+			next = "settings"
+		}
+		if index > 0 && next != domain {
+			return "mixed"
+		}
+		domain = next
+	}
+	return domain
 }
 
 func roleMembershipChoice(policy []accessGrant, state string, own bool, actor userAccess) bool {

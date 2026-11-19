@@ -1,7 +1,17 @@
 import type { components } from '@stepolonia/sdk'
+import type { SlugRule } from '~/utils/slug-suggestion'
 
 export type PortalFields = components['schemas']['Settings']
 export type PortalLanguage = components['schemas']['Language']
+
+export const portalSettingsPages = {
+  identity: { section: 'settings', label: 'settings_identity' },
+  appearance: { section: 'settings', label: 'settings_appearance' },
+  languages: { section: 'localization', label: 'settings_languages' },
+  translations: { section: 'localization', label: 'interface_texts' },
+} as const
+
+export type PortalSettingsPage = keyof typeof portalSettingsPages
 
 export interface EditablePortal {
   version: string
@@ -11,10 +21,12 @@ export interface EditablePortal {
   catalogs: Record<string, Record<string, string>>
   languages: PortalLanguage[]
   message_keys: string[]
+  slug_rules: SlugRule[]
 }
 
-interface PortalDraftInput {
+interface PortalSettingsInput {
   expected_version: string
+  slug_rules?: SlugRule[]
   settings: PortalFields
   catalogs: Record<string, Record<string, string>>
 }
@@ -35,10 +47,10 @@ function requestOptions(): RequestInit {
   }
 }
 
-function mutationOptions(method: 'PUT' | 'POST', csrf: string, input: PortalDraftInput | { expected_version: string }): RequestInit {
+function mutationOptions(csrf: string, input: PortalSettingsInput): RequestInit {
   return {
     ...requestOptions(),
-    method,
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify(input),
   }
@@ -56,9 +68,15 @@ function isEditablePortal(value: unknown): value is EditablePortal {
   if (!hasVersion(value) || typeof value.has_draft !== 'boolean') return false
   if (!isPortalFields(value.settings) || !isRecord(value.catalogs)) return false
   const catalogues = Object.values(value.catalogs)
-  return Array.isArray(value.languages) && value.languages.every(isPortalLanguage) &&
+  return Array.isArray(value.slug_rules) && value.slug_rules.every(isSlugRule) &&
+    Array.isArray(value.languages) && value.languages.every(isPortalLanguage) &&
     Array.isArray(value.message_keys) && value.message_keys.every(key => typeof key === 'string') &&
     catalogues.every(entries => isRecord(entries) && Object.values(entries).every(text => typeof text === 'string'))
+}
+
+function isSlugRule(value: unknown): value is SlugRule {
+  return isRecord(value) && typeof value.language_code === 'string' &&
+    typeof value.character === 'string' && typeof value.replacement === 'string'
 }
 
 function isPortalFields(value: unknown): value is PortalFields {
@@ -86,15 +104,8 @@ export async function getPortalSettings(): Promise<EditablePortal> {
   return json
 }
 
-export async function savePortalSettings(csrf: string, input: PortalDraftInput): Promise<string> {
-  const json = await readResponse(fetch('/api/v1/admin/settings', mutationOptions('PUT', csrf, input)))
-  if (!hasVersion(json)) throw new AdminSettingsError(503)
-  return json.version
-}
-
-export async function publishPortalSettings(csrf: string, version: string): Promise<string> {
-  const options = mutationOptions('POST', csrf, { expected_version: version })
-  const json = await readResponse(fetch('/api/v1/admin/settings/publish', options))
+export async function savePortalSettings(csrf: string, input: PortalSettingsInput): Promise<{ version: string, publicationID: string }> {
+  const json = await readResponse(fetch('/api/v1/admin/settings/publication', mutationOptions(csrf, input)))
   if (!hasVersion(json) || typeof json.publication_id !== 'string') throw new AdminSettingsError(503)
-  return json.version
+  return { version: json.version, publicationID: json.publication_id }
 }

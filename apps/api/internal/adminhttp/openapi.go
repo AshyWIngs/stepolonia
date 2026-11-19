@@ -102,6 +102,11 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 		return createDraftRequestBody(registry)
 	}
 	name := rt.operationID + "Request"
+	if rt.operationID == replaceSessionPolicyOperation {
+		schema := sessionPolicyRequestContract
+		registry.Map()[name] = schema
+		return &huma.RequestBody{Required: true, Description: "A JSON object up to 4096 bytes. Unknown, duplicate and null properties are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: schema.Examples[0]}}}
+	}
 	if schema := settingsRequestSchema(rt.operationID); schema != nil {
 		registry.Map()[name] = schema
 		return &huma.RequestBody{Required: true, Description: "One JSON object up to 1 MB. Versions are canonical positive int64 strings.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: schema.Examples[0]}}}
@@ -292,6 +297,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addAccessReadSetSchemas(schemas)
 	addRoleGrantOptionSchemas(schemas)
 	addSettingsSchemas(schemas)
+	schemas[sessionPolicySchema] = sessionPolicyResponseSchema()
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
 	addContentMetadataSchemas(schemas)
@@ -402,7 +408,7 @@ func addAuthCookieHeader(rt route, headers map[string]*huma.Param) {
 		return
 	}
 	switch authTag(rt) {
-	case usersTag, rolesTag, contentAssigneesTag, contentDraftTag, settingsTag, registryTag, accountTag:
+	case usersTag, rolesTag, contentAssigneesTag, contentDraftTag, settingsTag, registryTag, accountTag, sessionPolicyTag:
 		return
 	default:
 		headers[setCookieHeader] = sessionCookieHeader()
@@ -410,6 +416,9 @@ func addAuthCookieHeader(rt route, headers map[string]*huma.Param) {
 }
 
 func privateErrorCodes(rt route) map[int][]string {
+	if rt.operationID == readSessionPolicyOperation || rt.operationID == replaceSessionPolicyOperation {
+		return sessionPolicyErrorCodes(rt)
+	}
 	if rt.operationID == readUserRolesOperation || rt.operationID == readContentAssigneesOperation || rt.operationID == readRoleGrantOptionsOperation {
 		return accessReadSetErrorCodes()
 	}
@@ -534,6 +543,8 @@ func authConflictDescription(operationID string) string {
 		return " The expected item version or pinned schema differs. Reload before editing again."
 	case createDraftOperation:
 		return " The expected schema differs from the current collection schema."
+	case replaceSessionPolicyOperation:
+		return " The expected policy version differs. Reload the current policy before retrying."
 	default:
 		return ""
 	}
@@ -543,7 +554,7 @@ func authRateDescription(rt route) string {
 	if rt.operationID == readySharedOperation || rt.operationID == readyLocaleOperation {
 		return " Shared and locale readiness use the same denial budget: 5 per client address in 15 minutes. Publish has a separate operation budget. Both count toward limits of 30 per IP and 100 per installation. Successful commands do not consume denial capacity."
 	}
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag && rt.method != http.MethodGet {
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || rt.operationID == replaceSessionPolicyOperation || authTag(rt) == contentDraftTag && rt.method != http.MethodGet {
 		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
@@ -575,6 +586,7 @@ func privateRoutes() map[string][]route {
 	for path, methods := range roleRoutes {
 		all[path] = methods
 	}
+	all[sessionPolicyPath] = sessionPolicyRoutes
 	all[roleGrantOptionsPath] = []route{readRoleGrantOptionsRoute}
 	all[contentAssigneesPath] = []route{readContentAssigneesRoute, replaceContentAssigneesRoute}
 	all[createDraftPath] = collectionDraftRoutes
@@ -620,6 +632,7 @@ func authTags() []*huma.Tag {
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
 		{Name: settingsTag, Description: "Authorized editing and atomic publication of installation settings and interface translations."},
+		{Name: sessionPolicyTag, Description: "Installation-wide time limits for newly issued full sessions."},
 		{Name: contentDraftTag, Description: "Empty draft creation, projected reads, versioned editing, readiness and publication when the installation enables its draft editor."},
 		{Name: registryTag, Description: "Managed collection schemas and explicit initial field access."},
 	}
@@ -644,8 +657,10 @@ func authTag(rt route) string {
 		return contentAssigneesTag
 	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return contentDraftTag
-	case readSettingsOperation, saveSettingsOperation, publishSettingsOperation:
+	case readSettingsOperation, applySettingsOperation:
 		return settingsTag
+	case readSessionPolicyOperation, replaceSessionPolicyOperation:
+		return sessionPolicyTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
 	case startEnrollmentOperation, completeEnrollmentOperation:
@@ -661,7 +676,7 @@ func domainSuccessDescription(rt route) string {
 		return roleSuccessDescription(rt)
 	case usersTag:
 		return userSuccessDescription(rt)
-	case settingsTag:
+	case settingsTag, sessionPolicyTag:
 		return rt.summary + "."
 	case contentDraftTag:
 		return draftSuccessDescription(rt.operationID)

@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * Read published site settings and one complete UI catalog
-         * @description One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.
+         * @description One atomic publication supplies settings, language-specific slug suggestion rules, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.
          */
         get: operations["getSite"];
         put?: never;
@@ -592,7 +592,7 @@ export interface components {
             /** @description Current canonical slug in this language. */
             slug: string;
         };
-        /** @description One atomic site publication containing settings, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed. */
+        /** @description One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed. */
         Publication: {
             /** @description Language of the complete returned UI catalog, after fallback. */
             language: components["schemas"]["Language"];
@@ -606,6 +606,8 @@ export interface components {
             requested_language: string;
             /** @description Site settings from the same atomic publication as messages. */
             settings: components["schemas"]["Settings"];
+            /** @description Published slug suggestion rules ordered by content language code and source character. */
+            slug_rules: components["schemas"]["SlugRule"][];
             /**
              * Format: uuid
              * @description Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes.
@@ -650,6 +652,24 @@ export interface components {
              * @example Portal
              */
             title: string;
+        };
+        /** @description A character replacement for slug suggestions in one content language. The source is canonicalized before matching and an empty replacement removes that character. */
+        SlugRule: {
+            /**
+             * @description One non-ASCII Unicode character in lowercase NFC form.
+             * @example ł
+             */
+            character: string;
+            /**
+             * @description Registered content language code. Rules apply to this language only.
+             * @example pl
+             */
+            language_code: string;
+            /**
+             * @description Lowercase ASCII letters, digits or hyphens. An empty string removes the character from a slug suggestion.
+             * @example l
+             */
+            replacement: string;
         };
     };
     responses: never;
@@ -944,7 +964,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description One atomic publication with settings and a complete UI catalog, possibly using the configured fallback. */
+            /** @description One atomic publication with settings, slug suggestion rules and a complete UI catalog, possibly using the configured fallback. */
             200: {
                 headers: {
                     [name: string]: unknown;

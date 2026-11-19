@@ -22,6 +22,7 @@ func TestAdminRoleMembershipSetHTTPSIntegration(t *testing.T) {
 	managerRole := createAssignedTestRole(t, state, "Membership manager", lifecycleHTTPActiveState, manager.user.ID)
 	targetRole := createAssignedTestRole(t, state, "Retained readership", lifecycleHTTPDisabledState, target.user.ID)
 	hiddenRole := createMembershipTestRole(t, state, "Unassignable role", lifecycleHTTPActiveState)
+	emptyRole := createMembershipTestRole(t, state, "Unconfigured role", lifecycleHTTPDisabledState)
 	_, err = state.db.Exec(`INSERT INTO public.role_grants(id,role_id,operation,can_delegate) VALUES
  (gen_random_uuid(),$1,'roles.assign',false), (gen_random_uuid(),$1,'users.read',true),
  (gen_random_uuid(),$2,'users.read',false), (gen_random_uuid(),$3,'roles.edit',false)`, managerRole, targetRole, hiddenRole)
@@ -34,9 +35,12 @@ func TestAdminRoleMembershipSetHTTPSIntegration(t *testing.T) {
 		out["max_roles"] != float64(16) || !reflect.DeepEqual(out["role_ids"], []any{targetRole}) {
 		t.Fatalf("membership set does not preserve the existing account revision: %v", out)
 	}
-	options := readSetOptions(t, out)
-	if row := options[targetRole]; row["name"] != "Retained readership" || row["state"] != lifecycleHTTPDisabledState {
-		t.Fatalf("current role was not named: %v", row)
+	options := readSetOptions(t, out, 4)
+	if row := options[targetRole]; row["name"] != "Retained readership" || row["state"] != lifecycleHTTPDisabledState || row["domain"] != "access" {
+		t.Fatalf("current role was not named and grouped: %v", row)
+	}
+	if row := options[emptyRole]; row["domain"] != "other" {
+		t.Fatalf("role without grants lacked a separate category: %v", row)
 	}
 	if options[hiddenRole] != nil || options[managerRole] != nil {
 		t.Fatal("role outside the delegation envelope was exposed")
@@ -70,7 +74,7 @@ func TestAdminContentAssignmentSetHTTPSIntegration(t *testing.T) {
 		!reflect.DeepEqual(out["assignee_ids"], []any{recipientID}) {
 		t.Fatalf("assignment set lost the complete current revision: %v", out)
 	}
-	options := readSetOptions(t, out)
+	options := readSetOptions(t, out, 3)
 	if row := options[recipientID]; row["login"] != x.recipient.user.Login || row["state"] != lifecycleHTTPDisabledState {
 		t.Fatal("inactive assignee was omitted or cannot be identified for removal")
 	}
@@ -93,7 +97,7 @@ func TestAdminContentAssignmentSetHTTPSIntegration(t *testing.T) {
 	assertItemAssignees(t, state.db, assigneeItem, 2, recipientID)
 }
 
-func readSetOptions(t *testing.T, out map[string]any) map[string]map[string]any {
+func readSetOptions(t *testing.T, out map[string]any, fields int) map[string]map[string]any {
 	t.Helper()
 	options, ok := out["options"].([]any)
 	if !ok {
@@ -102,7 +106,7 @@ func readSetOptions(t *testing.T, out map[string]any) map[string]map[string]any 
 	result := make(map[string]map[string]any, len(options))
 	for _, option := range options {
 		row, ok := option.(map[string]any)
-		if !ok || len(row) != 3 {
+		if !ok || len(row) != fields {
 			t.Fatalf("unexpected option shape: %v", option)
 		}
 		id, ok := row["id"].(string)
