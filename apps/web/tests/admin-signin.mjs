@@ -293,6 +293,12 @@ async function assertEditorLayouts(page, editor) {
   await assertFit(page)
 }
 
+async function assertPolishDraft(locale, title, expected) {
+  await title.waitFor()
+  assert.equal(await locale.inputValue(), 'pl')
+  assert.equal(await title.inputValue(), expected)
+}
+
 async function verifyEditorialNavigation(page) {
   await page.locator('#admin-language').selectOption('pl')
   await page.getByRole('button', { name: 'Materiały', exact: true }).click()
@@ -311,9 +317,7 @@ async function verifyEditorialNavigation(page) {
   await editor.getByRole('button', { name: 'Wróć do szkiców', exact: true }).click()
   await page.getByRole('button', { name: /Portal workflow verification/u }).waitFor()
   await page.getByRole('button', { name: /Spacer po Ałmaty.*Polski.*Brak publikacji/u }).click()
-  await title.waitFor()
-  assert.equal(await locale.inputValue(), 'pl')
-  assert.equal(await title.inputValue(), original)
+  await assertPolishDraft(locale, title, original)
   await locale.selectOption('en')
   assert.equal(await title.inputValue(), '')
   await editor.getByRole('button', { name: 'Wróć do szkiców', exact: true }).click()
@@ -335,9 +339,7 @@ async function verifyEditorialNavigation(page) {
   await row.waitFor()
   assert.ok(await row.evaluate(element => element === document.activeElement))
   await row.click()
-  await title.waitFor()
-  assert.equal(await locale.inputValue(), 'pl')
-  assert.equal(await title.inputValue(), updated)
+  await assertPolishDraft(locale, title, updated)
   await editor.getByText('Brak opublikowanych tłumaczeń.', { exact: true }).waitFor()
 
   await title.fill('Niezapisana zmiana')
