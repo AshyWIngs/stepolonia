@@ -21,10 +21,6 @@ export function contentFields(item: PublicContent) {
   return fields.filter(([key]) => !['title', 'slug'].includes(key)).map(([key, field]) => ({ key, field }))
 }
 
-export function publishedLabel(item: PublicContent, key: string): string | undefined {
-  return item.field_labels && Object.hasOwn(item.field_labels, key) ? item.field_labels[key] : undefined
-}
-
 export function readableContentKey(key: string): string {
   return key.replace(/[-_]+/gu, ' ').replace(/^\p{L}/u, letter => letter.toUpperCase())
 }
@@ -36,9 +32,9 @@ function formattingLocale(language: string): string {
 
 export function formatContentValue(field: Exclude<PublicField, { kind: 'boolean' }>, language: string): string {
   if (field.kind === 'integer' || field.kind === 'decimal') {
-    const digits = /^-?\d+(?:\.(\d+))?$/u.exec(field.value)
-    if (!digits) throw publicError(503)
-    return new Intl.NumberFormat(formattingLocale(language), { maximumFractionDigits: digits[1]?.length ?? 0 })
+    const point = field.value.indexOf('.')
+    const fractionDigits = point < 0 ? 0 : field.value.length - point - 1
+    return new Intl.NumberFormat(formattingLocale(language), { maximumFractionDigits: fractionDigits })
       .format(field.value as Intl.StringNumericLiteral)
   }
   if (field.kind === 'datetime') {

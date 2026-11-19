@@ -11,6 +11,9 @@ import (
 const (
 	articleRouteNamespace = "articles"
 	eventRouteNamespace   = "events"
+	eventFeaturedField    = "featured"
+	eventPriceField       = "price"
+	eventRelatedField     = "related"
 )
 
 // Article returns the published Article shown in the public API documentation.
@@ -45,16 +48,16 @@ func Event() content.PublicItem {
 		PublicationID: "55555555-5555-4555-8555-555555555555",
 		Language:      article.Language, Slug: "community-meetup",
 		Shared: map[string]content.PublicFieldValue{
-			"featured": {Kind: "boolean", Value: json.RawMessage(`true`)},
-			"price":    {Kind: "decimal", Value: json.RawMessage(`"12.5"`)},
+			eventFeaturedField: {Kind: "boolean", Value: json.RawMessage(`true`)},
+			eventPriceField:    {Kind: "decimal", Value: json.RawMessage(`"12.5"`)},
 		},
 		FieldLabels: map[string]string{
-			"featured": "Polecane",
-			"price":    "Cena",
-			"related":  "O polskiej społeczności w Kazachstanie",
+			eventFeaturedField: "Polecane",
+			eventPriceField:    "Cena",
+			eventRelatedField:  "O polskiej społeczności w Kazachstanie",
 		},
 		Relations: []content.PublicRelation{
-			{FieldKey: "related", Targets: []content.PublicTarget{
+			{FieldKey: eventRelatedField, Targets: []content.PublicTarget{
 				{ItemID: article.ItemID, CanonicalURL: article.CanonicalURL},
 			}},
 		},
@@ -88,9 +91,9 @@ func EventSchema(articleTypeID string) content.TypeSchema {
 			{Key: "title", Kind: shortTextKind, Scope: localizedScope, Visibility: publicVisibility, Required: true, Config: json.RawMessage(`{"min_length":1,"max_length":500}`)},
 			{Key: "slug", Kind: shortTextKind, Scope: localizedScope, Visibility: publicVisibility, Required: true, Config: json.RawMessage(`{"slug":true,"max_length":200}`)},
 			{Key: "body", Kind: "markdown", Scope: localizedScope, Visibility: publicVisibility, Required: true, Config: json.RawMessage(`{"min_length":1}`)},
-			{Key: "featured", Kind: "boolean", Scope: sharedScope, Visibility: publicVisibility, Config: json.RawMessage(`{}`)},
-			{Key: "price", Kind: "decimal", Scope: sharedScope, Visibility: publicVisibility, Config: json.RawMessage(`{}`)},
-			{Key: "related", Kind: "relation", Scope: sharedScope, Visibility: publicVisibility, TargetTypeID: articleTypeID, Config: json.RawMessage(`{}`)},
+			{Key: eventFeaturedField, Kind: "boolean", Scope: sharedScope, Visibility: publicVisibility, Config: json.RawMessage(`{}`)},
+			{Key: eventPriceField, Kind: "decimal", Scope: sharedScope, Visibility: publicVisibility, Config: json.RawMessage(`{}`)},
+			{Key: eventRelatedField, Kind: "relation", Scope: sharedScope, Visibility: publicVisibility, TargetTypeID: articleTypeID, Config: json.RawMessage(`{}`)},
 		},
 	}
 	metadata := DisplayMetadata(event)

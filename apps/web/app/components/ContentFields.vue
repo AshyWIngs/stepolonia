@@ -1,29 +1,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePublicUi } from '~/composables/usePublicUi'
-import { contentFields, formatContentValue, publishedLabel, readableContentKey, relationPath, type PublicContent } from '~/utils/content-fields'
+import { contentFields, formatContentValue, readableContentKey, relationPath, type PublicContent } from '~/utils/content-fields'
 
 const props = defineProps<{ item: PublicContent }>()
 const { t } = usePublicUi()
 const fields = computed(() => contentFields(props.item))
+const labels = computed(() => new Map(Object.entries(props.item.field_labels ?? {})))
 const narratives = computed(() => fields.value.filter(entry => entry.field.kind === 'markdown'))
 const details = computed(() => fields.value.filter(entry => entry.field.kind !== 'markdown'))
 const related = computed(() => props.item.relations.flatMap(relation => relation.targets.map(target => {
   const path = relationPath(target.canonical_url)
   return { key: `${relation.field_key}:${target.item_id}`, path,
-    label: publishedLabel(props.item, relation.field_key) ?? readableContentKey(path.split('/').at(-1) ?? '') }
+    label: labels.value.get(relation.field_key) ?? readableContentKey(path.split('/').at(-1) ?? '') }
 })))
 </script>
 
 <template>
   <div class="published-fields">
     <div v-for="{ key, field } in narratives" :key="key">
-      <h2 v-if="key !== 'body'">{{ publishedLabel(item, key) ?? readableContentKey(key) }}</h2>
+      <h2 v-if="key !== 'body'">{{ labels.get(key) ?? readableContentKey(key) }}</h2>
       <ContentMarkdown v-if="field.kind === 'markdown'" :source="field.value" />
     </div>
     <dl v-if="details.length" class="content-details">
       <div v-for="{ key, field } in details" :key="key">
-        <dt>{{ publishedLabel(item, key) ?? readableContentKey(key) }}</dt>
+        <dt>{{ labels.get(key) ?? readableContentKey(key) }}</dt>
         <dd :data-field="key">
           <time v-if="field.kind === 'datetime'" :datetime="field.value">{{ formatContentValue(field, item.language) }}</time>
           <template v-else-if="field.kind === 'boolean'">{{ t(field.value ? 'admin.content_yes' : 'admin.content_no') }}</template>
