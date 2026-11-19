@@ -39,5 +39,5 @@ export function usePublicSite() {
       throw error
     }
   }
-  return { publication, load }
+  return { publication, loadedPath, load }
 }

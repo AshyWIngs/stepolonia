@@ -262,6 +262,34 @@ async function selectContentLanguage(page, language) {
   await page.waitForFunction(language => document.cookie.split(';').some(cookie => cookie.trim() === `sp_content_language=${language}`), language)
 }
 
+async function checkPendingLanguageChange(page) {
+  await page.goto(`${base}/ru/articles`)
+  const heading = page.getByRole('heading', { level: 1 })
+  const previousHeading = await heading.textContent()
+  const releaseRequest = Promise.withResolvers()
+  await page.route('**/api/v1/languages', async route => {
+    await releaseRequest.promise
+    await route.continue()
+  })
+  const pendingRequest = page.waitForRequest('**/api/v1/languages', { timeout: 10000 })
+  const change = selectContentLanguage(page, 'en')
+  try {
+    await Promise.race([pendingRequest, change.then(() => pendingRequest)])
+    assert.equal(await heading.textContent(), previousHeading)
+    assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
+    assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'ru')
+  }
+  finally {
+    releaseRequest.resolve()
+  }
+  await change
+  await page.waitForURL(`${base}/en/articles`)
+  await page.waitForFunction(() => document.documentElement.lang === 'en' &&
+    document.querySelector('summary[data-current-language="en"]'))
+  assert.notEqual(await heading.textContent(), previousHeading)
+  await page.unroute('**/api/v1/languages')
+}
+
 async function checkLanguageBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
@@ -277,7 +305,7 @@ async function checkLanguageBrowser() {
     await page.evaluate(() => { window.__stage22Navigation = 'same-document' })
     await page.locator(`a[href="${currentPath}"]`).first().click()
     await page.waitForURL(`${base}${currentPath}`)
-    await page.getByRole('heading', { name: articleTitle, exact: true }).waitFor()
+    await page.getByRole('heading', { name: articleTitle, level: 1, exact: true }).waitFor()
     const switcher = page.getByTestId('language-switcher')
     const summary = switcher.locator('summary')
     assert.equal(await summary.getAttribute('data-current-language'), 'fr')
@@ -294,7 +322,7 @@ async function checkLanguageBrowser() {
     assert.equal(await page.evaluate(() => window.__stage22Navigation), 'same-document')
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
     assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
-    await page.goto(`${base}/en/articles`)
+    await checkPendingLanguageChange(page)
     await selectContentLanguage(page, 'en')
     await page.reload()
     assert.equal(await page.locator('html').getAttribute('lang'), 'en')

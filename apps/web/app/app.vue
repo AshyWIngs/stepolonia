@@ -1,23 +1,25 @@
 <script setup lang="ts">
 import { useHeadSafe, useResponseHeader, useRoute } from '#imports'
-import { computed } from 'vue'
+import { computed, shallowRef, watchEffect } from 'vue'
 import { usePortalAcceptLanguage } from '~/composables/usePortalLanguagePreference'
 import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicTheme } from '~/composables/usePublicTheme'
-import { usePublicUi } from '~/composables/usePublicUi'
 import { isAdminPath } from '~/utils/admin-path'
 
 const route = useRoute()
 const admin = computed(() => isAdminPath(route.path))
-const { publication, load } = usePublicSite()
+const { publication, loadedPath, load } = usePublicSite()
 if (!admin.value) await load(route.fullPath)
-const site = computed(() => publication.value?.settings)
+const displayed = shallowRef(publication.value)
+watchEffect(() => {
+  if (loadedPath.value === route.fullPath) displayed.value = publication.value
+})
+const site = computed(() => displayed.value?.settings)
 usePortalAcceptLanguage()
-const { uiLanguage } = usePublicUi()
 const theme = usePublicTheme()
 useHeadSafe(() => admin.value ? {} : ({
   title: site.value?.title,
-  htmlAttrs: { lang: uiLanguage.value, dir: publication.value?.language.direction, 'data-public-theme': theme.value },
+  htmlAttrs: { lang: displayed.value?.language.code, dir: displayed.value?.language.direction, 'data-public-theme': theme.value },
   meta: [{ name: 'description', content: site.value?.description }],
 }))
 useResponseHeader('Cache-Control').value = 'no-store'

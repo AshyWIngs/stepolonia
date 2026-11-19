@@ -198,7 +198,7 @@ async function findSettingsTranslation(page, sourceText) {
   await search.fill(sourceText)
   await search.press('Enter')
   assert.equal(await page.getByText('Draft saved.', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: sourceText + ' admin.code_help', exact: true }).click()
+  await page.getByRole('button', { name: `${sourceText} admin.code_help`, exact: true }).click()
   const message = page.getByLabel('Translation', { exact: true })
   assert.equal(await message.inputValue(), sourceText)
   assert.equal(await page.getByRole('textbox', { name: 'Translation', exact: true }).count(), 1)

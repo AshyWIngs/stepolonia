@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { usePortalLanguagePreference } from '~/composables/usePortalLanguagePreference'
-import { usePublicSite } from '~/composables/usePublicSite'
 import { publicThemes, usePublicTheme } from '~/composables/usePublicTheme'
 import { usePublicUi } from '~/composables/usePublicUi'
 import { contentPath, type ContentNamespace } from '~/utils/public-content'
@@ -18,10 +17,9 @@ const props = defineProps<{
 }>()
 
 const preference = usePortalLanguagePreference()
-const { publication } = usePublicSite()
-const { t } = usePublicUi()
+const { publication, t } = usePublicUi()
 const theme = usePublicTheme()
-const site = computed(() => publication.value?.settings)
+const site = publication?.settings
 const choices = computed(() => {
   const slugs = new Map(props.translations?.map(translation => [translation.language, translation.slug]))
   return props.languages
