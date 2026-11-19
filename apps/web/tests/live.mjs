@@ -262,32 +262,59 @@ async function selectContentLanguage(page, language) {
   await page.waitForFunction(language => document.cookie.split(';').some(cookie => cookie.trim() === `sp_content_language=${language}`), language)
 }
 
+async function holdRequest(page, pattern) {
+  const releaseRequest = Promise.withResolvers()
+  await page.route(pattern, async route => {
+    await releaseRequest.promise
+    await route.continue()
+  })
+  return {
+    pending: page.waitForRequest(pattern, { timeout: 10000 }),
+    async release() {
+      releaseRequest.resolve()
+      await page.unroute(pattern)
+    },
+  }
+}
+
 async function checkPendingLanguageChange(page) {
   await page.goto(`${base}/ru/articles`)
   const heading = page.getByRole('heading', { level: 1 })
   const previousHeading = await heading.textContent()
-  const releaseRequest = Promise.withResolvers()
-  await page.route('**/api/v1/languages', async route => {
-    await releaseRequest.promise
-    await route.continue()
-  })
-  const pendingRequest = page.waitForRequest('**/api/v1/languages', { timeout: 10000 })
+  const languages = await holdRequest(page, '**/api/v1/languages')
   const change = selectContentLanguage(page, 'en')
   try {
-    await Promise.race([pendingRequest, change.then(() => pendingRequest)])
+    await Promise.all([languages.pending, change])
     assert.equal(await heading.textContent(), previousHeading)
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
     assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'ru')
+
+    const catalog = await holdRequest(page, '**/api/v1/site?lang=fr')
+    try {
+      await Promise.all([catalog.pending, selectContentLanguage(page, 'fr')])
+      const articles = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return url.pathname === '/api/v1/content/article' && url.searchParams.get('language') === 'en'
+      }, { timeout: 10000 })
+      await languages.release()
+      await articles
+      assert.equal(await page.getByRole('heading', { name: '503', level: 1, exact: true }).count(), 0)
+    }
+    finally {
+      await catalog.release()
+    }
   }
   finally {
-    releaseRequest.resolve()
+    await languages.release()
   }
-  await change
+  await page.waitForURL(`${base}/fr/articles`)
+  await page.waitForFunction(() => document.documentElement.lang === 'ru' &&
+    document.querySelector('summary[data-current-language="fr"]'))
+  assert.equal(await heading.textContent(), previousHeading)
+  await selectContentLanguage(page, 'en')
   await page.waitForURL(`${base}/en/articles`)
   await page.waitForFunction(() => document.documentElement.lang === 'en' &&
     document.querySelector('summary[data-current-language="en"]'))
-  assert.notEqual(await heading.textContent(), previousHeading)
-  await page.unroute('**/api/v1/languages')
 }
 
 async function checkLanguageBrowser() {

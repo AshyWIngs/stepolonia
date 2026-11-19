@@ -7,10 +7,11 @@ export function usePublicContent() {
   const { publication } = usePublicSite()
 
   async function listLanguages() {
-    if (!publication.value) throw publicError(503)
+    const defaultLanguage = publication.value?.settings.default_language
+    if (!defaultLanguage) throw publicError(503)
     const { data, response } = await request(() => client.listLanguages())
     if (!data) throw publicError(response.status)
-    if (!data.some(item => item.code === publication.value?.settings.default_language)) throw publicError(503)
+    if (!data.some(item => item.code === defaultLanguage)) throw publicError(503)
     return data
   }
 

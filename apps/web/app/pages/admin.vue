@@ -7,6 +7,7 @@ import { usePublicApi } from '~/composables/usePublicApi'
 import { usePortalAcceptLanguage, usePortalLanguagePreference } from '~/composables/usePortalLanguagePreference'
 import { preferredLanguage } from '~/utils/language'
 import { publicError } from '~/utils/public-content'
+import { compileUiMessage } from '~/utils/ui-message'
 
 defineOptions({ name: 'AdminSignInPage' })
 
@@ -33,7 +34,8 @@ const catalog = ref(initialCatalog.value)
 // vue-i18n expands dotted keys in place. Keep the API catalog flat for settings search.
 const { t, locale, setLocaleMessage } = useI18n({
   useScope: 'local', inheritLocale: false, locale: catalog.value.language.code, fallbackLocale: false,
-  flatJson: true, messages: { [catalog.value.language.code]: { ...catalog.value.messages } },
+  flatJson: true, messageCompiler: compileUiMessage,
+  messages: { [catalog.value.language.code]: { ...catalog.value.messages } },
 })
 
 let catalogRequest = 0

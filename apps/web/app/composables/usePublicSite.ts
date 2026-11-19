@@ -13,8 +13,6 @@ export function usePublicSite() {
   async function load(path: string, refresh = false) {
     if (!refresh && publication.value && loadedPath.value === path) return
     const currentGeneration = ++generation.value
-    publication.value = null
-    loadedPath.value = null
     const segment = path.split('?')[0]?.split('/')[1]
     let language: string | undefined
     try { language = segment ? routeSegment(decodeURIComponent(segment)).toLowerCase() : undefined }
@@ -36,6 +34,8 @@ export function usePublicSite() {
     }
     catch (error) {
       if (generation.value !== currentGeneration) return
+      publication.value = null
+      loadedPath.value = null
       throw error
     }
   }

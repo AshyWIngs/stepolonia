@@ -34,7 +34,7 @@ useHead(() => ({
 </script>
 
 <template>
-  <section v-if="data">
+  <section v-if="data" :lang="publication?.language.code" :dir="publication?.language.direction">
     <PublicSiteHeader :namespace="namespace" :languages="data.languages" :current="data.language" :current-path="listPath" />
     <ContentCollectionNav :namespace="namespace" :language="data.language.code" />
     <h1>{{ t(namespace) }}</h1>
