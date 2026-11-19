@@ -5,11 +5,12 @@ import type { AccountSession } from '~/utils/admin-account'
 import { accessNotice } from '~/utils/admin-access-feedback'
 
 const props = defineProps<{ userId: string, csrf: string, uiLanguage: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], busy: [value: boolean] }>()
 const selected = ref<AccountSession>()
 const sessions = ref<AccountSession[]>([])
 const offset = ref(0)
 const busy = ref(false)
+watch(busy, value => emit('busy', value))
 const error = ref('')
 let active = true
 

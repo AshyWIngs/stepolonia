@@ -5,19 +5,25 @@ import type { components } from '@stepolonia/sdk'
 import { usePublicApi } from '~/composables/usePublicApi'
 import { createDraft, listCollections, listDrafts } from '~/utils/admin-content'
 import type { CollectionChoice, DraftSummary } from '~/utils/admin-content'
+import { ownValue } from '~/utils/draft-edit-buffer'
 
 const props = defineProps<{
   csrf: string
   uiLanguage: string
+  defaultLanguage: string
   translate: (key: string) => string
 }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const { client, request } = usePublicApi()
 const collections = ref<CollectionChoice[]>([])
 const languages = ref<components['schemas']['Language'][]>([])
 const drafts = ref<DraftSummary[]>([])
 const selectedType = ref('')
 const selectedItem = ref('')
+const initialLanguage = ref('')
+const lastLanguages = new Map<string, string>()
+const pageOffsets = new Map<string, number>()
+let draftChanged = false
 const openedType = ref('')
 const collectionOffset = ref<number | null>(null)
 const draftOffset = ref<number | null>(null)
@@ -29,6 +35,22 @@ const failure = ref('')
 const active = ref(true)
 
 const selectedCollection = computed(() => collections.value.find(item => item.type_key === selectedType.value))
+
+function titleLanguage(item: DraftSummary) {
+  const otherLanguages = Object.keys(item.titles ?? {}).sort()
+  return [props.uiLanguage, props.defaultLanguage, ...otherLanguages]
+    .find(code => ownValue(item.titles, code)) ?? ''
+}
+
+function nativeName(code: string) {
+  return languages.value.find(language => language.code === code)?.native_name ?? code
+}
+
+function collectionLabel(key: string) {
+  if (key === 'article') return props.translate('articles')
+  if (key === 'event') return props.translate('events')
+  return key
+}
 
 async function run(work: () => Promise<void>) {
   if (busy.value) return
@@ -87,6 +109,8 @@ async function loadDraftPage(offset = 0) {
   const type = selectedType.value
   const page = await listDrafts(type, offset)
   if (!active.value || selectedType.value !== type) return
+  if (offset === 0) pageOffsets.clear()
+  for (const item of page.items) pageOffsets.set(item.item_id, offset)
   drafts.value = offset === 0 ? page.items : [...drafts.value, ...page.items]
   draftOffset.value = page.next_offset
   loaded.value = true
@@ -98,16 +122,32 @@ function changeCollection() {
   return run(loadDraftPage)
 }
 
-function openDraft(itemID: string, target: EventTarget | null) {
+function openDraft(itemID: string, target: EventTarget | null, language = '') {
   if (selectedItem.value) return
+  draftChanged = false
   openedType.value = selectedType.value
+  initialLanguage.value = language || lastLanguages.get(itemID) || ''
   selectedItem.value = itemID
   opener.value = target instanceof HTMLElement ? target : null
 }
 
 async function closeDraft() {
+  const closedItem = selectedItem.value
   selectedItem.value = ''
   openedType.value = ''
+  emit('editing-state', { dirty: false, busy: false })
+  if (draftChanged) await run(async () => {
+    const offset = pageOffsets.get(closedItem) ?? 0
+    const page = await listDrafts(selectedType.value, offset)
+    if (!active.value) return
+    const fresh = page.items.find(item => item.item_id === closedItem)
+    if (fresh) drafts.value = drafts.value.map(item => item.item_id === closedItem ? fresh : item)
+    else {
+      // A concurrent list change can move or hide the row. Keep the other loaded pages.
+      drafts.value = drafts.value.filter(item => item.item_id !== closedItem)
+      pageOffsets.delete(closedItem)
+    }
+  })
   await nextTick()
   if (opener.value?.isConnected) opener.value.focus()
   else heading.value?.focus()
@@ -145,7 +185,7 @@ onBeforeUnmount(() => { active.value = false })
       <template v-if="collections.length">
         <label for="collection-choice">{{ translate('admin.content_collection') }}</label>
         <select id="collection-choice" v-model="selectedType" :disabled="busy || Boolean(selectedItem)" @change="changeCollection">
-          <option v-for="entry in collections" :key="entry.type_key" :value="entry.type_key">{{ entry.type_key }}</option>
+          <option v-for="entry in collections" :key="entry.type_key" :value="entry.type_key">{{ collectionLabel(entry.type_key) }}</option>
         </select>
         <button
           v-if="collectionOffset !== null" type="button" class="admin-secondary" :disabled="busy || Boolean(selectedItem)"
@@ -156,11 +196,23 @@ onBeforeUnmount(() => { active.value = false })
         </button>
         <p v-if="loaded && !busy && !failure && !drafts.length">{{ translate('admin.content_no_drafts') }}</p>
         <ul v-if="drafts.length" class="draft-list">
-          <li v-for="item in drafts" :key="item.item_id">
+          <li v-for="item in drafts" :key="item.item_id" :data-item-id="item.item_id">
             <button
               type="button" class="admin-secondary" :disabled="busy || Boolean(selectedItem)"
-              @click="openDraft(item.item_id, $event.currentTarget)"
-            >{{ item.item_id }}</button>
+              @click="openDraft(item.item_id, $event.currentTarget, titleLanguage(item))"
+            >
+              <span class="draft-title" :lang="titleLanguage(item) || undefined" dir="auto">
+                {{ ownValue(item.titles, titleLanguage(item)) ?? translate('admin.draft_untitled') }}
+              </span>
+              <span class="draft-summary">
+                <span v-if="titleLanguage(item)" :lang="titleLanguage(item)">{{ nativeName(titleLanguage(item)) }}</span>
+                <span v-if="item.published_locales?.length">
+                  {{ translate('admin.draft_status_published') }}
+                  <span v-for="(code, index) in item.published_locales" :key="code"><span v-if="index">, </span><span :lang="code">{{ nativeName(code) }}</span></span>
+                </span>
+                <span v-else>{{ translate('admin.draft_status_unpublished') }}</span>
+              </span>
+            </button>
           </li>
         </ul>
         <button v-if="draftOffset !== null" type="button" class="admin-secondary" :disabled="busy || Boolean(selectedItem)" @click="run(() => loadDraftPage(draftOffset ?? 0))">
@@ -171,6 +223,9 @@ onBeforeUnmount(() => { active.value = false })
     <AdminDraftEditor
       v-if="selectedItem" :key="selectedItem" :type-key="openedType" :item-id="selectedItem" :csrf="csrf"
       :translate="translate" :ui-language="uiLanguage" :languages="languages"
+      :initial-language="initialLanguage" :default-language="defaultLanguage"
+      @language-changed="lastLanguages.set(selectedItem, $event)" @changed="draftChanged = true"
+      @editing-state="emit('editing-state', $event)"
       @close="closeDraft" @step-up="emit('step-up')" @session-changed="emit('session-changed')"
     />
   </section>
@@ -243,6 +298,19 @@ onBeforeUnmount(() => { active.value = false })
   width: 100%;
   overflow-wrap: anywhere;
   text-align: start;
+}
+
+.draft-title {
+  display: block;
+}
+
+.draft-summary {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: .85rem;
+  color: var(--admin-muted);
+  font-size: .875rem;
+  font-weight: 400;
 }
 
 @media (min-width: 70rem) {

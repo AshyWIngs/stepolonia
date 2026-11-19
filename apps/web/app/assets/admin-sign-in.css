@@ -91,6 +91,74 @@
   color: var(--admin-muted);
 }
 
+.admin-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  max-width: 72rem;
+  margin: 1.5rem auto 0;
+  padding-block-end: .75rem;
+  border-block-end: 1px solid var(--admin-border);
+}
+
+.admin-navigation button, .admin-leave button {
+  min-height: 44px;
+  min-width: 0;
+  padding: .5rem .75rem;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-navigation [aria-current="page"] {
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+}
+
+.admin-navigation .admin-sign-out {
+  margin-inline-start: auto;
+  border-color: var(--admin-border);
+}
+
+.admin-navigation button:disabled {
+  opacity: .65;
+  cursor: default;
+}
+
+.admin-leave {
+  box-sizing: border-box;
+  max-width: min(30rem, calc(100% - 2rem));
+  padding: 1.25rem;
+  border: 1px solid var(--admin-border);
+  border-radius: .75rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+}
+
+.admin-leave::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.admin-leave h2 {
+  margin-block-start: 0;
+}
+
+.admin-leave form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.admin-leave button {
+  border-color: var(--admin-border);
+}
+
 .admin-card {
   box-sizing: border-box;
   max-width: 27rem;
@@ -103,6 +171,15 @@
 
 .admin-card--wide {
   max-width: 52rem;
+}
+
+.admin-card--signed-in {
+  max-width: 72rem;
+  margin-block-start: 1rem;
+}
+
+.admin-card--signed-in > h1:focus {
+  outline-offset: 4px;
 }
 
 .admin-card--workspace {

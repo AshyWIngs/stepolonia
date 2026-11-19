@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { readAssignees, replaceAssignees } from '~/utils/admin-access'
 import type { AssigneeSet } from '~/utils/admin-access'
 import { accessNotice } from '~/utils/admin-access-feedback'
 
 const props = defineProps<{ csrf: string, typeKey: string, itemId: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ 'step-up': [], 'session-changed': [], saved: [], close: [] }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], saved: [], close: [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const set = ref<AssigneeSet>()
 const chosen = ref<string[]>([])
 const confirm = ref(false)
@@ -14,6 +14,9 @@ const failure = ref('')
 const heading = ref<HTMLElement>()
 const additions = computed(() => chosen.value.filter(id => !set.value?.assignee_ids.includes(id)).length)
 const removals = computed(() => set.value?.assignee_ids.filter(id => !chosen.value.includes(id)).length ?? 0)
+watch([() => additions.value + removals.value > 0, busy], ([dirty, saving]) => {
+  emit('editing-state', { dirty, busy: saving })
+})
 let active = true
 
 async function run(action: () => Promise<void>) {

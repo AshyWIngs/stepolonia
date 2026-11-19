@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	publicationArticleType = "article"
-	publicationEventType   = "event"
-	publicationCreateScope = "type"
-	stalePublicationCode   = "version_conflict"
-	editorialSlug          = "spotkanie-w-krakowie"
-	editorialTitle         = "Spotkanie w Krakowie"
-	editorialNote          = "Notatka redakcyjna"
+	publicationArticleType     = "article"
+	publicationEventType       = "event"
+	publicationEventsNamespace = "events"
+	publicationCreateScope     = "type"
+	stalePublicationCode       = "version_conflict"
+	editorialSlug              = "spotkanie-w-krakowie"
+	editorialTitle             = "Spotkanie w Krakowie"
+	editorialNote              = "Notatka redakcyjna"
 )
 
 type publicationFixture struct {
@@ -221,7 +222,7 @@ const (
 )
 
 func TestAdminReadyPublishHTTPSIntegration(t *testing.T) {
-	for _, tc := range []struct{ key, namespace string }{{publicationArticleType, "articles"}, {publicationEventType, "events"}} {
+	for _, tc := range []struct{ key, namespace string }{{publicationArticleType, "articles"}, {publicationEventType, publicationEventsNamespace}} {
 		t.Run(tc.key, func(t *testing.T) {
 			f := newPublicationFixture(t, tc.key, tc.namespace)
 			item := f.prepareDraft(t)

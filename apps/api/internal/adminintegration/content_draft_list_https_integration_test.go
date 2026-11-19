@@ -52,6 +52,79 @@ func TestAdminDraftListHTTPSIntegration(t *testing.T) {
 	read(collection, http.StatusUnauthorized)
 }
 
+func TestAdminDraftListAuthorizesPresentationHTTPSIntegration(t *testing.T) {
+	f := newPublicationFixture(t, publicationEventType, publicationEventsNamespace)
+	assigned := f.prepareDraft(t)
+	unassigned := f.prepareDraft(t)
+	f.command(t, f.author, assigned, sharedReadyCommand, sharedReadyBody, http.StatusOK)
+	f.command(t, f.author, assigned, localeReadyCommand, localeReadyBody, http.StatusOK)
+	f.command(t, f.publisher, assigned, publishCommand, publishBody, http.StatusOK)
+	_, err := f.owner.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
+ VALUES('en','English','English','ltr',true),('kk','Kazakh','Қазақша','ltr',true),('ru','Russian','Русский','ltr',true)
+ ON CONFLICT(code) DO NOTHING`)
+	requireNoError(t, err)
+	_, err = f.owner.Exec(`INSERT INTO public.content_draft_locales(item_id,locale_code,scalar_values) VALUES
+ ($1,'en',jsonb_build_object('title',repeat('ą',300))),($1,'kk',jsonb_build_object('title',$2::text)),($1,'ru','{"title":12}')`,
+		assigned, "\u00a0")
+	requireNoError(t, err)
+
+	var authorID string
+	requireNoError(t, f.owner.QueryRow(`DELETE FROM public.content_item_assignments WHERE item_id=$1 RETURNING user_id::text`, unassigned).Scan(&authorID))
+	// An any-item grant without the title field must not widen the assigned title grant.
+	_, err = f.owner.Exec(`INSERT INTO public.role_grants(id,role_id,operation,scope,type_id,object_scope)
+ SELECT gen_random_uuid(),role_id,'content.items.read','content',$1,'any' FROM public.user_roles WHERE user_id=$2`,
+		f.typeID, authorID)
+	requireNoError(t, err)
+
+	read := func() map[string]draftPresentationResponse {
+		t.Helper()
+		var response struct {
+			Items      []draftPresentationResponse `json:"items"`
+			NextOffset *int                        `json:"next_offset"`
+		}
+		body := sendDraftRequest(t, f.server, http.MethodGet, f.author.Token, draftHTTPRequest{
+			path: draftHTTPPrefix + f.typeKey, status: http.StatusOK,
+		})
+		decoder := json.NewDecoder(strings.NewReader(body))
+		decoder.DisallowUnknownFields()
+		requireNoError(t, decoder.Decode(&response))
+		if len(response.Items) != 2 || response.NextOffset != nil || strings.Contains(body, editorialNote) {
+			t.Fatalf("unexpected presentation page: %s", body)
+		}
+		return map[string]draftPresentationResponse{
+			response.Items[0].ItemID: response.Items[0], response.Items[1].ItemID: response.Items[1],
+		}
+	}
+
+	assertDraftPresentation(t, read(), assigned, unassigned, []string{"pl"})
+	_, err = f.owner.Exec(`UPDATE public.languages SET is_enabled=false WHERE code='pl'`)
+	requireNoError(t, err)
+	assertDraftPresentation(t, read(), assigned, unassigned, nil)
+	_, err = f.owner.Exec(`UPDATE public.languages SET is_enabled=true WHERE code='pl'`)
+	requireNoError(t, err)
+	assertDraftPresentation(t, read(), assigned, unassigned, nil)
+}
+
+type draftPresentationResponse struct {
+	ItemID           string            `json:"item_id"`
+	TypeID           string            `json:"type_id"`
+	Schema           string            `json:"schema_no"`
+	Version          string            `json:"version"`
+	Titles           map[string]string `json:"titles"`
+	PublishedLocales []string          `json:"published_locales"`
+}
+
+func assertDraftPresentation(t *testing.T, items map[string]draftPresentationResponse, assigned, unassigned string, published []string) {
+	t.Helper()
+	shown, hasAssigned := items[assigned]
+	hidden, hasUnassigned := items[unassigned]
+	wantTitles := map[string]string{"pl": editorialTitle, "en": strings.Repeat("ą", 256)}
+	if !hasAssigned || !hasUnassigned || !reflect.DeepEqual(shown.Titles, wantTitles) ||
+		!reflect.DeepEqual(shown.PublishedLocales, published) || hidden.Titles != nil || hidden.PublishedLocales != nil {
+		t.Fatal("draft presentation did not preserve field scope and active publication visibility")
+	}
+}
+
 func assertDraftListPage(t *testing.T, body string, next *int, ids ...string) {
 	t.Helper()
 	type itemResponse struct {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AdminContentError } from '~/utils/admin-request'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { commandDraft, readDraft, saveDraft } from '~/utils/admin-content'
 import type { DraftCommand, EditableDraft, EditorField, EditorMetadata, Scalar } from '~/utils/admin-content'
@@ -12,10 +12,15 @@ const props = defineProps<{
   itemId: string
   csrf: string
   uiLanguage: string
+  initialLanguage: string
+  defaultLanguage: string
   languages: components['schemas']['Language'][]
   translate: (key: string) => string
 }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{
+  close: [], 'step-up': [], 'session-changed': [], 'language-changed': [locale: string], changed: [],
+  'editing-state': [state: { dirty: boolean, busy: boolean }],
+}>()
 const draft = ref<EditableDraft>()
 const metadata = ref<EditorMetadata>()
 const heading = ref<HTMLElement | null>(null)
@@ -31,16 +36,29 @@ const conflict = ref(false)
 const feedback = ref('')
 const failure = ref('')
 const assignmentsOpen = ref(false)
+const assignmentsState = ref({ dirty: false, busy: false })
 const assignmentsButton = ref<HTMLElement>()
 let active = true
 
 const sharedFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'shared') ?? [])
-const localeFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'localized') ?? [])
+const contentFieldOrder = ['title', 'slug', 'body']
+const localeFields = computed(() => (metadata.value?.fields.filter(field => field.scope === 'localized') ?? [])
+  .sort((left, right) => fieldOrder(left.key) - fieldOrder(right.key)))
 const hiddenLanguages = computed(() => Object.keys(draft.value?.locales ?? {}).filter(code => !activeLanguage(code)))
 const readyLanguages = computed(() => props.languages.filter(language => localeReady(language.code)))
 const publicLinks = computed(() => metadata.value?.published.filter(item => /^\/[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+$/u.test(item.canonical_url)) ?? [])
 const locked = computed(() => busy.value || conflict.value || edits.value.size > 0)
 const outdated = computed(() => draft.value?.schema_no !== metadata.value?.current_schema_no)
+const hasChanges = computed(() => edits.value.size > 0 || assignmentsState.value.dirty)
+const editorBusy = computed(() => busy.value || assignmentsState.value.busy)
+watch([hasChanges, editorBusy], ([dirty, isBusy]) => {
+  emit('editing-state', { dirty, busy: isBusy })
+})
+
+function fieldOrder(key: string) {
+  const position = contentFieldOrder.indexOf(key)
+  return position >= 0 ? position : contentFieldOrder.length
+}
 
 function activeLanguage(code: string) {
   return props.languages.some(language => language.code === code)
@@ -80,8 +98,22 @@ async function refresh() {
   if (!active) return
   draft.value = result.draft
   metadata.value = result.metadata
-  if (selectedLanguage.value === '') selectedLanguage.value = props.languages[0]?.code ?? hiddenLanguages.value[0] ?? ''
+  if (!activeLanguage(selectedLanguage.value) && !ownValue(result.draft.locales, selectedLanguage.value)) {
+    const available = props.languages.map(language => language.code)
+    const populated = Object.keys(result.draft.locales).filter(code => {
+      const locale = ownValue(result.draft.locales, code)
+      return locale && Object.keys(locale.values).length > 0
+    })
+    const preferences = [props.uiLanguage, props.defaultLanguage, ...available, ...hiddenLanguages.value]
+    selectedLanguage.value = [props.initialLanguage, ...preferences.filter(code => populated.includes(code)), ...preferences]
+      .find(code => activeLanguage(code) || ownValue(result.draft.locales, code)) ?? ''
+  }
   conflict.value = false
+}
+
+function changeDraftLanguage() {
+  invalid.value.clear()
+  emit('language-changed', selectedLanguage.value)
 }
 
 async function run(work: () => Promise<void>) {
@@ -95,6 +127,7 @@ async function run(work: () => Promise<void>) {
 }
 
 async function closeAssignments() {
+  assignmentsState.value = { dirty: false, busy: false }
   assignmentsOpen.value = false
   await nextTick()
   assignmentsButton.value?.focus()
@@ -107,10 +140,19 @@ async function assignmentsSaved() {
 
 function description(field: EditorField) {
   const labels = ownValue(field.display_labels, props.uiLanguage)
+  const builtIn = field.scope === 'localized' && field.visibility === 'public'
   return {
-    label: labels?.label || field.key,
-    help: labels?.help || (field.kind === 'relation' ? props.translate('admin.content_relation_help') : undefined),
+    label: labels?.label || (builtIn && fieldOrder(field.key) < contentFieldOrder.length
+      ? props.translate(`admin.content_field_${field.key}`)
+      : field.key),
+    help: labels?.help || fieldHelp(field, builtIn),
   }
+}
+
+function fieldHelp(field: EditorField, builtIn: boolean) {
+  if (field.kind === 'relation') return props.translate('admin.content_relation_help')
+  if (builtIn && field.key === 'slug' && field.config.slug) return props.translate('admin.content_field_slug_help')
+  return undefined
 }
 
 function editKey(field: EditorField, locale: string) {
@@ -147,6 +189,7 @@ async function save() {
     edits.value.clear()
     invalid.value.clear()
     feedback.value = 'admin.draft_saved'
+    emit('changed')
   })
 }
 
@@ -183,6 +226,7 @@ async function transition(action: DraftCommand) {
     await commandDraft(props.typeKey, source, action, props.csrf, details.get(action) ?? {})
     if (!active) return
     confirmation.value = null
+    emit('changed')
     await refresh()
     feedback.value = messages.get(action) ?? 'admin.content_ready_saved'
   })
@@ -225,7 +269,7 @@ onBeforeUnmount(() => { active = false })
   <section class="draft-editor" aria-labelledby="draft-editor-heading" :aria-busy="busy">
     <header class="draft-bar">
       <h2 id="draft-editor-heading" ref="heading" tabindex="-1">{{ translate('admin.content_editor') }}</h2>
-      <button type="button" class="admin-secondary" :disabled="busy" @click="edits.size ? ask('close') : emit('close')">
+      <button type="button" class="admin-secondary" :disabled="editorBusy" @click="hasChanges ? ask('close') : emit('close')">
         {{ translate('admin.content_back') }}
       </button>
     </header>
@@ -239,6 +283,7 @@ onBeforeUnmount(() => { active = false })
     <AdminAssignees
       v-if="assignmentsOpen" :csrf="csrf" :type-key="typeKey" :item-id="itemId" :translate="translate"
       @step-up="emit('step-up')" @session-changed="emit('session-changed')" @saved="assignmentsSaved" @close="closeAssignments"
+      @editing-state="assignmentsState = $event"
     />
     <template v-else-if="draft && metadata">
       <button ref="assignmentsButton" type="button" class="admin-secondary" :disabled="locked || confirmation !== null" @click="assignmentsOpen = true">
@@ -268,7 +313,7 @@ onBeforeUnmount(() => { active = false })
         <fieldset v-if="languages.length || hiddenLanguages.length" :disabled="busy || confirmation !== null">
           <legend>{{ translate('admin.content_translation') }}</legend>
           <label for="content-edit-language">{{ translate('admin.language') }}</label>
-          <select id="content-edit-language" v-model="selectedLanguage" @change="invalid.clear()">
+          <select id="content-edit-language" v-model="selectedLanguage" @change="changeDraftLanguage">
             <option v-for="language in languages" :key="language.code" :value="language.code" :lang="language.code" :dir="language.direction">
               {{ language.native_name }}
             </option>

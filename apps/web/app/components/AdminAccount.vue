@@ -5,7 +5,7 @@ import type { AccountProfile, AccountSession, FactorPreparation } from '~/utils/
 import { AdminContentError } from '~/utils/admin-request'
 
 const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 
 const profile = ref<AccountProfile>()
 const sessions = ref<AccountSession[]>([])
@@ -17,6 +17,9 @@ const factor = ref<FactorPreparation>()
 const codes = ref<string[]>([])
 const password = ref('')
 const code = ref('')
+watch([() => Boolean(password.value || code.value || factor.value || codes.value.length), busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
 const sensitiveHeading = ref<HTMLElement>()
 let active = true
 

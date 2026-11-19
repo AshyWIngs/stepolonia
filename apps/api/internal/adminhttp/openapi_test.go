@@ -228,6 +228,23 @@ func TestPrivateOpenAPIExamplesValidateAgainstSchemas(t *testing.T) {
 	}
 }
 
+func TestPrivateDraftSummaryPresentationIsOptional(t *testing.T) {
+	doc, _ := readPrivateDocument(t)
+	schema := doc.Components.Schemas[draftSummarySchemaName]
+	schema.PrecomputeMessages()
+	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(`{"item_id":"`+exampleUUID+`","type_id":"`+exampleUUID+`","schema_no":"1","version":"2"}`), &summary); err != nil {
+		t.Fatal(err)
+	}
+	validatePrivateValue(t, registry, schema, draftSummarySchemaName, summary)
+	summary["titles"] = map[string]any{"pl": strings.Repeat("ą", 257)}
+	privateSchemaRejects(t, registry, schema, summary)
+	summary["titles"] = map[string]any{"pl": "Spacer po Ałmaty"}
+	summary["published_locales"] = []any{"pl", "pl"}
+	privateSchemaRejects(t, registry, schema, summary)
+}
+
 func validatePrivateExample(t *testing.T, registry huma.Registry, name string, value any) {
 	t.Helper()
 	schema := registry.Map()[name]

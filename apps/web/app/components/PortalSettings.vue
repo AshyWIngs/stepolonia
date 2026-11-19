@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AdminSettingsError, getPortalSettings, publishPortalSettings, savePortalSettings } from '~/utils/admin-site-settings'
 import type { EditablePortal } from '~/utils/admin-site-settings'
 
@@ -9,6 +9,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   published: []
+  'editing-state': [state: { dirty: boolean, busy: boolean }]
   'step-up': []
   'session-changed': []
   close: []
@@ -22,6 +23,9 @@ const publishButton = ref<HTMLButtonElement | null>(null)
 const publicationStatus = ref<HTMLOutputElement | null>(null)
 const busy = ref(false)
 const dirty = ref(false)
+watch([() => dirty.value, busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
 const confirming = ref(false)
 const conflict = ref(false)
 const failure = ref('')

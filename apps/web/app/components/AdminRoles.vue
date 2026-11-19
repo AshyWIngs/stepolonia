@@ -5,7 +5,7 @@ import type { AccessRole, RoleAction, RoleGrant, RoleGrantOption } from '~/utils
 import { useAccessActions } from '~/utils/admin-access-feedback'
 
 const props = defineProps<{ csrf: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const roles = ref<AccessRole[]>([])
 const selected = ref<AccessRole>()
 const next = ref<number | null>(null)
@@ -23,6 +23,9 @@ const allowGrantDelegation = ref(false)
 const allowDelegableContent = ref(false)
 const delegationCeiling = ref<'assigned' | 'any'>('assigned')
 const confirmCommand = ref<RoleAction>()
+watch([() => Boolean(mode.value), busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
 const option = computed(() => currentOption.value === undefined ? undefined : options.value[currentOption.value])
 const actions = computed<RoleAction[]>(() => {
   switch (selected.value?.state) {

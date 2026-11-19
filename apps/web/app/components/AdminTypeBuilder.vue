@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AdminContentError } from '~/utils/admin-request'
 import { ownValue } from '~/utils/draft-edit-buffer'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createCollection, listCollections, listRegistryRenderers, readManagedCollection, reviseCollection } from '~/utils/admin-content'
 import type { CollectionChoice, FieldKind, ManagedCollection, RegistryField, RegistryRenderer } from '~/utils/admin-content'
 
@@ -10,7 +10,7 @@ const props = defineProps<{
   uiLanguage: string
   translate: (key: string) => string
 }>()
-const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [] }>()
+const emit = defineEmits<{ close: [], 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const renderers = ref<RegistryRenderer[]>([])
 const targets = ref<CollectionChoice[]>([])
 const selected = ref('')
@@ -20,6 +20,9 @@ const baselineKeys = ref<string[]>([])
 const initialize = ref(false)
 const busy = ref(false)
 const dirty = ref(false)
+watch([() => dirty.value, busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
 const failure = ref('')
 const feedback = ref('')
 const conflict = ref(false)

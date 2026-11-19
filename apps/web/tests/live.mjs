@@ -60,6 +60,7 @@ async function checkSSR() {
   await documentResponse('/fr/articles?page=502', 400)
   const listed = await documentResponse('/fr/articles', 200)
   assert.ok(listed.html.includes(articleTitle))
+  assert.match(listed.html, /<a\b[^>]*href="\/fr\/events"[^>]*>Fixture ru events<\/a>/u)
   const { html, response } = await documentResponse(currentPath, 200, {
     Host: 'untrusted.invalid', 'X-Forwarded-Host': 'untrusted.invalid',
     Cookie: 'stage21_private=stage21-private-token', Authorization: 'Bearer stage21-private-token',
@@ -87,7 +88,7 @@ async function checkSSR() {
 async function checkBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    const context = await browser.newContext({ locale: 'fr-FR', viewport: { width: 1280, height: 900 } })
     await context.addCookies([{ name: 'stage21_private', value: 'browser-private', url: base }])
     const page = await context.newPage()
     const errors = []
@@ -130,10 +131,72 @@ async function checkBrowser() {
     await page.setViewportSize({ width: 390, height: 844 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     await page.screenshot({ path: 'reports/ssr-preview.png', fullPage: true })
+    const discoveryPage = await context.newPage()
+    discoveryPage.on('pageerror', error => errors.push(error.message))
+    await checkCollectionNavigation(discoveryPage)
+    assert.deepEqual(errors, [])
   }
   finally {
     await browser.close()
   }
+}
+
+async function checkCollectionNavigation(page) {
+  const navigation = page.getByRole('navigation', { name: 'Fixture ru navigation', exact: true })
+  const events = navigation.getByRole('link', { name: 'Fixture ru events', exact: true })
+  const articles = navigation.getByRole('link', { name: 'Fixture ru articles', exact: true })
+  const theme = page.getByLabel('Fixture ru admin.theme', { exact: true })
+  await page.goto(`${base}/`)
+  await page.waitForURL(`${base}/fr/articles`)
+  assert.equal(await articles.getAttribute('aria-current'), 'page')
+  await checkPublicTheme(page, theme, events)
+  await events.focus()
+  assert.ok(await events.evaluate(link => link === document.activeElement && link.offsetHeight >= 44))
+  await events.press('Enter')
+  await page.waitForURL(`${base}/fr/events`)
+  await page.getByRole('heading', { name: 'Fixture ru events', level: 1, exact: true }).waitFor()
+  assert.equal(await events.getAttribute('aria-current'), 'page')
+  await page.getByRole('link', { name: 'Stage 3.2 Event', exact: true }).click()
+  await page.waitForURL(`${base}/fr/events/stage32-event`)
+  await page.getByRole('heading', { name: 'Stage 3.2 Event', level: 1, exact: true }).waitFor()
+  assert.equal(await events.getAttribute('aria-current'), 'location')
+  await articles.click()
+  await page.waitForURL(`${base}/fr/articles`)
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+  await page.getByRole('link', { name: articleTitle, exact: true }).click()
+  await page.waitForURL(`${base}${currentPath}`)
+  await page.getByRole('heading', { name: articleTitle, level: 1, exact: true }).waitFor()
+  assert.equal(await articles.getAttribute('aria-current'), 'location')
+  assert.equal(await events.getAttribute('href'), '/fr/events')
+  assert.equal(await page.locator('html').getAttribute('data-public-theme'), 'dark')
+}
+
+async function checkPublicTheme(page, theme, events) {
+  await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
+  const background = () => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+  await page.emulateMedia({ colorScheme: 'light' })
+  const light = await background()
+  await page.emulateMedia({ colorScheme: 'dark' })
+  const dark = await background()
+  assert.notEqual(light, dark)
+  const viewports = [[1440, 900], [768, 1024], [390, 844], [320, 844]]
+  const checkLayout = () => viewports.reduce(async (previous, [width, height]) => {
+    await previous
+    await page.setViewportSize({ width, height })
+    assert.ok(await events.isVisible())
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+  }, Promise.resolve())
+  await theme.selectOption('light')
+  await page.waitForFunction(() => document.documentElement.dataset.publicTheme === 'light')
+  assert.equal(await background(), light)
+  await checkLayout()
+  await theme.selectOption('dark')
+  await page.waitForFunction(() => document.documentElement.dataset.publicTheme === 'dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.reload()
+  assert.equal(await theme.inputValue(), 'dark')
+  assert.equal(await background(), dark)
+  await checkLayout()
 }
 
 async function safeBrowserArticle(page) {
@@ -268,6 +331,8 @@ async function checkOtherInstallation() {
     await page.waitForURL(`${otherHost.origin}/pl/articles`)
     assert.equal(await page.locator('html').getAttribute('lang'), 'pl')
     assert.ok(!(await page.content()).includes(articleTitle))
+    const navigation = page.getByRole('navigation', { name: 'Fixture pl navigation', exact: true })
+    assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Fixture pl articles'])
     await selectContentLanguage(page, 'pl')
     const saved = await context.cookies()
     assert.equal(saved.find(cookie => cookie.domain === 'localhost')?.value, 'pl')

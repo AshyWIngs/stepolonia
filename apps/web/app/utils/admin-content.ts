@@ -17,6 +17,8 @@ export interface DraftSummary {
   type_id: string
   schema_no: string
   version: string
+  titles?: Record<string, string>
+  published_locales?: string[]
 }
 
 export interface DraftRelation {

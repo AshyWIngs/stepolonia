@@ -37,8 +37,9 @@ useHead(() => ({
 
 <template>
   <section v-if="data">
+    <ContentCollectionNav :namespace="namespace" :language="data.language.code" />
     <ContentLanguageNav :namespace="namespace" :languages="data.languages" :current="data.language.code" />
-    <h1>{{ t(namespace) }} <span :lang="data.language.code" :dir="data.language.direction">{{ data.language.native_name }}</span></h1>
+    <h1>{{ t(namespace) }}</h1>
     <ul v-if="data.items.length" class="article-list" :lang="data.language.code" :dir="data.language.direction">
       <li v-for="article in data.items" :key="article.item_id">
         <h2><NuxtLink :to="contentPath(namespace, article.language, article.slug)">{{ contentTitle(article) }}</NuxtLink></h2>

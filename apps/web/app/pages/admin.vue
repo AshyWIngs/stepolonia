@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useAsyncData, useCookie, useHeadSafe, useI18n, useResponseHeader } from '#imports'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AdminAuthError, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
 import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
 import { usePublicApi } from '~/composables/usePublicApi'
@@ -74,8 +74,23 @@ const csrf = ref('')
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let active = true
 
+const tools = ['content', 'registry', 'settings', 'account', 'access'] as const
+type AdminTool = typeof tools[number]
+const editingState = ref({ dirty: false, busy: false })
+const leaveDialog = ref<HTMLDialogElement>()
+let leaveAction: (() => void) | undefined
+
+function warnBeforeLeaving(event: BeforeUnloadEvent) {
+  event.preventDefault()
+  event.returnValue = true
+}
+
+watch(() => editingState.value.dirty, dirty => {
+  if (dirty) window.addEventListener('beforeunload', warnBeforeLeaving)
+  else window.removeEventListener('beforeunload', warnBeforeLeaving)
+})
+
 const activeTool = computed(() => {
-  if (confirmingIdentity.value) return 'fresh_auth'
   if (settingsOpen.value) return 'settings'
   if (contentOpen.value) return 'content'
   if (builderOpen.value) return 'registry'
@@ -86,7 +101,7 @@ const title = computed(() => {
   switch (phase.value) {
     case 'preauth': return 'sign_in'
     case 'login': return 'two_step'
-    case 'full': return activeTool.value
+    case 'full': return confirmingIdentity.value ? 'fresh_auth' : activeTool.value
     case null: return pending.value ? 'checking' : 'name'
     default: return 'name'
   }
@@ -149,6 +164,7 @@ async function refresh(moveFocus = false) {
       contentOpen.value = false
       builderOpen.value = false
       accessView.value = null
+      editingState.value = { dirty: false, busy: false }
       confirmingIdentity.value = false
     }
   }
@@ -198,6 +214,7 @@ async function afterAuthAction(action: AdminAuthAction) {
     contentOpen.value = false
     builderOpen.value = false
     accessView.value = null
+    editingState.value = { dirty: false, busy: false }
     confirmingIdentity.value = false
     await refresh()
   }
@@ -208,33 +225,43 @@ async function afterAuthAction(action: AdminAuthAction) {
   }
 }
 
-async function changeSettingsVisibility(open: boolean) {
-  settingsOpen.value = open
-  confirmingIdentity.value = false
-  failure.value = ''
-  await focusHeading()
+function navigate(action: () => void) {
+  if (editingState.value.busy || blocked.value || confirmingIdentity.value) return
+  if (!editingState.value.dirty) {
+    action()
+    return
+  }
+  leaveAction = action
+  leaveDialog.value?.showModal()
 }
 
-async function changeContentVisibility(open: boolean) {
-  contentOpen.value = open
-  confirmingIdentity.value = false
-  failure.value = ''
-  await focusHeading()
+function completeNavigation() {
+  const action = leaveAction
+  leaveAction = undefined
+  leaveDialog.value?.close()
+  action?.()
 }
 
-async function changeBuilderVisibility(open: boolean) {
-  builderOpen.value = open
-  confirmingIdentity.value = false
-  failure.value = ''
-  await focusHeading()
+function selectTool(tool?: AdminTool) {
+  if (tool === activeTool.value) return
+  navigate(() => {
+    editingState.value = { dirty: false, busy: false }
+    settingsOpen.value = tool === 'settings'
+    contentOpen.value = tool === 'content'
+    builderOpen.value = tool === 'registry'
+    accessView.value = tool === 'account' || tool === 'access' ? tool : null
+    if (tool === 'access') accessSection.value = 'users'
+    failure.value = ''
+    void focusHeading()
+  })
 }
 
-async function changeAccessVisibility(view: typeof accessView.value) {
-  accessView.value = view
-  if (view === 'access') accessSection.value = 'users'
-  confirmingIdentity.value = false
-  failure.value = ''
-  await focusHeading()
+function selectAccessSection(section: typeof accessSection.value) {
+  if (section === accessSection.value) return
+  navigate(() => {
+    editingState.value = { dirty: false, busy: false }
+    accessSection.value = section
+  })
 }
 
 async function changeRestrictedEntry(mode: RestrictedEntryMode | null) {
@@ -287,6 +314,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   active = false
   csrf.value = ''
+  window.removeEventListener('beforeunload', warnBeforeLeaving)
   if (retryTimer) clearTimeout(retryTimer)
 })
 </script>
@@ -313,9 +341,25 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <nav v-if="phase === 'full' && !confirmingIdentity" class="admin-navigation" :aria-label="t('admin.name')">
+      <button
+        v-for="tool in tools" :key="tool" type="button" :aria-current="activeTool === tool ? 'page' : undefined"
+        :disabled="blocked || editingState.busy" @click="selectTool(tool)"
+      >{{ t(`admin.${tool}`) }}</button>
+      <button type="button" class="admin-sign-out" :disabled="blocked || editingState.busy" @click="navigate(() => { void submit('logout') })">
+        {{ t('admin.sign_out') }}
+      </button>
+    </nav>
+    <dialog ref="leaveDialog" class="admin-leave" aria-labelledby="admin-leave-title" @close="leaveAction = undefined">
+      <h2 id="admin-leave-title">{{ t('admin.leave_unsaved') }}</h2>
+      <form method="dialog">
+        <button type="submit" autofocus>{{ t('admin.stay_editing') }}</button>
+        <button type="button" @click="completeNavigation">{{ t('admin.discard_changes') }}</button>
+      </form>
+    </dialog>
     <section
       class="admin-card"
-      :class="{ 'admin-card--wide': (settingsOpen || builderOpen || accessView) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
+      :class="{ 'admin-card--signed-in': phase === 'full' && !confirmingIdentity, 'admin-card--wide': (settingsOpen || builderOpen || accessView) && !confirmingIdentity, 'admin-card--workspace': contentOpen && !confirmingIdentity }"
       aria-labelledby="admin-heading"
     >
       <h1 id="admin-heading" ref="heading" tabindex="-1">{{ localizedTitle }}</h1>
@@ -361,39 +405,32 @@ onBeforeUnmount(() => {
         <PortalSettings
           v-if="settingsOpen" v-show="!confirmingIdentity"
           :csrf="csrf" :translate="t" @published="refreshPublishedCatalog"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeSettingsVisibility(false)"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
         />
         <AdminContentWorkspace
           v-if="contentOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeContentVisibility(false)"
+          :default-language="catalog.settings.default_language"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
         />
         <AdminTypeBuilder
           v-if="builderOpen" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeBuilderVisibility(false)"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
         />
         <AdminAccount
           v-if="accessView === 'account'" v-show="!confirmingIdentity" :csrf="csrf" :ui-language="locale" :translate="t"
-          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="changeAccessVisibility(null)"
+          @step-up="confirmActionIdentity" @session-changed="refresh(true)" @close="selectTool()" @editing-state="editingState = $event"
         />
         <section v-if="accessView === 'access'" v-show="!confirmingIdentity" class="access-navigation">
           <nav :aria-label="t('admin.access')" class="access-navigation">
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'users'" @click="accessSection = 'users'">{{ t('admin.users') }}</button>
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'roles'" @click="accessSection = 'roles'">{{ t('admin.roles') }}</button>
-            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'audit'" @click="accessSection = 'audit'">{{ t('admin.audit') }}</button>
-            <button type="button" class="admin-secondary" @click="changeAccessVisibility(null)">{{ t('admin.close') }}</button>
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'users'" @click="selectAccessSection('users')">{{ t('admin.users') }}</button>
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'roles'" @click="selectAccessSection('roles')">{{ t('admin.roles') }}</button>
+            <button type="button" class="admin-secondary" :aria-pressed="accessSection === 'audit'" @click="selectAccessSection('audit')">{{ t('admin.audit') }}</button>
+            <button type="button" class="admin-secondary" @click="selectTool()">{{ t('admin.close') }}</button>
           </nav>
-          <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" />
-          <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" />
+          <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
+          <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
           <AdminAudit v-else :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
         </section>
-        <template v-if="!settingsOpen && !contentOpen && !builderOpen && !accessView && !confirmingIdentity">
-          <button type="button" :disabled="blocked" @click="changeContentVisibility(true)">{{ t('admin.content') }}</button>
-          <button type="button" :disabled="blocked" @click="changeBuilderVisibility(true)">{{ t('admin.registry') }}</button>
-          <button type="button" :disabled="blocked" @click="changeSettingsVisibility(true)">{{ t('admin.settings') }}</button>
-          <button type="button" :disabled="blocked" @click="changeAccessVisibility('account')">{{ t('admin.account') }}</button>
-          <button type="button" :disabled="blocked" @click="changeAccessVisibility('access')">{{ t('admin.access') }}</button>
-          <button type="button" class="admin-secondary" :disabled="blocked" @click="submit('logout')">{{ t('admin.sign_out') }}</button>
-        </template>
       </template>
       <template v-else-if="phase">
         <p>{{ t('admin.restricted') }}</p>

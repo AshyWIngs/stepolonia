@@ -139,8 +139,8 @@ async function writeAsAuthor(page, type, slug, title) {
   const { item_id: id } = await created.json()
   const workspace = page.getByRole('region', { name: 'Draft editor', exact: true })
   await workspace.getByLabel('Language', { exact: true }).selectOption('en')
-  await workspace.getByLabel(/^title(?: \(|$)/).fill(title)
-  await workspace.getByLabel(/^slug(?: \(|$)/).fill(slug)
+  await workspace.getByLabel(/^Title(?: \(|$)/).fill(title)
+  await workspace.getByLabel(/^URL slug(?: \(|$)/).fill(slug)
   const metadata = await page.evaluate(async path => {
     const response = await fetch(path, { referrerPolicy: 'same-origin' })
     const data = await response.json()
@@ -165,16 +165,16 @@ async function writeAsAuthor(page, type, slug, title) {
 
 async function reopenDraft(page, type, id) {
   await openCollection(page, type)
-  await button(page, id).click()
+  await page.locator(`[data-item-id="${id}"]`).getByRole('button').click()
   const workspace = page.getByRole('region', { name: 'Draft editor', exact: true })
-  await workspace.getByLabel(/^title(?: \(|$)/).waitFor()
+  await workspace.getByLabel(/^Title(?: \(|$)/).waitFor()
   return workspace
 }
 
 async function reviseSlug(page, type, id, slug) {
   const workspace = await reopenDraft(page, type, id)
   await workspace.getByLabel('Language', { exact: true }).selectOption('en')
-  await workspace.getByLabel(/^slug(?: \(|$)/).fill(slug)
+  await workspace.getByLabel(/^URL slug(?: \(|$)/).fill(slug)
   await button(page, 'Save draft').click()
   await page.getByText('Draft saved.', { exact: true }).waitFor()
   await button(page, 'Mark translation ready').click()
@@ -191,7 +191,26 @@ async function manageArticleAssignments(page, id) {
   assert.equal(await editor.isChecked(), false)
   await editor.check()
   await button(page, 'Review assignments').click()
-  await button(page, 'Verify').click()
+  const path = `**/api/v1/admin/content/article/${id}/assignees`
+  const held = Promise.withResolvers()
+  const pending = Promise.withResolvers()
+  const holdReplacement = async route => {
+    if (route.request().method() === 'PUT') {
+      pending.resolve()
+      await held.promise
+    }
+    await route.continue()
+  }
+  await page.route(path, holdReplacement)
+  try {
+    await button(page, 'Verify').click()
+    await pending.promise
+    assert.ok(await button(page, 'Portal settings').isDisabled())
+    assert.ok(await button(page, 'Back to drafts').isDisabled())
+  } finally {
+    held.resolve()
+    await page.unroute(path, holdReplacement)
+  }
   await button(page, 'Assignees').click()
   assert.equal(await author.isChecked(), true)
   assert.equal(await editor.isChecked(), true)

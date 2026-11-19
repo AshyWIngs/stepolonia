@@ -82,7 +82,7 @@ func assertWriteOnlyAdoption(t *testing.T, f draftEditorFixture, server *httptes
 }
 
 func TestAdminDraftUnpublishHTTPSIntegration(t *testing.T) {
-	f := newPublicationFixture(t, publicationEventType, "events")
+	f := newPublicationFixture(t, publicationEventType, publicationEventsNamespace)
 	item := f.prepareDraft(t)
 	f.command(t, f.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
 	f.command(t, f.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)

@@ -234,7 +234,17 @@
     "admin.roles_allow_delegable_content": "Zezwól na nadawanie uprawnień do treści z prawem dalszego delegowania",
     "admin.roles_delegation_scope": "Zakres delegowania",
     "admin.roles_scope_assigned": "Tylko przypisane materiały",
-    "admin.roles_scope_any": "Wszystkie materiały"
+    "admin.roles_scope_any": "Wszystkie materiały",
+    "admin.draft_untitled": "Bez tytułu",
+    "admin.draft_status_published": "Opublikowano:",
+    "admin.draft_status_unpublished": "Brak publikacji",
+    "admin.content_field_title": "Tytuł",
+    "admin.content_field_slug": "Adres URL",
+    "admin.content_field_body": "Treść",
+    "admin.content_field_slug_help": "Użyj małych liter łacińskich, cyfr i łączników.",
+    "admin.leave_unsaved": "Opuścić sekcję bez zapisania zmian?",
+    "admin.stay_editing": "Wróć do edycji",
+    "admin.discard_changes": "Odrzuć zmiany"
   },
   "en": {
     "articles": "Articles",
@@ -471,7 +481,17 @@
     "admin.roles_allow_delegable_content": "Allow issuing delegable content grants",
     "admin.roles_delegation_scope": "Delegation scope",
     "admin.roles_scope_assigned": "Assigned items only",
-    "admin.roles_scope_any": "Any item"
+    "admin.roles_scope_any": "Any item",
+    "admin.draft_untitled": "Untitled",
+    "admin.draft_status_published": "Published:",
+    "admin.draft_status_unpublished": "Unpublished",
+    "admin.content_field_title": "Title",
+    "admin.content_field_slug": "URL slug",
+    "admin.content_field_body": "Body",
+    "admin.content_field_slug_help": "Use lowercase Latin letters, numbers and hyphens.",
+    "admin.leave_unsaved": "Leave this section without saving your changes?",
+    "admin.stay_editing": "Keep editing",
+    "admin.discard_changes": "Discard changes"
   },
   "ru": {
     "articles": "Статьи",
@@ -708,7 +728,17 @@
     "admin.roles_allow_delegable_content": "Разрешить выдачу делегируемых разрешений на контент",
     "admin.roles_delegation_scope": "Область делегирования",
     "admin.roles_scope_assigned": "Только назначенные материалы",
-    "admin.roles_scope_any": "Любые материалы"
+    "admin.roles_scope_any": "Любые материалы",
+    "admin.draft_untitled": "Без названия",
+    "admin.draft_status_published": "Опубликовано:",
+    "admin.draft_status_unpublished": "Не опубликовано",
+    "admin.content_field_title": "Заголовок",
+    "admin.content_field_slug": "Адрес страницы",
+    "admin.content_field_body": "Текст",
+    "admin.content_field_slug_help": "Используйте строчные латинские буквы, цифры и дефисы.",
+    "admin.leave_unsaved": "Покинуть раздел без сохранения изменений?",
+    "admin.stay_editing": "Продолжить редактирование",
+    "admin.discard_changes": "Отменить изменения"
   },
   "kk": {
     "articles": "Мақалалар",
@@ -945,6 +975,16 @@
     "admin.roles_allow_delegable_content": "Тапсыруға болатын контент рұқсаттарын беруге рұқсат беру",
     "admin.roles_delegation_scope": "Тапсыру ауқымы",
     "admin.roles_scope_assigned": "Тек тағайындалған материалдар",
-    "admin.roles_scope_any": "Кез келген материал"
+    "admin.roles_scope_any": "Кез келген материал",
+    "admin.draft_untitled": "Атаусыз",
+    "admin.draft_status_published": "Жарияланған:",
+    "admin.draft_status_unpublished": "Жарияланбаған",
+    "admin.content_field_title": "Тақырып",
+    "admin.content_field_slug": "Бет мекенжайы",
+    "admin.content_field_body": "Мәтін",
+    "admin.content_field_slug_help": "Кіші латын әріптерін, сандарды және дефистерді қолданыңыз.",
+    "admin.leave_unsaved": "Өзгерістерді сақтамай бөлімнен шығу керек пе?",
+    "admin.stay_editing": "Өңдеуді жалғастыру",
+    "admin.discard_changes": "Өзгерістерден бас тарту"
   }
 }
