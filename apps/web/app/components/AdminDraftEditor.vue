@@ -67,7 +67,7 @@ const missingAddress = computed(() => {
   if (!source?.locales || source.version !== metadata.value?.version || !field?.editable || !title || !activeLanguage(locale)) return
   if (valueFor(field, locale) !== undefined) return
   const text = valueFor(title, locale)
-  const value = typeof text === 'string' ? suggestSlug(text, locale, props.slugRules, props.itemId, field.config.max_length) : ''
+  const value = typeof text === 'string' ? suggestSlug(text, locale, props.slugRules, field.config.max_length, field.config.min_length) : ''
   return value ? { field, locale, value } : undefined
 })
 const needsSave = computed(() => edits.value.size > 0 || Boolean(missingAddress.value))
@@ -279,7 +279,7 @@ function edit(field: EditorField, locale: string, value: Scalar | undefined) {
     edits.value.delete(editKey(slug, locale))
     return
   }
-  writeEdit(slug, locale, suggestSlug(value, locale, props.slugRules, props.itemId, slug.config.max_length))
+  writeEdit(slug, locale, suggestSlug(value, locale, props.slugRules, slug.config.max_length, slug.config.min_length))
 }
 
 function clearRelation(field: EditorField, locale: string) {
@@ -377,7 +377,7 @@ async function applyCandidate(locales: string[], publish: boolean) {
 
 async function publishCandidate(source: DraftSummary, locales: string[]) {
   try {
-    await sendCandidateCommand(source, 'publish', { intended_locales: locales })
+    await sendCandidateCommand(source, 'publish', { intended_locales: locales, allocate_slug: true })
   }
   catch (error: unknown) {
     await reconcileCandidate()

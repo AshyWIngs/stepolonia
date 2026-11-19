@@ -1,4 +1,5 @@
 import { administrationCommand, administrationRequest } from './admin-request'
+import { ownValue } from './draft-edit-buffer'
 
 const usersPath = '/api/v1/admin/users'
 const rolesPath = '/api/v1/admin/roles'
@@ -17,6 +18,7 @@ export interface AccessRole {
   version: number
   grants: RoleGrant[]
   collection_keys?: Record<string, string>
+  display_names?: Record<string, string>
 }
 
 export interface RoleGrant {
@@ -44,6 +46,7 @@ export interface NamedSetOption {
 
 export interface Membership extends NamedSetOption {
   name: string
+  display_names?: Record<string, string>
   domain: 'content' | 'structure' | 'settings' | 'access' | 'mixed' | 'other'
 }
 
@@ -106,6 +109,20 @@ export function listAccessRoles(offset = 0) {
 
 export function readAccessRole(role: AccessRole) {
   return administrationRequest<AccessRole>(recordPath(rolesPath, role.id))
+}
+
+type NamedRole = Pick<AccessRole, 'id' | 'name' | 'display_names'>
+
+export function roleDisplayName(role: NamedRole, language: string, peers: readonly NamedRole[] = []) {
+  const label = ownValue(role.display_names, language) || role.name
+  return label !== role.name && peers.some(peer => peer.id !== role.id && (ownValue(peer.display_names, language) || peer.name) === label)
+    ? `${label} · ${role.name}` : label
+}
+
+export function saveRoleDisplayName(role: AccessRole, language: string, label: string | null, csrf: string) {
+  return administrationRequest<AccessRole>(`${recordPath(rolesPath, role.id)}/display-name`, csrf, 'POST', {
+    expected_version: role.version, language_code: language, display_name: label,
+  })
 }
 
 export function roleGrantOptions() {

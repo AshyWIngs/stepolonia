@@ -18,6 +18,7 @@ type RoleMembershipSet struct {
 // RoleMembershipOption identifies a role and its display category for assignment.
 type RoleMembershipOption struct {
 	ID, Name, State, Domain string
+	DisplayNames            map[string]string
 }
 
 // ReadUserRoleMemberships checks the same effective assignment authority and
@@ -79,7 +80,24 @@ func readRoleMembershipOptions(ctx context.Context, tx *sql.Tx, user User, actor
 		out.Options = append(out.Options, option)
 	}
 	slices.Sort(out.RoleIDs)
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return RoleMembershipSet{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return RoleMembershipSet{}, err
+	}
+	ids := make([]string, 0, len(out.Options))
+	for _, option := range out.Options {
+		ids = append(ids, option.ID)
+	}
+	labels, err := roleDisplayNames(ctx, tx, ids)
+	if err != nil {
+		return RoleMembershipSet{}, err
+	}
+	for i := range out.Options {
+		out.Options[i].DisplayNames = labels[out.Options[i].ID]
+	}
+	return out, nil
 }
 
 func membershipDomain(policy []accessGrant) string {

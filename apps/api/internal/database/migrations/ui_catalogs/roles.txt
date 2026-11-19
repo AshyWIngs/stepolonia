@@ -423,3 +423,27 @@ Any item
 Wszystkie materiały
 Любые материалы
 Кез келген материал
+
+admin.role_permission_texts
+Translate permission labels
+Tłumaczenia nazw uprawnień
+Переводы разрешений
+Рұқсат атауларының аудармалары
+
+admin.role_names_title
+Role names by language
+Nazwy roli w poszczególnych językach
+Названия роли на разных языках
+Рөлдің әр тілдегі атауы
+
+admin.role_names_save
+Save role name translation
+Zapisz tłumaczenie nazwy roli
+Сохранить перевод названия роли
+Рөл атауының аудармасын сақтау
+
+admin.role_names_help
+Leave the translation empty to use the role's default name.
+Pozostaw tłumaczenie puste, aby użyć domyślnej nazwy roli.
+Оставьте перевод пустым, чтобы использовать основное название роли.
+Рөлдің негізгі атауын қолдану үшін аударма өрісін бос қалдырыңыз.

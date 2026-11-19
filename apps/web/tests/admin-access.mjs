@@ -28,10 +28,6 @@ export function waitForContentMutation(page, path, method, status) {
     new URL(response.url()).pathname === path && response.status() === status)
 }
 
-export function expectedTitleSlug(base, id) {
-  return `${base}-${id.replaceAll('-', '')}`
-}
-
 export async function assertSavedAddress(page, type, id, save, locale, slug) {
   const saving = waitForContentMutation(page, `/api/v1/admin/content/${type}/${id}`, 'PATCH', 200)
   await save.click()
@@ -109,6 +105,22 @@ async function proveIndependentDelegationControls(page) {
   assert.equal(grants[0].may_delegate_content, true)
   assert.equal(grants[0].object_ceiling, 'assigned')
   await verifyRoleChangePayload(page, id)
+  await verifyRoleNames(page, id)
+}
+
+async function verifyRoleNames(page, id) {
+  await button(page, 'Role names by language').click()
+  const field = page.locator('#role-name-translation')
+  await field.waitFor()
+  const translation = 'Delegation policy reviewer'
+  await field.fill(translation)
+  const result = await pageResponse(page, `/api/v1/admin/roles/${id}/display-name`, 200,
+    () => button(page, 'Save role name translation').click())
+  assert.equal((await result.json()).display_names.en, translation)
+  await heading(page, translation).waitFor()
+  await button(page, 'Cancel').click()
+  await page.reload()
+  await button(page, translation).waitFor()
 }
 
 async function verifyRoleChangePayload(page, id) {
@@ -295,7 +307,7 @@ async function writeAsAuthor(page, type, title, slugBase) {
   const control = workspace.locator(`[id="material-field-${extra.id}"]`)
   assert.ok(await control.isVisible(), JSON.stringify({ field: extra, labels: await workspace.locator('label').allTextContents() }))
   await control.fill('The author saved this text.')
-  await assertSavedAddress(page, type, id, button(page, 'Save draft'), 'en', expectedTitleSlug(slugBase, id))
+  await assertSavedAddress(page, type, id, button(page, 'Save draft'), 'en', slugBase)
   await page.getByText('Draft saved.', { exact: true }).waitFor()
   assert.equal(await button(page, 'Publish translations').count(), 0)
   await button(page, 'Check translation').click()
@@ -463,18 +475,17 @@ export async function verifyAccessAdministration(browser, page, origin, assertTh
 
     await eachInOrder([['article', 'author-feature', 'Author feature'], ['event', 'editor-workshop', 'Editor workshop']], async ([type, slugBase, title]) => {
       const id = await writeAsAuthor(author, type, title, slugBase)
-      const slug = expectedTitleSlug(slugBase, id)
       if (type === 'article') await manageArticleAssignments(page, id)
-      await publishAsEditor(editor, visitor.request, type, id, slug, title)
-      const canonical = expectedTitleSlug(`${slugBase}-revised`, id)
+      await publishAsEditor(editor, visitor.request, type, id, slugBase, title)
+      const canonical = `${slugBase}-revised`
       const renamedTitle = `${title} revised`
       await renameDraft(author, type, id, renamedTitle, canonical)
       await publishAsEditor(editor, visitor.request, type, id, canonical, renamedTitle)
-      const paths = [publicLink(type, slug), publicLink(type, canonical)]
+      const paths = [publicLink(type, slugBase), publicLink(type, canonical)]
       const redirect = await visitor.request.get(paths[0], { maxRedirects: 0 })
       assert.equal(redirect.status(), 301)
       assert.equal(redirect.headers().location, paths[1])
-      const apiRedirect = await visitor.request.get(`/api/v1/content/${type}/${slug}?language=en`, { maxRedirects: 0 })
+      const apiRedirect = await visitor.request.get(`/api/v1/content/${type}/${slugBase}?language=en`, { maxRedirects: 0 })
       assert.equal(apiRedirect.status(), 301)
       assert.equal(apiRedirect.headers().location, `/api/v1/content/${type}/${canonical}?language=en`)
       await unpublishAsEditor(editor, visitor.request, type, id, paths)

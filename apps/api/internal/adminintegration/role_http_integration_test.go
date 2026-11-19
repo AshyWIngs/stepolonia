@@ -113,6 +113,68 @@ WHERE target_id=$1 AND operation='roles.edited' AND request_id=$2)`, id, request
 	}
 }
 
+func TestAuthRoleDisplayNameHTTPSIntegration(t *testing.T) {
+	f := newRestrictedAuthHTTPFixture(t)
+	_, err := f.state.db.Exec(`UPDATE public.languages SET is_enabled=true WHERE code=$1`, "pl")
+	requireNoError(t, err)
+	admin := authFull(t, f.state)
+	created, _ := f.roleHTTP(t, http.MethodPost, rolesHTTPPath, `{"name":"Reviewers","grants":[]}`, admin, http.StatusOK)
+	id := created["id"].(string)
+	path := rolesHTTPPath + "/" + id
+	labelling := path + "/display-name"
+	const body = `{"expected_version":1,"language_code":"pl","display_name":"Recenzenci"}`
+	noCSRF := admin
+	noCSRF.CSRF = ""
+	f.roleHTTP(t, http.MethodPost, labelling, body, noCSRF, http.StatusForbidden)
+	for _, input := range []string{
+		`{"expected_version":1,"language_code":"pl"}`,
+		`{"expected_version":1,"language_code":"pl","display_name":null,"display_name":"Duplicated"}`,
+		`{"expected_version":1,"language_code":"unknown","display_name":"Recenzenci"}`,
+		`{"expected_version":1,"language_code":"pl","display_name":" Recenzenci "}`,
+	} {
+		f.roleHTTP(t, http.MethodPost, labelling, input, admin, http.StatusBadRequest)
+	}
+	saved, requestID := f.roleHTTP(t, http.MethodPost, labelling, body, admin, http.StatusOK)
+	if saved["version"] != float64(2) || saved["name"] != created["name"] || !reflect.DeepEqual(saved["grants"], created["grants"]) {
+		t.Fatal("setting a role display name changed stored policy")
+	}
+	if !reflect.DeepEqual(saved["display_names"], map[string]any{"pl": "Recenzenci"}) {
+		t.Fatal("new role label was not returned")
+	}
+	var audited bool
+	requireNoError(t, f.state.db.QueryRow(`SELECT EXISTS(
+ SELECT 1 FROM public.security_audit WHERE target_id=$1 AND operation='roles.edited' AND request_id=$2
+ )`, id, requestID).Scan(&audited))
+	if !audited {
+		t.Fatal("setting a role display name lacked atomic audit correlation")
+	}
+	f.roleHTTP(t, http.MethodPost, labelling, body, admin, http.StatusConflict)
+	details, _ := f.roleHTTP(t, http.MethodGet, path, "", admin, http.StatusOK)
+	if !reflect.DeepEqual(details["display_names"], saved["display_names"]) {
+		t.Fatal("role read omitted the saved localized label")
+	}
+	membership := f.lifecycleRead(t, onboardingUsersPath+"/"+f.state.user+"/roles", admin, http.StatusOK)
+	found := false
+	for _, option := range membership["options"].([]any) {
+		row := option.(map[string]any)
+		if row["id"] == id && reflect.DeepEqual(row["display_names"], saved["display_names"]) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("membership options omitted the saved localized label")
+	}
+	removed, _ := f.roleHTTP(t, http.MethodPost, labelling, `{"expected_version":2,"language_code":"pl","display_name":null}`, admin, http.StatusOK)
+	if _, exists := removed["display_names"]; exists || removed["version"] != float64(3) {
+		t.Fatal("deleting a localized role label did not restore base-name fallback")
+	}
+	expireSessionStepUp(t, f.state.db, admin.Token)
+	stale, _ := f.roleHTTP(t, http.MethodPost, labelling, `{"expected_version":3,"language_code":"pl","display_name":"Recenzenci"}`, admin, http.StatusForbidden)
+	if stale["code"] != stepUpRequiredProblem {
+		t.Fatal("role display name command did not require fresh MFA")
+	}
+}
+
 func assertMalformedRoleChanges(t *testing.T, f authHTTPFixture, path string, full identity.SessionTokens) {
 	t.Helper()
 	for _, body := range []string{

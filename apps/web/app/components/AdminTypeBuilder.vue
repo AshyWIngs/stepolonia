@@ -440,7 +440,8 @@ function saveNewCollection(fields: RegistryField[]) {
   const name = newName.value.trim()
   if (!name) return
   creationSuffix ??= crypto.randomUUID().replaceAll('-', '').slice(0, 12)
-  const slug = suggestSlug(name, props.uiLanguage, props.slugRules, creationSuffix, 51)
+  const base = suggestSlug(name, props.uiLanguage, props.slugRules, 51 - creationSuffix.length - 1)
+  const slug = `${base}-${creationSuffix}`
   const key = `c_${slug.replaceAll('-', '_')}`
   return createCollection({ ...choice, route_namespace: `collection-${key.replaceAll('_', '-')}` }, fields, initialize.value, props.csrf,
     { type_key: key, display_name: name, icon_svg: iconSvg.value })

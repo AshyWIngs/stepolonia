@@ -167,7 +167,7 @@
 
 .admin-nav-mobile-tools, .admin-nav-rail, .admin-nav-mobile-title { display: none; }
 .admin-nav-children button { font-weight: 500; }
-.admin-navigation .admin-nav-active:not([aria-current]), .admin-navigation button:not([aria-disabled="true"], [aria-current]):hover { background: var(--admin-bg); }
+.admin-navigation .admin-nav-active:not([aria-current]) { background: var(--admin-bg); }
 
 .admin-nav-chevron {
   flex: 0 0 .45rem;
@@ -345,9 +345,25 @@
   color: var(--admin-text);
 }
 
-.admin-shell :focus-visible {
+.admin-shell :deep(:focus-visible) {
   outline: 3px solid var(--admin-focus);
   outline-offset: 3px;
+}
+
+@media (hover: hover) {
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"])) {
+    cursor: pointer;
+  }
+
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"]):hover) {
+    box-shadow: inset 0 0 0 100rem color-mix(in srgb, currentColor 13%, transparent);
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"])) {
+    transition: box-shadow 140ms ease-out;
+  }
 }
 
 .admin-status {

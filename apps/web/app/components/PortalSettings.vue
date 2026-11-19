@@ -6,6 +6,7 @@ import { invalidSlugRuleIndex, normalizeSlugCharacter, type SlugRule } from '~/u
 
 const props = defineProps<{
   page: PortalSettingsPage
+  permissionTexts: boolean
   csrf: string
   uiLanguage: string
   uiMessages: Record<string, string>
@@ -14,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   published: []
   'show-page': [page: PortalSettingsPage]
+  'update:permission-texts': [enabled: boolean]
   'editing-state': [state: { dirty: boolean, busy: boolean }]
   'step-up': []
   'session-changed': []
@@ -958,6 +960,7 @@ onBeforeUnmount(() => {
           ref="translations" v-model:language="selectedLanguage" :languages="editableSettings.languages" :keys="editableSettings.message_keys"
           :messages="messages" :reference="reference" :reference-language="editableSettings.settings.fallback_language"
           :ui-language="uiLanguage" :ui-messages="uiMessages" :disabled-catalogs="disabledCatalogCodes" :translate="translate"
+          :permission-texts="permissionTexts" @update:permission-texts="emit('update:permission-texts', $event)"
           @add-catalog="addCatalog" @remove-catalog="removeCatalog" @update:message="changeMessage"
         />
       </fieldset>

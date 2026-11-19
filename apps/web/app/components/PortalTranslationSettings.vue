@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type { PortalLanguage } from '~/utils/admin-site-settings'
+import { permissionMessagePrefix } from '~/utils/admin-role-rules'
 
 const props = defineProps<{
   languages: PortalLanguage[]
@@ -12,6 +13,7 @@ const props = defineProps<{
   uiLanguage: string
   uiMessages: Record<string, string>
   disabledCatalogs: string[]
+  permissionTexts: boolean
   translate: (key: string) => string
 }>()
 const emit = defineEmits<{
@@ -19,6 +21,7 @@ const emit = defineEmits<{
   'update:message': [key: string, value: string]
   'add-catalog': []
   'remove-catalog': [code: string]
+  'update:permission-texts': [enabled: boolean]
 }>()
 
 const groupLabels = {
@@ -27,6 +30,7 @@ const groupLabels = {
   content: 'admin.settings_content_texts',
   structure: 'admin.settings_structure_texts',
   access: 'admin.settings_access_texts',
+  permissions: 'admin.roles_grants',
   settings: 'admin.settings_settings_texts',
   common: 'admin.settings_admin_texts',
 }
@@ -37,7 +41,7 @@ const settingsControls = new Set([
 ])
 type CatalogGroup = keyof typeof groupLabels
 const query = ref('')
-const group = ref<CatalogGroup>('all')
+const group = ref<CatalogGroup>(props.permissionTexts ? 'permissions' : 'all')
 const missingOnly = ref(false)
 const selected = ref('')
 const input = ref<HTMLTextAreaElement>()
@@ -72,6 +76,14 @@ const duplicateContexts = computed(() => {
 })
 const selectedReference = computed(() => props.language === props.referenceLanguage ? '' : reference.value.get(selected.value))
 watch([query, group, missingOnly, () => props.language], () => { offset.value = 0 })
+watch(group, value => emit('update:permission-texts', value === 'permissions'))
+watch(() => props.permissionTexts, (enabled) => {
+  if (enabled === (group.value === 'permissions')) return
+  query.value = ''
+  missingOnly.value = false
+  selected.value = ''
+  group.value = enabled ? 'permissions' : 'all'
+})
 watch(() => props.language, () => {
   selected.value = ''
 })
@@ -81,10 +93,11 @@ watch(filtered, (keys) => {
 
 function domain(key: string): CatalogGroup {
   if (!key.startsWith('admin.')) return 'public'
+  if (key.startsWith(permissionMessagePrefix)) return 'permissions'
   if (settingsControls.has(key) || /^admin\.(settings|portal|catalog|slug_rules)(?:_|$)/u.test(key)) return 'settings'
   if (/^admin\.(content|draft|field)(?:_|$)/u.test(key)) return 'content'
   if (key === 'admin.workspace_structure' || /^admin\.registry(?:_|$)/u.test(key)) return 'structure'
-  if (/^admin\.(access|users|roles|role_rule|permission|audit|assignees|security|session_policy)(?:[_.]|$)/u.test(key)) return 'access'
+  if (/^admin\.(access|users|roles|role_rule|audit|assignees|security|session_policy)(?:[_.]|$)/u.test(key)) return 'access'
   return 'common'
 }
 

@@ -23,14 +23,19 @@ type publicationCandidate struct {
 	PreviousSchema    int64
 }
 
+type PublicationOptions struct {
+	Locales      []string
+	AllocateSlug bool
+}
+
 func (s *Service) Publish(ctx context.Context, actor Actor, item string, expected, schemaNo int64, intended []string) (DraftState, error) {
 	return s.withCandidate(ctx, actor, string(identity.OpContentPublish), item, expected, schemaNo, func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema) error {
-		return publishCandidate(ctx, tx, state, schema, intended, s.relationAccess(ctx, tx, actor))
+		return publishCandidate(ctx, tx, state, schema, PublicationOptions{Locales: intended}, s.relationAccess(ctx, tx, actor))
 	})
 }
 
-func publishCandidate(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, intended []string, readable relationAccess) error {
-	candidate, err := publicationPlan(ctx, tx, *state, schema, intended)
+func publishCandidate(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, options PublicationOptions, readable relationAccess) error {
+	candidate, err := publicationPlan(ctx, tx, *state, schema, options)
 	if err != nil {
 		return err
 	}
@@ -50,12 +55,12 @@ func publishCandidate(ctx context.Context, tx *sql.Tx, state *DraftState, schema
 	state.PublicationID = id
 	return advanceVersion(ctx, tx, state)
 }
-func publicationPlan(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, intended []string) (publicationCandidate, error) {
+func publicationPlan(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, options PublicationOptions) (publicationCandidate, error) {
 	candidate, err := previousPublication(ctx, tx, state)
 	if err != nil {
 		return candidate, err
 	}
-	if len(intended) == 0 || len(intended) > MaxDraftLocales {
+	if len(options.Locales) == 0 || len(options.Locales) > MaxDraftLocales {
 		return candidate, problem(Validation, "invalid_locales")
 	}
 	if !state.SharedReadySeq.Valid || state.SharedReadySeq.Int64 != state.SharedSeq {
@@ -64,7 +69,7 @@ func publicationPlan(ctx context.Context, tx *sql.Tx, state DraftState, schema T
 	if err := validateValues(schema, scopeShared, state.Shared, true); err != nil {
 		return candidate, err
 	}
-	if err := mergeIntendedLocales(ctx, tx, state, schema, intended, &candidate); err != nil {
+	if err := mergeIntendedLocales(ctx, tx, state, schema, options, &candidate); err != nil {
 		return candidate, err
 	}
 	candidate.Shared = state.Shared
@@ -88,7 +93,7 @@ func readyLocale(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeS
 		return publicationLocale{}, err
 	}
 	var slug string
-	if err := json.Unmarshal(draft.Values[slugFieldKey], &slug); err != nil || !slugPattern.MatchString(slug) || len(slug) > 200 {
+	if err := json.Unmarshal(draft.Values[slugFieldKey], &slug); err != nil || !slugPattern.MatchString(slug) || len(slug) > publicationSlugLimit {
 		return publicationLocale{}, problem(Validation, invalidSlugCode)
 	}
 	return publicationLocale{locale, draft.Values, generation, slug, scopeRelations(state.Relations, locale)}, nil
@@ -177,7 +182,7 @@ func storePublicationLocale(ctx context.Context, tx *sql.Tx, state DraftState, s
 		return err
 	}
 	if owner != state.ItemID {
-		return problem(Conflict, "route_conflict")
+		return problem(Conflict, routeConflictCode)
 	}
 	values, err := json.Marshal(local.Values)
 	if err != nil {
@@ -197,9 +202,9 @@ func storePublicationRelations(ctx context.Context, tx *sql.Tx, state DraftState
 	return nil
 }
 
-func mergeIntendedLocales(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, intended []string, candidate *publicationCandidate) error {
+func mergeIntendedLocales(ctx context.Context, tx *sql.Tx, state DraftState, schema TypeSchema, options PublicationOptions, candidate *publicationCandidate) error {
 	seen := map[string]bool{}
-	for _, locale := range intended {
+	for _, locale := range options.Locales {
 		if seen[locale] {
 			return problem(Validation, "invalid_locales")
 		}
@@ -207,6 +212,11 @@ func mergeIntendedLocales(ctx context.Context, tx *sql.Tx, state DraftState, sch
 		local, err := readyLocale(ctx, tx, state, schema, locale)
 		if err != nil {
 			return err
+		}
+		if options.AllocateSlug {
+			if err := allocatePublicationSlug(ctx, tx, state.ItemID, schema, &local); err != nil {
+				return err
+			}
 		}
 		candidate.Locales[locale] = local
 	}

@@ -27,6 +27,26 @@ CREATE TABLE public.roles (
     CONSTRAINT roles_version_check CHECK (version > 0)
 );
 
+CREATE TABLE public.role_display_names (
+    role_id uuid NOT NULL,
+    language_code text COLLATE "C" NOT NULL,
+    display_name text NOT NULL,
+    CONSTRAINT role_display_names_pkey PRIMARY KEY (role_id, language_code),
+    CONSTRAINT role_display_names_role_fkey FOREIGN KEY (
+        role_id
+    ) REFERENCES public.roles (id) ON DELETE CASCADE,
+    CONSTRAINT role_display_names_language_fkey FOREIGN KEY (
+        language_code
+    ) REFERENCES public.languages (code) ON DELETE RESTRICT,
+    CONSTRAINT role_display_names_text_check CHECK (
+        char_length(display_name) BETWEEN 1 AND 128
+        AND display_name !~ '(^[[:space:]]|[[:space:]]$|[[:cntrl:]])'
+    )
+);
+
+COMMENT ON TABLE public.role_display_names IS
+'Localized role labels. Roles retain their base names and authorization.';
+
 CREATE TABLE public.user_roles (
     user_id uuid NOT NULL,
     role_id uuid NOT NULL,
@@ -297,6 +317,10 @@ CREATE TRIGGER roles_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.roles
 FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
 
+CREATE TRIGGER role_display_names_write_mutex
+BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.role_display_names
+FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
+
 CREATE TRIGGER user_roles_write_mutex
 BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.user_roles
 FOR EACH STATEMENT EXECUTE FUNCTION public.installation_write_mutex();
@@ -322,6 +346,7 @@ EXECUTE FUNCTION public.installation_write_mutex();
 
 REVOKE ALL ON public.grant_fields,
 public.roles,
+public.role_display_names,
 public.user_roles,
 public.permission_operations,
 public.role_grants FROM public,
@@ -339,6 +364,9 @@ GRANT INSERT (id, name, self_access_user_id, self_access_type_id)
 ON public.roles TO sp_security;
 GRANT INSERT ON public.role_grants, public.grant_fields TO sp_security;
 GRANT UPDATE (name, state, version) ON public.roles TO sp_security;
+GRANT SELECT, INSERT, DELETE ON public.role_display_names TO sp_security;
+GRANT UPDATE (display_name) ON public.role_display_names TO sp_security;
+GRANT SELECT ON public.public_languages TO sp_security;
 GRANT DELETE ON public.role_grants, public.grant_fields TO sp_security;
 GRANT INSERT, DELETE ON public.user_roles TO sp_security;
 GRANT SELECT (id) ON public.content_types TO sp_security;
@@ -383,6 +411,8 @@ DROP TABLE public.grant_fields;
 DROP TABLE public.role_grants;
 DROP TABLE public.permission_operations;
 DROP TABLE public.user_roles;
+DROP TABLE public.role_display_names;
+REVOKE SELECT ON public.public_languages FROM sp_security;
 DROP TABLE public.roles;
 DROP FUNCTION public.guard_bound_role_grant();
 DROP FUNCTION public.guard_bound_role_membership();

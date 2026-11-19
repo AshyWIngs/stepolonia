@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { accessRoleChanges, changeAccessRole, copyAccessRole, createAccessRole, listAccessRoles, readAccessRole, roleGrantOptions, updateRoleState } from '~/utils/admin-access'
+import { accessRoleChanges, changeAccessRole, copyAccessRole, createAccessRole, listAccessRoles, readAccessRole, roleDisplayName, roleGrantOptions, updateRoleState } from '~/utils/admin-access'
 import type { AccessRole, RoleAction, RoleGrant, RoleGrantOption } from '~/utils/admin-access'
 import { useAccessActions } from '~/utils/admin-access-feedback'
 import { collectionName, groupRules, operationName, ruleDomain, ruleKey, ruleScope } from '~/utils/admin-role-rules'
 
 type RoleEditorMode = 'edit' | 'create' | 'copy'
 
-const props = defineProps<{ csrf: string, translate: (key: string) => string }>()
-const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
+const props = defineProps<{ csrf: string, uiLanguage: string, translate: (key: string) => string }>()
+const emit = defineEmits<{ 'step-up': [], 'session-changed': [], 'permission-texts': [], 'editing-state': [state: { dirty: boolean, busy: boolean }] }>()
 const roles = ref<AccessRole[]>([])
 const selected = ref<AccessRole>()
 const next = ref<number | null>(null)
@@ -21,7 +21,10 @@ const nameField = ref<HTMLInputElement>()
 const staged = ref<RoleGrant[]>([])
 const options = ref<RoleGrantOption[]>([])
 const confirmCommand = ref<RoleAction>()
-watch([() => Boolean(mode.value), busy], ([edited, saving]) => {
+const namesOpen = ref(false)
+const namesState = ref({ dirty: false, busy: false })
+const controlsLocked = computed(() => busy.value || Boolean(mode.value) || namesOpen.value)
+watch([() => Boolean(mode.value) || namesState.value.dirty, () => busy.value || namesState.value.busy], ([edited, saving]) => {
   emit('editing-state', { dirty: edited, busy: saving })
 })
 const groupedRoles = computed(() => groupRules(roles.value, (role) => {
@@ -61,6 +64,18 @@ async function select(role: AccessRole) {
   feedback.value = ''
   await nextTick()
   if (active.value) heading.value?.focus()
+}
+
+function updateDisplayNames(updated: AccessRole) {
+  selected.value = updated
+  roles.value = roles.value.map(role => role.id === updated.id ? updated : role)
+}
+
+async function closeNames() {
+  namesOpen.value = false
+  namesState.value = { dirty: false, busy: false }
+  await nextTick()
+  heading.value?.focus()
 }
 
 function startEdit(value: RoleEditorMode) {
@@ -159,24 +174,27 @@ onMounted(() => { void run(() => load()) })
     <p v-if="feedback"><output>{{ translate(feedback) }}</output></p>
     <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <div class="access-actions">
-      <button type="button" :disabled="busy || Boolean(mode)" @click="startEdit('create')">{{ translate('admin.roles_create') }}</button>
-      <button type="button" :disabled="busy" @click="reload">{{ translate('admin.access_reload') }}</button>
+      <button type="button" :disabled="controlsLocked" @click="startEdit('create')">{{ translate('admin.roles_create') }}</button>
+      <button type="button" :disabled="busy || namesOpen" @click="reload">{{ translate('admin.access_reload') }}</button>
+      <button type="button" :disabled="busy || namesState.busy" @click="emit('permission-texts')">{{ translate('admin.role_permission_texts') }}</button>
     </div>
     <section v-for="[domain, entries] in groupedRoles" :key="domain" class="role-directory">
       <h3>{{ translate(`admin.role_rule_group_${domain}`) }}</h3>
       <ul>
         <li v-for="role in entries" :key="role.id">
-          <button type="button" :disabled="busy || Boolean(mode)" :aria-pressed="role.id === selected?.id" @click="select(role)">{{ role.name }}</button>
+          <button type="button" :disabled="controlsLocked" :aria-pressed="role.id === selected?.id" @click="select(role)">
+            <bdi>{{ roleDisplayName(role, uiLanguage, roles) }}</bdi>
+          </button>
           <small>{{ translate(`admin.access_state_${role.state}`) }}</small>
         </li>
       </ul>
     </section>
     <div class="access-actions">
-      <button v-if="offset" type="button" :disabled="busy || Boolean(mode)" @click="run(() => load(Math.max(0, offset - 20)))">{{ translate('previous') }}</button>
-      <button v-if="next !== null" type="button" :disabled="busy || Boolean(mode)" @click="run(() => load(next ?? 0))">{{ translate('next') }}</button>
+      <button v-if="offset" type="button" :disabled="controlsLocked" @click="run(() => load(Math.max(0, offset - 20)))">{{ translate('previous') }}</button>
+      <button v-if="next !== null" type="button" :disabled="controlsLocked" @click="run(() => load(next ?? 0))">{{ translate('next') }}</button>
     </div>
     <section v-if="selected && mode !== 'create'" aria-labelledby="access-role-title">
-      <h3 id="access-role-title" ref="heading" tabindex="-1">{{ selected.name }}</h3>
+      <h3 id="access-role-title" ref="heading" tabindex="-1"><bdi>{{ roleDisplayName(selected, uiLanguage) }}</bdi></h3>
       <p>{{ translate(`admin.access_state_${selected.state}`) }}</p>
       <div v-if="!mode" class="role-summary">
         <section v-for="[domain, grants] in groupedGrants" :key="domain">
@@ -186,13 +204,19 @@ onMounted(() => { void run(() => load()) })
           </ul>
         </section>
       </div>
-      <div v-if="!mode && !confirmCommand" class="access-actions">
+      <div v-if="!mode && !confirmCommand && !namesOpen" class="access-actions">
         <button type="button" :disabled="busy" @click="startEdit('edit')">{{ translate('admin.roles_edit') }}</button>
+        <button type="button" :disabled="busy" @click="namesOpen = true">{{ translate('admin.role_names_title') }}</button>
         <button type="button" :disabled="busy" @click="startEdit('copy')">{{ translate('admin.roles_copy') }}</button>
         <button v-for="action in actions" :key="action" type="button" :disabled="busy" @click="confirmCommand = action">
           {{ translate(`admin.access_${action}`) }}
         </button>
       </div>
+      <AdminRoleNames
+        v-if="namesOpen" :role="selected" :csrf="csrf" :ui-language="uiLanguage" :translate="translate"
+        @saved="updateDisplayNames" @close="closeNames" @editing-state="namesState = $event"
+        @step-up="emit('step-up')" @session-changed="emit('session-changed')"
+      />
       <div v-if="confirmCommand" class="access-confirm">
         <p>{{ translate(`admin.roles_confirm_${confirmCommand}`) }}</p>
         <div class="access-actions">

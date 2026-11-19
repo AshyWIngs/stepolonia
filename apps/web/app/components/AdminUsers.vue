@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { changeUserState, createAccessUser, issueInvitation, listAccessUsers, readMembership, replaceMembership } from '~/utils/admin-access'
+import { changeUserState, createAccessUser, issueInvitation, listAccessUsers, readMembership, replaceMembership, roleDisplayName } from '~/utils/admin-access'
 import type { AccessUser, Membership, MembershipSet } from '~/utils/admin-access'
 import { useAccessActions } from '~/utils/admin-access-feedback'
 import { AdminContentError } from '~/utils/admin-request'
@@ -257,7 +257,7 @@ onBeforeUnmount(() => { issue.value = undefined })
                 <tbody>
                   <tr v-for="role in group.roles" :key="role.id">
                     <th scope="row">
-                      <bdi :id="`membership-role-${role.id}`">{{ role.name }}</bdi>
+                      <bdi :id="`membership-role-${role.id}`">{{ roleDisplayName(role, uiLanguage, membership.options) }}</bdi>
                       <small>{{ translate(`admin.access_state_${role.state}`) }}</small>
                     </th>
                     <td>

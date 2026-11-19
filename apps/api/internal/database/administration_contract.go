@@ -38,7 +38,7 @@ func checkAdministrationPrivileges(ctx context.Context, tx *sql.Tx) error {
 	err := tx.QueryRowContext(ctx, `WITH objects AS (
  SELECT oid,relowner,relacl FROM pg_catalog.pg_class
  WHERE relnamespace='public'::regnamespace AND relname IN
- ('security_state','session_policy','auth_rate_policies','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','user_roles','permission_operations','role_grants','sessions','recovery_attempts','auth_attempt_buckets','onboarding_tokens','enrollment_attempts','content_item_assignments')
+ ('security_state','session_policy','auth_rate_policies','mfa_totp','recovery_codes','security_audit','grant_fields','users','roles','role_display_names','user_roles','permission_operations','role_grants','sessions','recovery_attempts','auth_attempt_buckets','onboarding_tokens','enrollment_attempts','content_item_assignments')
  ) SELECT EXISTS (
  SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname='sp_security'
  AND NOT (r.rolcanlogin OR r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)

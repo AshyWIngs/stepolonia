@@ -26,8 +26,19 @@ func TestPrivateRolesContract(t *testing.T) {
 		t.Fatal("role edit promises cookie mutation")
 	}
 	role := doc.Components.Schemas[roleSchema]
-	if len(role.Properties) != 6 || *role.Properties["grants"].MaxItems != 64 {
+	if len(role.Properties) != 7 || *role.Properties["grants"].MaxItems != 64 {
 		t.Fatal("safe role projection or policy cap drifted")
+	}
+	for _, name := range []string{roleSchema, "RoleMembershipOption"} {
+		schema := doc.Components.Schemas[name]
+		labels := schema.Properties["display_names"]
+		if labels == nil || labels.Type != huma.TypeObject || slices.Contains(schema.Required, "display_names") {
+			t.Fatal("role display names must be optional localized maps", name)
+		}
+	}
+	methods := doc.Paths[rolePath+"/display-name"]
+	if len(methods) != 1 || methods["post"].OperationID != roleDisplayNameOperation {
+		t.Fatal("role display name command drifted")
 	}
 	assertRoleCollectionKeyContract(t, doc)
 }

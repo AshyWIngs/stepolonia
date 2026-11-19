@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useAsyncData, useHeadSafe, useI18n, useResponseHeader } from '#imports'
+import { useAsyncData, useHeadSafe, useI18n, useResponseHeader, useRoute, useRouter } from '#imports'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AdminAuthError, isAdminPreauthConflict, restoreAdminSession, submitAdminAuth } from '~/utils/admin-auth'
 import type { AdminAuthAction, AdminSessionKind, RestrictedEntryMode } from '~/utils/admin-auth'
@@ -18,6 +18,8 @@ defineOptions({ name: 'AdminSignInPage' })
 const savedLanguage = usePortalLanguagePreference()
 const acceptedLanguage = usePortalAcceptLanguage()
 const { client, request } = usePublicApi()
+const route = useRoute()
+const router = useRouter()
 
 async function loadCatalog(language?: string | null) {
   let result = await request(() => client.getSite(language ? { query: { lang: language } } : undefined))
@@ -95,6 +97,7 @@ let identityRetryTimer: ReturnType<typeof setTimeout> | undefined
 let active = true
 
 const domains = ['content', 'registry', 'settings', 'localization', 'access'] as const
+const createCollectionView = 'new-collection'
 type AdminTool = typeof domains[number] | 'account' | 'signed_in'
 const activeTool = ref<AdminTool>('signed_in')
 const expandedTool = ref<AdminTool>()
@@ -114,6 +117,7 @@ const collectionNavigationError = ref('')
 const collectionPageError = ref('')
 let collectionNavigationRequest = 0
 const portalPage = ref<PortalSettingsPage>('identity')
+const permissionTexts = ref(false)
 const accessPages = ['users', 'roles', 'audit', 'security', 'rate_limits'] as const
 const portalPages = Object.keys(portalSettingsPages) as PortalSettingsPage[]
 const workspaceOpen = computed(() => phase.value === 'full')
@@ -132,7 +136,7 @@ watch(() => editingState.value.dirty, dirty => {
   else window.removeEventListener('beforeunload', warnBeforeLeaving)
 })
 
-watch(phase, kind => {
+watch(phase, (kind, previous) => {
   if (kind !== 'full') {
     if (confirmingIdentity.value) void closeIdentityDialog()
     ++collectionNavigationRequest
@@ -146,6 +150,7 @@ watch(phase, kind => {
     contentCollections.value = []
     contentOffset.value = null
   }
+  else if (previous !== 'full') restoreWorkspace()
 })
 
 const title = computed(() => {
@@ -340,6 +345,46 @@ function hasSubpages(tool: AdminTool) {
   return isPortalTool(tool) || tool === 'access' || tool === 'content' || tool === 'registry'
 }
 
+function workspaceView(tool: AdminTool) {
+  if (isPortalTool(tool)) return portalPage.value
+  if (tool === 'access') return accessSection.value
+  if (tool === 'content') return contentSelection.value || undefined
+  if (tool === 'registry') return registryCreating.value ? createCollectionView : registrySelection.value || undefined
+  return undefined
+}
+
+function rememberWorkspace() {
+  const section = activeTool.value === 'signed_in' ? undefined : activeTool.value
+  const view = workspaceView(activeTool.value)
+  const group = view === 'translations' && section === 'localization' && permissionTexts.value ? 'permissions' : undefined
+  if (route.query.section === section && route.query.view === view && route.query.group === group) return
+  void router.replace({ query: { ...route.query, section, view, group }, hash: route.hash })
+}
+
+function restoreWorkspace() {
+  const section = route.query.section
+  const view = route.query.view
+  permissionTexts.value = section === 'localization' && view === 'translations' && route.query.group === 'permissions'
+  const tool = section === 'account' ? section : domains.find(entry => entry === section)
+  if (!tool) {
+    rememberWorkspace()
+    return
+  }
+  if (isPortalTool(tool)) {
+    const page = portalPages.find(entry => entry === view && portalSettingsPages[entry].section === tool)
+    openPortalPage(page ?? (tool === 'settings' ? 'identity' : 'languages'), false)
+    return
+  }
+  const collection = typeof view === 'string' && view.length <= 128 ? view : ''
+  if (tool === 'access') accessSection.value = accessPages.find(page => page === view) ?? 'users'
+  if (tool === 'content') contentSelection.value = collection
+  if (tool === 'registry') {
+    registryCreating.value = view === createCollectionView
+    registrySelection.value = registryCreating.value ? '' : collection
+  }
+  openTool(tool, false)
+}
+
 function openTool(tool: AdminTool, moveFocus = true) {
   activeTool.value = tool
   expandedTool.value = hasSubpages(tool) ? tool : undefined
@@ -354,6 +399,7 @@ function openTool(tool: AdminTool, moveFocus = true) {
     registry.value = undefined
     void loadCollectionNavigation(tool)
   }
+  rememberWorkspace()
   if (moveFocus) void focusHeading()
 }
 
@@ -384,7 +430,22 @@ function selectTool(tool: AdminTool) {
 }
 
 function selectPortalPage(page: PortalSettingsPage) {
-  if (!navigationLocked.value) openPortalPage(page)
+  if (navigationLocked.value) return
+  if (page === 'translations') permissionTexts.value = false
+  openPortalPage(page)
+}
+
+function updatePermissionTexts(enabled: boolean) {
+  permissionTexts.value = enabled
+  rememberWorkspace()
+}
+
+function openPermissionTexts() {
+  navigate(() => {
+    editingState.value = { dirty: false, busy: false }
+    permissionTexts.value = true
+    openPortalPage('translations')
+  })
 }
 
 function selectAccessSection(section: typeof accessSection.value) {
@@ -392,6 +453,7 @@ function selectAccessSection(section: typeof accessSection.value) {
   navigate(() => {
     editingState.value = { dirty: false, busy: false }
     accessSection.value = section
+    rememberWorkspace()
     void focusHeading()
   })
 }
@@ -405,12 +467,16 @@ function currentCollectionRequest(tool: 'content' | 'registry', request: number)
   return active && request === collectionNavigationRequest && activeTool.value === tool
 }
 
-async function updateContentMenu(offset: number, request: number) {
+async function updateContentMenu(offset: number, request: number, seek = !offset && Boolean(contentSelection.value)): Promise<void> {
   const page = await listCollections(offset)
   if (!currentCollectionRequest('content', request)) return
   contentCollections.value = offset ? [...contentCollections.value, ...page.items] : page.items
   contentOffset.value = page.next_offset
+  if (seek && !selectedContent.value && page.next_offset !== null && page.next_offset > offset) {
+    return updateContentMenu(page.next_offset, request, true)
+  }
   if (!selectedContent.value) contentSelection.value = contentCollections.value[0]?.type_key ?? ''
+  rememberWorkspace()
 }
 
 async function updateRegistryMenu(request: number) {
@@ -418,6 +484,7 @@ async function updateRegistryMenu(request: number) {
   if (!currentCollectionRequest('registry', request)) return
   registry.value = result
   if (!result.collections.some(entry => entry.type_key === registrySelection.value)) registrySelection.value = ''
+  rememberWorkspace()
 }
 
 async function loadCollectionNavigation(tool: 'content' | 'registry', offset = 0) {
@@ -449,6 +516,7 @@ function selectContent(key: string) {
   navigate(() => {
     editingState.value = { dirty: false, busy: false }
     contentSelection.value = key
+    rememberWorkspace()
     void focusHeading()
   })
 }
@@ -459,6 +527,7 @@ function selectRegistry(key = '', create = false) {
     editingState.value = { dirty: false, busy: false }
     registrySelection.value = key
     registryCreating.value = create
+    rememberWorkspace()
     ++registryForm.value
     void focusHeading()
   })
@@ -473,6 +542,7 @@ function collectionSaved(entry: RegistryCollection) {
   }
   registryCreating.value = false
   registrySelection.value = entry.enabled ? entry.type_key : ''
+  rememberWorkspace()
   if (!entry.enabled) {
     editingState.value = { dirty: false, busy: false }
     notice.value = 'registry_disabled_notice'
@@ -815,7 +885,8 @@ onBeforeUnmount(() => {
         <template v-else-if="phase === 'full'">
           <PortalSettings
             v-if="isPortalTool(activeTool)"
-            :page="portalPage" :csrf="csrf" :ui-language="locale" :ui-messages="catalog.messages" :translate="t"
+            :page="portalPage" :permission-texts="permissionTexts" :csrf="csrf" :ui-language="locale" :ui-messages="catalog.messages" :translate="t"
+            @update:permission-texts="updatePermissionTexts"
             @show-page="openPortalPage" @published="refreshPublishedCatalog"
             @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event"
           />
@@ -864,7 +935,7 @@ onBeforeUnmount(() => {
           />
           <template v-if="activeTool === 'access'">
             <AdminUsers v-if="accessSection === 'users'" :csrf="csrf" :ui-language="locale" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
-            <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :translate="t" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
+            <AdminRoles v-else-if="accessSection === 'roles'" :csrf="csrf" :ui-language="locale" :translate="t" @permission-texts="openPermissionTexts" @step-up="confirmActionIdentity" @session-changed="refresh(true)" @editing-state="editingState = $event" />
             <AdminAudit v-else-if="accessSection === 'audit'" :ui-language="locale" :translate="t" @session-changed="refresh(true)" />
             <AdminSessionPolicy
               v-else-if="accessSection === 'security'" :csrf="csrf" :translate="t"

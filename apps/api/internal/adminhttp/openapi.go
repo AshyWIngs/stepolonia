@@ -126,19 +126,8 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 	}
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
-	if authTag(rt) == rolesTag && rt.fields == expectedVersionField {
-		schema.Description = "Positive current role version required for this command."
-		schema.Properties[expectedVersionField].Description = "Positive current role version checked under the shared security mutex."
-		description = "One JSON object, at most 4096 bytes, containing only the positive integer expected_version. Duplicate keys, unknown fields and trailing JSON are rejected."
-	} else if authTag(rt) == rolesTag {
-		schema, example = roleRequestSchema(rt.operationID)
-		description = "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
-		switch rt.operationID {
-		case copyRoleOperation:
-			description = "One JSON object, at most 4096 bytes. Supply the new name and positive expected_version of the source role. Unknown or duplicate keys and trailing JSON are rejected."
-		case changeRoleOperation:
-			description = "One JSON object, at most 262144 bytes. Supply a positive expected_version and one or more of name, upsert or remove. Duplicate grant identities, duplicate keys, nulls, unknown properties and trailing JSON are rejected."
-		}
+	if authTag(rt) == rolesTag {
+		schema, example, description = roleRequestBodyContract(rt)
 	}
 	registry.Map()[name] = schema
 	return &huma.RequestBody{Required: true, Description: description, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
@@ -672,7 +661,7 @@ func authTag(rt route) string {
 		return rolesTag
 	}
 	switch rt.operationID {
-	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, changeRoleOperation, copyRoleOperation, deleteRoleOperation, readRoleGrantOptionsOperation:
+	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, changeRoleOperation, roleDisplayNameOperation, copyRoleOperation, deleteRoleOperation, readRoleGrantOptionsOperation:
 		return rolesTag
 	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation, readUserRolesOperation, replaceUserRolesOperation:
 		return usersTag

@@ -372,7 +372,7 @@ func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
 		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
 		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
-		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesApplyChanges", "rolesCopy", "rolesDelete"},
+		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesApplyChanges", "rolesSetDisplayName", "rolesCopy", "rolesDelete"},
 		"portal-settings":         {"settingsReadEditable", "settingsApply", "settingsApplyAppearance", "settingsApplyLanguageFlag", "settingsApplyDetails", "settingsApplyLocaleDefaults", "settingsApplySlugRules", "settingsApplyCatalog"},
 		"security-policy":         {"readSessionPolicy", "replaceSessionPolicy", "readRatePolicies", "replaceRatePolicy"},
 		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
@@ -485,6 +485,11 @@ func checkRatePolicyRequiredFields(t *testing.T, registry huma.Registry, schema 
 func checkInvalidFieldValues(t *testing.T, registry huma.Registry, schema *huma.Schema, operation, field string, payload map[string]any) {
 	t.Helper()
 	for _, invalid := range []any{nil, false, ""} {
+		if invalid == nil && operation == roleDisplayNameOperation && field == "display_name" {
+			payload[field] = nil
+			validatePrivateValue(t, registry, schema, operation, payload)
+			continue
+		}
 		if invalid == "" && allowsEmptySVG(operation, field) {
 			continue
 		}
@@ -503,6 +508,8 @@ func allowsEmptySVG(operation, field string) bool {
 
 func optionalRequestField(operation, field string) bool {
 	switch operation {
+	case publishOperation:
+		return field == allocateSlugField
 	case registryCreateOperation:
 		return field == "initial_access" || field == typeKeyField || field == registryDisplayNameField || field == collectionIconField
 	case registryReviseOperation:

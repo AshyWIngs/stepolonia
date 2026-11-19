@@ -28,6 +28,7 @@ const (
 	publishedDraftSchema = "PublishedContentDraft"
 	candidateLocaleField = "locale"
 	intendedLocalesField = "intended_locales"
+	allocateSlugField    = "allocate_slug"
 )
 
 var draftCandidateRoutes = map[string]route{
@@ -39,7 +40,7 @@ var draftCandidateRoutes = map[string]route{
 }
 
 func publishDraftRoute() route {
-	rt := candidateRoute(publishOperation, "Publish ready draft locales", "Publishes a sealed snapshot of the intended ready locales and retains eligible previously published locales. Incompatible retained locales must be approved again and included in the request.")
+	rt := candidateRoute(publishOperation, "Publish ready draft locales", "Publishes a sealed snapshot of the intended ready locales and retains eligible previously published locales. Incompatible retained locales must be approved again and included in the request. With allocate_slug enabled, the draft slug is the base and collisions receive a numbered suffix.")
 	rt.response = publishedDraftSchema
 	return rt
 }
@@ -68,6 +69,7 @@ type draftCandidateInput struct {
 	SchemaNo        int64    `json:"schema_no,string"`
 	Locale          string   `json:"locale,omitempty"`
 	IntendedLocales []string `json:"intended_locales,omitempty"`
+	AllocateSlug    bool     `json:"allocate_slug,omitempty"`
 }
 
 func (h *handler) serveDraftCandidate(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
@@ -100,7 +102,8 @@ func (h *handler) runDraftCandidate(ctx context.Context, req identity.AuthReques
 	case readyLocaleOperation:
 		return h.draftEditor.MarkReadyForType(ctx, req, target.typeKey, target.id, input.Locale, input.ExpectedVersion, input.SchemaNo)
 	case publishOperation:
-		return h.draftEditor.PublishForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo, input.IntendedLocales)
+		options := content.PublicationOptions{Locales: input.IntendedLocales, AllocateSlug: input.AllocateSlug}
+		return h.draftEditor.PublishForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo, options)
 	case adoptSchemaOperation:
 		return h.draftEditor.AdoptSchemaForType(ctx, req, target.typeKey, target.id, input.ExpectedVersion, input.SchemaNo)
 	case unpublishOperation:

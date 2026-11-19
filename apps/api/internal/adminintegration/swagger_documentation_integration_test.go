@@ -128,7 +128,7 @@ const assert = require('node:assert/strict');
   for(const path of accountReads) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['get']);
   for(const path of accountWrites) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   const rolePaths=['/api/v1/admin/roles','/api/v1/admin/roles/{id}'];
-  const roleCommandPaths=['enable','disable','archive','restore','copy','changes'].map(action=>rolePaths[1]+'/'+action);
+  const roleCommandPaths=['enable','disable','archive','restore','copy','changes','display-name'].map(action=>rolePaths[1]+'/'+action);
   rolePaths.push(...roleCommandPaths,'/api/v1/admin/roles/grant-options');
   for(const path of roleCommandPaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');

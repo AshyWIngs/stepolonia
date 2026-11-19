@@ -32,9 +32,9 @@ func (e *DraftEditor) MarkReadyForType(ctx context.Context, req identity.AuthReq
 }
 
 // PublishForType publishes a snapshot of the authorized draft.
-func (e *DraftEditor) PublishForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string, expected, schemaNo int64, intended []string) (DraftState, error) {
+func (e *DraftEditor) PublishForType(ctx context.Context, req identity.AuthRequest, typeKey, itemID string, expected, schemaNo int64, options PublicationOptions) (DraftState, error) {
 	return e.runCandidate(ctx, req, draftCandidateTarget{typeKey, itemID, expected, schemaNo}, identity.OpContentPublish, "", func(ctx context.Context, tx *sql.Tx, state *DraftState, schema TypeSchema, readable relationAccess) error {
-		return publishCandidate(ctx, tx, state, schema, intended, readable)
+		return publishCandidate(ctx, tx, state, schema, options, readable)
 	})
 }
 

@@ -23,22 +23,47 @@ const (
 const rolesTag = "roles"
 
 const (
-	roleSchema      = "Role"
-	roleListSchema  = "RoleList"
-	roleGrantSchema = "RoleGrant"
-	roleNameField   = "name"
-	operationField  = "operation"
-	roleTypeObjects = "type"
-	exampleRoleName = "docs-reviewer"
-	upsertField     = "upsert"
-	removeField     = "remove"
+	roleSchema               = "Role"
+	roleListSchema           = "RoleList"
+	roleGrantSchema          = "RoleGrant"
+	roleNameField            = "name"
+	operationField           = "operation"
+	roleTypeObjects          = "type"
+	exampleRoleName          = "docs-reviewer"
+	upsertField              = "upsert"
+	removeField              = "remove"
+	roleDisplayNameField     = "display_name"
+	roleDisplayLanguageField = "language_code"
 )
 
 func roleGrantExample() roleGrantDTO {
 	return roleGrantDTO{Operation: "users.read", Scope: roleInstallationScope, CanDelegate: false}
 }
 
+func roleRequestBodyContract(rt route) (*huma.Schema, map[string]any, string) {
+	if rt.fields == expectedVersionField {
+		schema, example := credentialSchema(rt)
+		schema.Description = "Positive current role version required for this command."
+		schema.Properties[expectedVersionField].Description = "Positive current role version checked under the shared security mutex."
+		return schema, example, "One JSON object, at most 4096 bytes, containing only the positive integer expected_version. Duplicate keys, unknown fields and trailing JSON are rejected."
+	}
+	schema, example := roleRequestSchema(rt.operationID)
+	switch rt.operationID {
+	case copyRoleOperation:
+		return schema, example, "One JSON object, at most 4096 bytes. Supply the new name and positive expected_version of the source role. Unknown or duplicate keys and trailing JSON are rejected."
+	case changeRoleOperation:
+		return schema, example, "One JSON object, at most 262144 bytes. Supply a positive expected_version and one or more of name, upsert or remove. Duplicate grant identities, duplicate keys, nulls, unknown properties and trailing JSON are rejected."
+	case roleDisplayNameOperation:
+		return schema, example, "One JSON object, at most 4096 bytes. Supply a positive expected_version, an enabled language_code and a display_name string or explicit null. Unknown or duplicate keys and trailing JSON are rejected."
+	default:
+		return schema, example, "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
+	}
+}
+
 func roleRequestSchema(operationID string) (*huma.Schema, map[string]any) {
+	if operationID == roleDisplayNameOperation {
+		return roleDisplayNameSchema()
+	}
 	if operationID == changeRoleOperation {
 		return roleChangesSchema()
 	}
@@ -62,6 +87,15 @@ func roleRequestSchema(operationID string) (*huma.Schema, map[string]any) {
 		delete(schema.Properties, expectedVersionField)
 	}
 	return schema, example
+}
+
+func roleDisplayNameSchema() (*huma.Schema, map[string]any) {
+	example := map[string]any{expectedVersionField: 1, roleDisplayLanguageField: "pl", roleDisplayNameField: "Redaktor"}
+	return closedObjectSchema("Set one localized role label or remove it by sending null.", map[string]*huma.Schema{
+		expectedVersionField:     {Type: huma.TypeInteger, Minimum: new(float64(1))},
+		roleDisplayLanguageField: {Type: huma.TypeString, MinLength: new(1), MaxLength: new(63)},
+		roleDisplayNameField:     {Type: huma.TypeString, Nullable: true, MinLength: new(1), MaxLength: new(128)},
+	}, []string{expectedVersionField, roleDisplayLanguageField, roleDisplayNameField}, example), example
 }
 
 func roleChangesSchema() (*huma.Schema, map[string]any) {
@@ -192,6 +226,8 @@ func roleSuccessDescription(rt route) string {
 		return "Disabled role and explicit grants committed with audit; no memberships created."
 	case changeRoleOperation:
 		return "Supplied role changes committed with a version increment and atomic audit."
+	case roleDisplayNameOperation:
+		return "Localized role label saved with a version increment and atomic audit."
 	default:
 		return "Role name and complete explicit grants replaced with a version increment and atomic audit; state and memberships preserved."
 	}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { assertEditorMutationBlocksNavigation, assertSavedAddress, eachInOrder, expectedTitleSlug, verifyAccessAdministration, waitForContentMutation } from './admin-access.mjs'
+import { assertEditorMutationBlocksNavigation, assertSavedAddress, eachInOrder, verifyAccessAdministration, waitForContentMutation } from './admin-access.mjs'
 import { signInAfterAnotherTabRefreshesPreauth } from './admin-preauth.mjs'
 import { assertStablePreferences, chooseTheme, headerGeometry } from './header-preferences.mjs'
 
@@ -221,7 +221,8 @@ async function verifySettingsSave(page, context) {
   const document = await page.reload()
   assert.equal(document.status(), 200)
   assert.match(await document.text(), /Polacy w Kazachstanie/u)
-  await heading(page, 'Signed in').waitFor()
+  await heading(page, 'Interface texts').waitFor()
+  assert.equal(new URL(page.url()).searchParams.get('view'), 'translations')
 }
 
 async function verifySlugRuleSettings(page, context) {
@@ -229,7 +230,8 @@ async function verifySlugRuleSettings(page, context) {
   const polish = snapshot.slug_rules.filter(rule => rule.language_code === 'pl')
   assert.deepEqual(Object.fromEntries(polish.map(rule => [rule.character, rule.replacement])),
     { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' })
-  await page.getByRole('button', { name: 'Languages and translations', exact: true }).click()
+  await openSection(page, 'Languages and translations')
+  await page.getByRole('button', { name: 'Languages', exact: true }).click()
   await verifyLocalePreferences(page, context, snapshot.settings.default_language)
   const language = page.getByLabel('Rule language', { exact: true })
   const search = page.getByRole('searchbox', { name: 'Search rules', exact: true })
@@ -868,9 +870,8 @@ async function createContentDraftWithKeyboard(page, type, label) {
   return (await creating).json()
 }
 
-async function verifyContentWorkflow(page, context, { type, namespace, label, slugBase, title, checkLayout = false, keepPublished = false }) {
+async function verifyContentWorkflow(page, context, { type, namespace, label, slugBase: slug, title, checkLayout = false, keepPublished = false }) {
   const { item_id: id } = await createContentDraftWithKeyboard(page, type, label)
-  const slug = expectedTitleSlug(slugBase, id)
   const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
   await editor.getByLabel(/^Title(?: \(|$)/).waitFor()
   await editor.getByText('Fill in the translation and save the draft.', { exact: true }).waitFor()
@@ -907,7 +908,7 @@ async function verifyContentWorkflow(page, context, { type, namespace, label, sl
   assert.equal(await link.getAttribute('href'), publicPath)
   await assertPublishedDraft(request, apiPath, publicPath, title)
   if (type === 'event') {
-    const omitted = `/api/v1/content/event/${expectedTitleSlug('warsztaty-spolleczne', id)}?language=pl`
+    const omitted = '/api/v1/content/event/warsztaty-spolleczne?language=pl'
     assert.equal((await request(omitted)).status(), 404)
     await publishOtherTranslation(page, editor, id, request, omitted, apiPath, title)
   }
@@ -1043,7 +1044,7 @@ async function addSecondTranslation(page, editor, id) {
   await editor.getByLabel('Language', { exact: true }).selectOption('pl')
   await editor.getByLabel(/^Title(?: \(|$)/).fill('Warsztaty społeczne')
   const save = editor.getByRole('button', { name: 'Save draft', exact: true })
-  await assertSavedAddress(page, 'event', id, save, 'pl', expectedTitleSlug('warsztaty-spolleczne', id))
+  await assertSavedAddress(page, 'event', id, save, 'pl', 'warsztaty-spolleczne')
   await editor.getByText('Draft saved.', { exact: true }).waitFor()
 }
 
@@ -1112,10 +1113,10 @@ async function switchLanguageWithUnsavedDraft(page, title, expected) {
 async function assertTitleAddresses(page, editor, locale, title, id, original) {
   const save = editor.getByRole('button', { name: 'Zapisz szkic', exact: true })
   const samples = [
-    ['ru', 'Весенний праздник', expectedTitleSlug('vesenniy-prazdnik', id)],
-    ['kk', 'Қазақша сөз', expectedTitleSlug('qazaqsha-soz', id)],
-    ['pl', '🌿', `item-${id}`],
-    ['pl', original, expectedTitleSlug('spacer-po-allmaty', id)],
+    ['ru', 'Весенний праздник', 'vesenniy-prazdnik'],
+    ['kk', 'Қазақша сөз', 'qazaqsha-soz'],
+    ['pl', '🌿', 'item'],
+    ['pl', original, 'spacer-po-allmaty'],
   ]
   assert.equal(await editor.getByLabel(/^Adres URL/u).count(), 0)
   await eachInOrder(samples, async ([code, text, slug]) => {
@@ -1160,7 +1161,7 @@ async function verifyEditorialNavigation(page) {
   assert.equal(await title.inputValue(), updated)
   assert.ok(await settings.evaluate(element => element === document.activeElement))
   const save = editor.getByRole('button', { name: 'Zapisz szkic', exact: true })
-  await assertSavedAddress(page, 'article', id, save, 'pl', expectedTitleSlug('jesienny-spacer-po-allmaty', id))
+  await assertSavedAddress(page, 'article', id, save, 'pl', 'jesienny-spacer-po-allmaty')
   await editor.getByRole('status').getByText('Zapisano szkic.').waitFor()
   await editor.getByRole('button', { name: 'Wróć do szkiców', exact: true }).click()
   const row = page.getByRole('button', { name: /Jesienny spacer po Ałmaty.*Polski.*Brak publikacji/u })
@@ -1331,17 +1332,27 @@ async function verifySessionPolicy(page) {
 }
 
 async function verifyRatePolicy(page) {
-  await page.getByRole('button', { name: 'Rate limits', exact: true }).click()
+  const section = page.getByRole('button', { name: 'Rate limits', exact: true })
+  await section.click()
+  await page.waitForURL(url => url.searchParams.get('section') === 'access' && url.searchParams.get('view') === 'rate_limits')
+  await page.reload()
   const credentials = page.locator('form[data-rate-scope="credentials"]')
   const preauth = page.locator('form[data-rate-scope="preauth"]')
   const activeWindow = credentials.locator('input[name="window_seconds"]')
   const otherWindow = preauth.locator('input[name="window_seconds"]')
   const save = credentials.locator('button[type="submit"]')
   await verifyScopedSaveButton(save, 'input[name="window_seconds"]')
+  assert.equal(await section.getAttribute('aria-current'), 'page')
   const original = await activeWindow.inputValue()
   const other = await otherWindow.inputValue()
   await otherWindow.fill(String(Number(other) + 1))
   await activeWindow.fill(String(Number(original) + 1))
+  const saveBeforeHover = await save.evaluate(button => getComputedStyle(button).boxShadow)
+  await save.hover()
+  await page.waitForFunction((before) => {
+    const button = document.querySelector('form[data-rate-scope="credentials"] button[type="submit"]')
+    return button && getComputedStyle(button).boxShadow !== before
+  }, saveBeforeHover)
   const path = '/api/v1/admin/security/rate-policy'
   const saved = waitForContentMutation(page, path, 'POST', 200)
   await save.click()
@@ -1354,6 +1365,19 @@ async function verifyRatePolicy(page) {
   const restored = waitForContentMutation(page, path, 'POST', 200)
   await save.click()
   assert.equal((await (await restored).json()).window_seconds, Number(original))
+}
+
+async function verifyPermissionTextNavigation(page) {
+  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('button', { name: 'Translate permission labels', exact: true }).click()
+  await page.waitForURL(url => url.searchParams.get('view') === 'translations' && url.searchParams.get('group') === 'permissions')
+  await page.reload()
+  const group = page.locator('#portal-message-group')
+  await group.waitFor()
+  assert.equal(await group.inputValue(), 'permissions')
+  const search = page.locator('#portal-message-search')
+  await search.fill('admin.permission.audit.read')
+  await page.getByRole('button', { name: 'Read the audit log', exact: true }).waitFor()
 }
 
 const browser = await chromium.launch()
@@ -1374,6 +1398,7 @@ try {
   await verifyCompactNavigation(page)
   await verifySessionPolicy(page)
   await verifyRatePolicy(page)
+  await verifyPermissionTextNavigation(page)
   await verifyNestedNavigation(page)
   await verifyTextSearchAfterResize(page)
   await verifySettingsSave(page, context)

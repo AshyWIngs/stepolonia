@@ -126,7 +126,7 @@ export function commandDraft(
   draft: DraftSummary,
   action: DraftCommand,
   csrf: string,
-  input: { locale?: string, intended_locales?: string[], schema_no?: string } = {},
+  input: { locale?: string, intended_locales?: string[], schema_no?: string, allocate_slug?: boolean } = {},
 ) {
   return administrationRequest<DraftSummary>(`${draftPath(type, draft.item_id)}/${action}`, csrf, 'POST', {
     expected_version: draft.version,

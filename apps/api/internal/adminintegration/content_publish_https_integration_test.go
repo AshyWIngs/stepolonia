@@ -203,7 +203,12 @@ func (f publicationFixture) command(t *testing.T, actor identity.AuthRequest, it
 
 func (f publicationFixture) public(t *testing.T, status int) string {
 	t.Helper()
-	path := "/api/v1/content/" + f.typeKey + "/" + editorialSlug + "?language=pl"
+	return f.publicBySlug(t, editorialSlug, status)
+}
+
+func (f publicationFixture) publicBySlug(t *testing.T, slug string, status int) string {
+	t.Helper()
+	path := "/api/v1/content/" + f.typeKey + "/" + slug + "?language=pl"
 	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, f.server.URL+path, nil)
 	requireNoError(t, err)
 	response, err := f.server.Client().Do(request)
@@ -248,6 +253,51 @@ func TestAdminReadyPublishHTTPSIntegration(t *testing.T) {
 				verifyCurrentSchemaRequired(t, f, item)
 			}
 		})
+	}
+}
+
+func TestAdminReadablePublicationSlugsHTTPSIntegration(t *testing.T) {
+	f := newPublicationFixture(t, publicationArticleType, "articles")
+	first, second := f.prepareDraft(t), f.prepareDraft(t)
+	const allocated = `{"expected_version":"4","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`
+	for _, item := range []string{first, second} {
+		f.command(t, f.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
+		f.command(t, f.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)
+	}
+	f.command(t, f.publisher, first, publishCommand, allocated, http.StatusOK)
+	assertReadablePublicSlug(t, f, first, editorialSlug, editorialSlug)
+	assertPublicationProblem(t, f.command(t, f.publisher, second, publishCommand, publishBody, http.StatusConflict), "route_conflict")
+	f.command(t, f.publisher, second, publishCommand, allocated, http.StatusOK)
+	f.command(t, f.publisher, second, publishCommand, `{"expected_version":"5","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, second, editorialSlug+"-2", editorialSlug+"-2")
+	f.publicBySlug(t, editorialSlug+"-3", http.StatusNotFound)
+	verifyLegacyUUIDSlug(t, f)
+}
+
+func verifyLegacyUUIDSlug(t *testing.T, f publicationFixture) {
+	t.Helper()
+	item := f.prepareDraft(t)
+	legacy := editorialSlug + "-" + strings.ReplaceAll(item, "-", "")
+	path := draftHTTPPrefix + f.typeKey + "/" + item
+	patch := fmt.Sprintf(`{"expected_version":"2","schema_no":"1","locales":{"pl":{"values":{"slug":{"kind":"string","value":%q}}}}}`, legacy)
+	sendDraftPatch(t, f.server, f.author.Token, draftHTTPRequest{path, patch, f.author.CSRF, http.StatusOK})
+	f.command(t, f.author, item, sharedReadyCommand, `{"expected_version":"3","schema_no":"1"}`, http.StatusOK)
+	f.command(t, f.author, item, localeReadyCommand, `{"expected_version":"4","schema_no":"1","locale":"pl"}`, http.StatusOK)
+	f.command(t, f.publisher, item, publishCommand, `{"expected_version":"5","schema_no":"1","intended_locales":["pl"]}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, item, legacy, legacy)
+	f.command(t, f.publisher, item, publishCommand, `{"expected_version":"6","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, item, editorialSlug+"-3", editorialSlug+"-3")
+	assertReadablePublicSlug(t, f, item, legacy, editorialSlug+"-3")
+}
+
+func assertReadablePublicSlug(t *testing.T, f publicationFixture, item, requested, canonical string) {
+	t.Helper()
+	body := f.publicBySlug(t, requested, http.StatusOK)
+	var published content.PublicItem
+	requireNoError(t, json.Unmarshal([]byte(body), &published))
+	if published.ItemID != item || published.CanonicalURL != "/pl/"+f.namespace+"/"+canonical ||
+		published.Slug != canonical || string(published.Localized["slug"].Value) != fmt.Sprintf("%q", canonical) {
+		t.Fatalf("wrong allocated publication address: %s", body)
 	}
 }
 

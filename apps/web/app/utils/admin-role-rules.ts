@@ -17,6 +17,7 @@ export function ruleKey(grant: RoleGrant) {
 }
 
 type Translate = (key: string) => string
+export const permissionMessagePrefix = 'admin.permission.'
 
 function catalogName(key: string, fallback: string, translate: Translate) {
   const name = translate(key)
@@ -24,7 +25,7 @@ function catalogName(key: string, fallback: string, translate: Translate) {
 }
 
 export function operationName(operation: string, translate: Translate) {
-  return catalogName(`admin.permission.${operation}`, operation, translate)
+  return catalogName(`${permissionMessagePrefix}${operation}`, operation, translate)
 }
 
 export function collectionName(name: string, translate: Translate) {

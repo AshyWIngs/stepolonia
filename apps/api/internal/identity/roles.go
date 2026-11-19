@@ -31,6 +31,7 @@ type Role struct {
 	ID, Name, State string
 	Version         int64
 	Grants          []RoleGrant
+	DisplayNames    map[string]string
 	bound           bool
 }
 
@@ -134,7 +135,16 @@ func queryRolePage(ctx context.Context, tx *sql.Tx, page RolePage) (RoleList, er
 	if err = rows.Close(); err != nil {
 		return out, err
 	}
+	ids := make([]string, 0, len(out.Items))
+	for _, role := range out.Items {
+		ids = append(ids, role.ID)
+	}
+	labels, err := roleDisplayNames(ctx, tx, ids)
+	if err != nil {
+		return out, err
+	}
 	for i := range out.Items {
+		out.Items[i].DisplayNames = labels[out.Items[i].ID]
 		out.Items[i].Grants, err = queryRoleGrants(ctx, tx, out.Items[i].ID)
 		if err != nil {
 			return out, err
@@ -176,6 +186,11 @@ func findRole(ctx context.Context, tx *sql.Tx, id string) (Role, error) {
 		return out, err
 	}
 	out.Grants, err = queryRoleGrants(ctx, tx, id)
+	if err != nil {
+		return out, err
+	}
+	labels, err := roleDisplayNames(ctx, tx, []string{id})
+	out.DisplayNames = labels[out.ID]
 	return out, err
 }
 

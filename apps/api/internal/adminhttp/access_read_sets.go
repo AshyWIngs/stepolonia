@@ -34,10 +34,11 @@ type accessReadSetsService interface {
 var _ accessReadSetsService = (*identity.AuthService)(nil)
 
 type roleMembershipOption struct {
-	ID     string `json:"id" format:"uuid"`
-	Name   string `json:"name"`
-	State  string `json:"state" enum:"active,disabled,archived"`
-	Domain string `json:"domain" enum:"content,structure,settings,access,mixed,other" doc:"Display category based on explicit role grants. Mixed roles span several domains. Other roles have no grants."`
+	ID           string            `json:"id" format:"uuid"`
+	Name         string            `json:"name"`
+	State        string            `json:"state" enum:"active,disabled,archived"`
+	Domain       string            `json:"domain" enum:"content,structure,settings,access,mixed,other" doc:"Display category based on explicit role grants. Mixed roles span several domains. Other roles have no grants."`
+	DisplayNames map[string]string `json:"display_names,omitempty" doc:"Labels keyed by enabled language code."`
 }
 
 type roleMembershipSetResponse struct {
