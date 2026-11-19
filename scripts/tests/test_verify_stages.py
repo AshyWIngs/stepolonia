@@ -68,6 +68,12 @@ class VerifyStagesTest(unittest.TestCase):
     def test_cve_gate_and_public_status_are_not_weakened(self):
         self.assertIn("--fail-on high", self.makefile)
         self.assertIn("sp-caddy:stage0", self.makefile)
+        self.assertIn(
+            '      - name: "Security: audit 11 images for CVEs"\n'
+            "        if: steps.scope.outputs.full == 'true'\n"
+            "        run: make SITE=ci.test ci-image-audit\n",
+            self.workflow,
+        )
         self.assertRegex(self.workflow, r"(?m)^  verify:$")
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertNotIn("continue-on-error:", self.workflow)

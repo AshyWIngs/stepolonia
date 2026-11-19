@@ -5,6 +5,7 @@ RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     && go version -m /out/esbuild
 
 FROM dhi.io/node:26.13.1-alpine3.24-dev AS dependencies
+RUN apk add --no-cache --upgrade 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1'
 WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
 RUN test "$(npm --version)" = "11.21.2"

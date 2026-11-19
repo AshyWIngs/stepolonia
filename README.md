@@ -114,7 +114,7 @@ The bootstrap container initializes the Alpine/musl PostgreSQL 18.7 cluster. The
 | `make smoke` / `make lifecycle` | Live installation / controlled stop and recovery |
 | `make isolation` | Separate installation and PostgreSQL dump/restore |
 | `make resource-test` | Single-installation resource measurements |
-| `make image-audit` | Scan built images with Grype |
+| `make image-audit` | Scan built images with Grype and fail on High or Critical findings |
 | `make verify` | Full local verification |
 
 Pass `SITE=...` to select an installation. `make lifecycle` temporarily stops the selected stack. `make isolation` cleans up the resources it creates. Docker Compose `down --volumes` deletes managed volumes and their data.
