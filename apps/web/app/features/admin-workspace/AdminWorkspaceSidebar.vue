@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onUpdated } from 'vue'
 import { portalSettingsPages } from '~/utils/admin-site-settings'
 import { accessPages, domains, hasSubpages, isPortalTool, portalPages } from './AdminWorkspaceNavigation'
 import type { AdminTool, AdminWorkspaceNavigation } from './AdminWorkspaceNavigation'
@@ -15,9 +16,36 @@ const {
   collectionNavigationLoading, registryCreating, registrySelection, enabledCollections, accessSection,
 } = props.navigation
 
+let compactFocus: { tool: AdminTool, opener: HTMLButtonElement } | undefined
+
 function navigationName(tool: AdminTool) {
   return props.translate(tool === 'registry' ? 'admin.workspace_structure' : `admin.${tool}`)
 }
+
+function selectCompactTool(tool: AdminTool, event: MouseEvent) {
+  if (event.detail === 0 && event.currentTarget instanceof HTMLButtonElement &&
+      hasSubpages(tool) && expandedTool.value !== tool && !props.locked) {
+    compactFocus = { tool, opener: event.currentTarget }
+  }
+  props.navigation.selectTool(tool)
+}
+
+function clearCompactFocus() {
+  compactFocus = undefined
+}
+
+onUpdated(() => {
+  if (!compactFocus) return
+  const { tool, opener } = compactFocus
+  if (document.activeElement !== opener || expandedTool.value !== tool) {
+    compactFocus = undefined
+    return
+  }
+  const first = document.getElementById(`admin-nav-${tool}`)?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+  if (!first?.getClientRects().length) return
+  compactFocus = undefined
+  first.focus()
+})
 
 function closeNavigationGroup(tool: AdminTool, event: KeyboardEvent) {
   if (expandedTool.value !== tool) return
@@ -47,7 +75,7 @@ function closeNavigationGroup(tool: AdminTool, event: KeyboardEvent) {
           :aria-expanded="hasSubpages(tool) ? expandedTool === tool : undefined"
           :aria-controls="hasSubpages(tool) ? `admin-nav-${tool}` : undefined"
           :aria-disabled="locked || undefined"
-          @click="navigation.selectTool(tool)" @keydown.esc="closeNavigationGroup(tool, $event)"
+          @click="selectCompactTool(tool, $event)" @blur="clearCompactFocus" @keydown.esc="closeNavigationGroup(tool, $event)"
         >
           <AdminIcon :name="tool" />
         </button>
