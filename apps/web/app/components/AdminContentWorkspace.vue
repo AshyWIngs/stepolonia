@@ -27,6 +27,7 @@ const initialLanguage = ref('')
 const lastLanguages = new Map<string, string>()
 const pageOffsets = new Map<string, number>()
 let draftChanged = false
+const unknownPublications = ref(new Set<string>())
 const openedType = ref('')
 const draftOffset = ref<number | null>(null)
 const opener = ref<HTMLElement | null>(null)
@@ -95,7 +96,10 @@ async function loadDraftPage(offset = 0) {
   const page = await listDrafts(type, offset)
   if (!active.value || selectedType.value !== type) return
   if (offset === 0) pageOffsets.clear()
-  for (const item of page.items) pageOffsets.set(item.item_id, offset)
+  for (const item of page.items) {
+    pageOffsets.set(item.item_id, offset)
+    unknownPublications.value.delete(item.item_id)
+  }
   drafts.value = offset === 0 ? page.items : [...drafts.value, ...page.items]
   draftOffset.value = page.next_offset
   loaded.value = true
@@ -114,6 +118,18 @@ function rememberDraftLanguage(language: string) {
   lastLanguages.set(selectedItem.value, language)
 }
 
+function updateDraftPublication(locales: string[] | null) {
+  const itemID = selectedItem.value
+  if (!itemID) return
+  if (locales === null) {
+    unknownPublications.value.add(itemID)
+    draftChanged = true
+    return
+  }
+  unknownPublications.value.delete(itemID)
+  drafts.value = drafts.value.map(item => item.item_id === itemID ? { ...item, published_locales: locales } : item)
+}
+
 async function closeDraft() {
   const closedItem = selectedItem.value
   const focusAtClose = document.activeElement
@@ -124,6 +140,7 @@ async function closeDraft() {
     const offset = pageOffsets.get(closedItem) ?? 0
     const page = await listDrafts(selectedType.value, offset)
     if (!active.value) return
+    unknownPublications.value.delete(closedItem)
     const fresh = page.items.find(item => item.item_id === closedItem)
     if (fresh) drafts.value = drafts.value.map(item => item.item_id === closedItem ? fresh : item)
     else {
@@ -182,11 +199,13 @@ onBeforeUnmount(() => { active.value = false })
               </span>
               <span class="draft-summary">
                 <span v-if="titleLanguage(item)" :lang="titleLanguage(item)">{{ nativeName(titleLanguage(item)) }}</span>
-                <span v-if="item.published_locales?.length">
-                  {{ translate('admin.draft_status_published') }}
-                  <span v-for="(code, index) in item.published_locales" :key="code"><span v-if="index">, </span><span :lang="code">{{ nativeName(code) }}</span></span>
-                </span>
-                <span v-else>{{ translate('admin.draft_status_unpublished') }}</span>
+                <template v-if="!unknownPublications.has(item.item_id)">
+                  <span v-if="item.published_locales?.length">
+                    {{ translate('admin.draft_status_published') }}
+                    <span v-for="(code, index) in item.published_locales" :key="code"><span v-if="index">, </span><span :lang="code">{{ nativeName(code) }}</span></span>
+                  </span>
+                  <span v-else>{{ translate('admin.draft_status_unpublished') }}</span>
+                </template>
               </span>
             </button>
           </li>
@@ -201,6 +220,7 @@ onBeforeUnmount(() => { active.value = false })
       :translate="translate" :ui-language="uiLanguage" :languages="languages" :slug-rules="slugRules"
       :initial-language="initialLanguage" :default-language="defaultLanguage"
       @language-changed="rememberDraftLanguage" @changed="draftChanged = true"
+      @published-languages="updateDraftPublication"
       @editing-state="editorState = $event"
       @close="closeDraft" @step-up="emit('step-up')" @session-changed="emit('session-changed')"
     />

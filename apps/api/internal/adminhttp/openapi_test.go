@@ -368,17 +368,18 @@ func TestPrivateOnboardingOpenAPIDenialBudget(t *testing.T) {
 func TestPrivateDocumentationGroupsOperations(t *testing.T) {
 	doc, _ := readPrivateDocument(t)
 	expected := map[string][]string{
-		"authentication-sessions": {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
-		"account-recovery":        {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
-		"account-enrollment":      {"authStartEnrollment", "authCompleteEnrollment"},
-		"users":                   {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
-		expectedRolesTag:          {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesApplyChanges", "rolesSetDisplayName", "rolesCopy", "rolesDelete"},
-		"portal-settings":         {"settingsReadEditable", "settingsApply", "settingsApplyAppearance", "settingsApplyLanguageFlag", "settingsApplyDetails", "settingsApplyLocaleDefaults", "settingsApplySlugRules", "settingsApplyCatalog"},
-		"security-policy":         {"readSessionPolicy", "replaceSessionPolicy", "readRatePolicies", "replaceRatePolicy"},
-		"content-assignments":     {"contentReadAssignees", "contentReplaceAssignees"},
-		"content-drafts":          {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
-		"account-security":        {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
-		"content-registry":        {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection", "registrySetCollectionAvailability", "registrySaveCollectionIcon", "registrySaveCollectionFields"},
+		"authentication-sessions":  {"authCSRF", "authLogin", "authVerifyMFA", "authStepUp", "authLogout"},
+		"account-recovery":         {"authRecover", "authCompleteRecovery", "authCancelRecovery"},
+		"account-enrollment":       {"authStartEnrollment", "authCompleteEnrollment"},
+		"users":                    {"usersCreate", "usersIssueOnboardingToken", "usersList", "usersGet", "usersActivate", "usersDisable", "usersReadRoleMemberships", "usersReplaceRoles"},
+		expectedRolesTag:           {"rolesList", "rolesGet", "rolesReadGrantOptions", "rolesCreate", "rolesEdit", "rolesApplyChanges", "rolesSetDisplayName", "rolesCopy", "rolesDelete"},
+		"portal-settings":          {"settingsReadEditable", "settingsApply", "settingsApplyAppearance", "settingsApplyLanguageFlag", "settingsApplyDetails", "settingsApplyLocaleDefaults", "settingsApplySlugRules", "settingsApplyCatalog", "settingsExportLanguages", "settingsExportLanguageDefinition", "settingsSaveLanguage", "settingsSetLanguageAvailability"},
+		"administration-interface": {"adminUIEntry", "adminUICatalog"},
+		"security-policy":          {"readSessionPolicy", "replaceSessionPolicy", "readRatePolicies", "replaceRatePolicy"},
+		"content-assignments":      {"contentReadAssignees", "contentReplaceAssignees"},
+		"content-drafts":           {"contentCreateDraft", "contentListDrafts", "contentListReadableTypes", "contentGetDraftSchema", "contentGetDraft", "contentSaveDraft", "contentMarkSharedReady", "contentMarkReady", "contentPublish", "contentAdoptDraftSchema", "contentUnpublish"},
+		"account-security":         {"accountReadProfile", "accountChangePassword", "accountReplaceFactor", "accountRegenerateRecoveryCodes", "accountListSessions", "accountListTargetSessions", "accountRevokeSession", "accountRevokeAllSessions", "listSecurityAudit"},
+		"content-registry":         {"registryListRenderers", "registryReadCollection", "registryCreateCollection", "registryReviseCollection", "registrySetCollectionAvailability", "registrySaveCollectionIcon", "registrySaveCollectionFields"},
 	}
 	for _, tc := range roleStateCases {
 		expected[expectedRolesTag] = append(expected[expectedRolesTag], tc.operation)
@@ -518,12 +519,12 @@ func optionalRequestField(operation, field string) bool {
 		return true
 	case applySettingsOperation:
 		return field == slugRulesField || field == languageFlagsField
-	case slugRulesSettingsOperation:
+	case slugRulesSettingsOperation, changeRoleOperation:
 		return field != expectedVersionField
 	case catalogSettingsOperation:
 		return field == catalogMessagesField || field == catalogRemoveField
-	case changeRoleOperation:
-		return field != expectedVersionField
+	case saveLanguageOperation:
+		return field == expectedVersionField
 	default:
 		return false
 	}

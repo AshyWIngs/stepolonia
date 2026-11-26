@@ -1,6 +1,4 @@
-import type { components } from '@stepolonia/sdk'
-
-export type SlugRule = components['schemas']['SlugRule']
+export type SlugRule = { language_code: string, character: string, replacement: string }
 
 export const maxSlugRules = 512
 const fallbackSlug = 'item'

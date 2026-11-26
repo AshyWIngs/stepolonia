@@ -944,7 +944,7 @@
       },
       "Publication": {
         "additionalProperties": false,
-        "description": "One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed.",
+        "description": "One atomic site publication containing visitor-facing settings, available UI languages and the visitor catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback.",
         "properties": {
           "language": {
             "$ref": "#/components/schemas/Language",
@@ -968,7 +968,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code.",
+            "description": "Visitor catalog keyed by public UI message key. Values are templates in language.code and may contain named placeholders.",
             "type": "object"
           },
           "requested_language": {
@@ -978,13 +978,6 @@
           "settings": {
             "$ref": "#/components/schemas/Settings",
             "description": "Site settings from the same atomic publication as messages."
-          },
-          "slug_rules": {
-            "description": "Published slug suggestion rules ordered by content language code and source character.",
-            "items": {
-              "$ref": "#/components/schemas/SlugRule"
-            },
-            "type": "array"
           },
           "version": {
             "description": "Opaque UUID of this atomic settings and catalog publication. Supply it as version to detect publication changes.",
@@ -1001,8 +994,7 @@
           "requested_language",
           "language",
           "languages",
-          "messages",
-          "slug_rules"
+          "messages"
         ],
         "type": "object"
       },
@@ -1073,45 +1065,6 @@
           "description",
           "default_language",
           "fallback_language"
-        ],
-        "type": "object"
-      },
-      "SlugRule": {
-        "additionalProperties": false,
-        "description": "A character replacement for slug suggestions in one content language. The source is canonicalized before matching and an empty replacement removes that character.",
-        "properties": {
-          "character": {
-            "description": "One non-ASCII Unicode character in lowercase NFC form.",
-            "examples": [
-              "ł"
-            ],
-            "maxLength": 1,
-            "minLength": 1,
-            "type": "string"
-          },
-          "language_code": {
-            "description": "Registered content language code. Rules apply to this language only.",
-            "examples": [
-              "pl"
-            ],
-            "maxLength": 63,
-            "minLength": 2,
-            "type": "string"
-          },
-          "replacement": {
-            "description": "Lowercase ASCII letters, digits or hyphens. An empty string removes the character from a slug suggestion.",
-            "examples": [
-              "l"
-            ],
-            "maxLength": 16,
-            "pattern": "^[a-z0-9-]*$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "language_code",
-          "character",
-          "replacement"
         ],
         "type": "object"
       }
@@ -1772,7 +1725,7 @@
     },
     "/api/v1/site": {
       "get": {
-        "description": "One atomic publication supplies settings, language-specific slug suggestion rules, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
+        "description": "One atomic publication supplies visitor-facing settings, UI languages and translations. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. version checks that the current publication matches a previously read version. Empty, repeated and unknown query parameters return 400. No session is required.",
         "operationId": "getSite",
         "parameters": [
           {
@@ -1838,14 +1791,7 @@
                       ],
                       "messages": {
                         "articles": "Materiały"
-                      },
-                      "slug_rules": [
-                        {
-                          "language_code": "pl",
-                          "character": "ł",
-                          "replacement": "l"
-                        }
-                      ]
+                      }
                     }
                   },
                   "omitted": {
@@ -1879,14 +1825,7 @@
                       ],
                       "messages": {
                         "articles": "Materiały"
-                      },
-                      "slug_rules": [
-                        {
-                          "language_code": "pl",
-                          "character": "ł",
-                          "replacement": "l"
-                        }
-                      ]
+                      }
                     }
                   }
                 },
@@ -1895,7 +1834,7 @@
                 }
               }
             },
-            "description": "One atomic publication with settings, slug suggestion rules and a complete UI catalog, possibly using the configured fallback."
+            "description": "One atomic publication with settings and visitor translations, possibly using the configured fallback."
           },
           "400": {
             "content": {
@@ -1949,7 +1888,7 @@
             "description": "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
           }
         },
-        "summary": "Read published site settings and one complete UI catalog",
+        "summary": "Read published site settings and visitor messages",
         "tags": [
           "site-publication"
         ]

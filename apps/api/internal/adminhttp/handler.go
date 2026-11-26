@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"stepolonia/apps/api/internal/identity"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 // AuthService is the private transport's authenticated transaction boundary.
@@ -35,10 +36,11 @@ type AuthService interface {
 var _ AuthService = (*identity.AuthService)(nil)
 
 type handler struct {
-	boundary    boundary
-	service     AuthService
-	draftEditor DraftEditor
-	settings    *identity.AuthService
+	boundary      boundary
+	service       AuthService
+	draftEditor   DraftEditor
+	settings      *identity.AuthService
+	publishedSite *siteconfig.Reader
 }
 
 // NewHandler validates configuration without mounting any public API routes.
@@ -60,7 +62,7 @@ func NewHandlerWithEditors(cfg Config, service AuthService, editor DraftEditor, 
 	if service == nil {
 		return nil, errors.New("administration authentication service is required")
 	}
-	return &handler{boundary: b, service: service, draftEditor: editor, settings: settings}, nil
+	return &handler{boundary: b, service: service, draftEditor: editor, settings: settings, publishedSite: cfg.PublishedSite}, nil
 }
 
 const maxCredentialBodyBytes = 4096
@@ -137,6 +139,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusNotFound, notFoundCode)
 		return
 	}
+	if target.path == adminEntryPath {
+		h.serveAdminEntry(w, r, rt)
+		return
+	}
 	ip, code := h.boundary.check(r)
 	if code != "" {
 		status := http.StatusForbidden
@@ -165,6 +171,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
 	path := target.path
+	if path == adminCatalogPath {
+		h.serveAdminCatalog(w, r, rt, ip)
+		return
+	}
 	if rt.operationID == readRoleGrantOptionsOperation {
 		h.serveRoleGrantOptions(w, r, rt, ip)
 		return

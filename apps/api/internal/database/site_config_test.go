@@ -141,7 +141,7 @@ func (f *siteTestFixture) testAccess(t *testing.T, ctx context.Context) {
 
 func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	t.Helper()
-	initial, err := f.reader.Read(ctx, "", f.publication)
+	initial, err := f.reader.ReadAdminCatalog(ctx, "", true)
 	requireNoError(t, err)
 	for _, rule := range []siteconfig.SlugRule{
 		{LanguageCode: "pl", Character: "ł", Replacement: "l"},
@@ -168,9 +168,9 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	}
 	version, err := f.editor.SaveDraft(ctx, f.version, draft)
 	requireNoError(t, err)
-	visible, err := f.reader.Read(ctx, "", f.publication)
+	visible, err := f.reader.ReadAdminCatalog(ctx, "", true)
 	requireNoError(t, err)
-	if !slices.Equal(visible.SlugRules, initial.SlugRules) {
+	if visible.Version != f.publication || !slices.Equal(visible.SlugRules, initial.SlugRules) {
 		t.Fatal("published rules followed an unpublished draft")
 	}
 	assertEditableSlugRules(t, ctx, f.owner, want)
@@ -181,9 +181,9 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	requireNoError(t, err)
 	publication, version, err := f.editor.Publish(ctx, version)
 	requireNoError(t, err)
-	visible, err = f.reader.Read(ctx, "", publication)
+	visible, err = f.reader.ReadAdminCatalog(ctx, "", true)
 	requireNoError(t, err)
-	if !slices.Equal(visible.SlugRules, want) {
+	if visible.Version != publication || !slices.Equal(visible.SlugRules, want) {
 		t.Fatalf("omission dropped normalized rules: %#v", visible.SlugRules)
 	}
 	rejectSQL(t, ctx, f.owner, publisherTestRole, "UPDATE public.site_revision_slug_rules SET replacement='b' WHERE revision_id=$1", "23514", publication)
@@ -198,9 +198,9 @@ func (f *siteTestFixture) testSlugRules(t *testing.T, ctx context.Context) {
 	assertEditableSlugRules(t, ctx, f.owner, []siteconfig.SlugRule{})
 	f.publication, f.version, err = f.editor.Publish(ctx, version)
 	requireNoError(t, err)
-	visible, err = f.reader.Read(ctx, "", f.publication)
+	visible, err = f.reader.ReadAdminCatalog(ctx, "", true)
 	requireNoError(t, err)
-	if visible.SlugRules == nil || len(visible.SlugRules) != 0 {
+	if visible.Version != f.publication || visible.SlugRules == nil || len(visible.SlugRules) != 0 {
 		t.Fatalf("empty rules did not publish as an array: %#v", visible.SlugRules)
 	}
 }
@@ -245,7 +245,9 @@ func (f *siteTestFixture) testPublished(t *testing.T, ctx context.Context) {
 	body, _ := publicRequest(t, ctx, f.server.Client(), f.base, 200)
 	var out siteconfig.Publication
 	requireNoError(t, json.Unmarshal(body, &out))
-	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || !maps.Equal(out.Messages, siteFixture(f.signatures).Catalogs["en"]) || out.Settings.Accent != "#123aBC" {
+	expected := siteFixture(f.signatures).Catalogs["en"]
+	maps.DeleteFunc(expected, func(key, _ string) bool { return strings.HasPrefix(key, "admin.") })
+	if out.Version != f.publication || out.Language.Code != "en" || out.Settings.DefaultLanguage != "pl" || !maps.Equal(out.Messages, expected) || out.Settings.Accent != "#123aBC" {
 		t.Fatalf("unexpected site contract: %s", body)
 	}
 	out, err = f.reader.Read(ctx, "PL", f.publication)

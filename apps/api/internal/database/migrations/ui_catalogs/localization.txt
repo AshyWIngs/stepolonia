@@ -1,15 +1,3 @@
-admin.language
-Language
-Język
-Язык
-Тіл
-
-admin.interface_texts
-Interface texts
-Teksty interfejsu
-Тексты интерфейса
-Интерфейс мәтіндері
-
 admin.slug_rules_title
 URL replacements
 Zamiany znaków w adresie

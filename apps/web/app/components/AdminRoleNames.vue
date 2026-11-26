@@ -82,7 +82,7 @@ function reloadRole() {
     </button>
     <div v-if="languages.length" class="role-name-fields">
       <div>
-        <label for="role-name-language">{{ translate('admin.language') }}</label>
+        <label for="role-name-language">{{ translate('common.language') }}</label>
         <select id="role-name-language" :value="language" :disabled="busy || dirty" @change="choose(($event.target as HTMLSelectElement).value)">
           <option v-for="item in languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">{{ item.native_name }}</option>
         </select>

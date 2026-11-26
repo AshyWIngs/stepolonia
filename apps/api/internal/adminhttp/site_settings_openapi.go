@@ -14,6 +14,9 @@ import (
 )
 
 func settingsRequestDescription(rt route) string {
+	if isLanguageMutation(rt.operationID) {
+		return fmt.Sprintf("One JSON object up to %d bytes. Unknown, duplicate and null properties are rejected.", settingsRequestLimit(rt))
+	}
 	version := "Versions are canonical positive int64 strings."
 	if rt.method == http.MethodPost {
 		version = "Use the current scoped version for the affected section."
@@ -22,6 +25,7 @@ func settingsRequestDescription(rt route) string {
 }
 
 const (
+	scopeVersionPattern        = "^[0-9a-f]{64}$"
 	settingsTag                = "portal-settings"
 	editableSettingsSchemaName = "EditablePortalSettings"
 	slugRulesField             = "slug_rules"
@@ -100,7 +104,7 @@ func newSlugRuleChangesSchema() *huma.Schema {
 func newScopedSettingsSchema(flag bool) *huma.Schema {
 	version := siteconfig.ScopeVersion("")
 	properties := map[string]*huma.Schema{
-		expectedVersionField: {Type: huma.TypeString, Pattern: "^[0-9a-f]{64}$", Description: "Current scoped version from editable settings."},
+		expectedVersionField: {Type: huma.TypeString, Pattern: scopeVersionPattern, Description: "Current scoped version from editable settings."},
 	}
 	example := map[string]any{expectedVersionField: version}
 	if flag {
@@ -169,13 +173,18 @@ func settingsRequestSchema(operation string) *huma.Schema {
 		return slugRuleChangesSchema
 	case catalogSettingsOperation:
 		return catalogChangeSchema
+	case saveLanguageOperation:
+		return languageSaveSchema
+	case languageAvailabilityOperation:
+		return languageAvailabilityRequestSchema
 	}
 	return nil
 }
 
 func addSettingsSchemas(schemas map[string]*huma.Schema) {
+	addLanguageDirectorySchemas(schemas)
 	settings := apiexamples.PortalSettings()
-	language := siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: "ltr"}
+	language := languageExample
 	messages := apiexamples.PortalMessageExample()
 	schemas["Settings"] = responseDTOSchema("Installation title, descriptions, accent and language settings.", settings)
 	schemas["Language"] = responseDTOSchema("Enabled language with its native name and text direction.", language)
@@ -240,6 +249,14 @@ func settingsErrorCodes(rt route) map[int][]string {
 		codes[429] = []string{rateLimitedCode}
 	}
 	switch rt.operationID {
+	case readLanguagesOperation, readLanguageDefinitionOperation, saveLanguageOperation, languageAvailabilityOperation:
+		codes[400] = append(codes[400], siteconfig.InvalidLanguageEntryCode)
+		if isLanguageMutation(rt.operationID) {
+			codes[403] = append(codes[403], stepUpRequiredCode)
+		}
+		if rt.operationID == languageAvailabilityOperation {
+			codes[409] = append(codes[409], siteconfig.LanguageLimitCode, siteconfig.LanguageUsedInSettingsCode, siteconfig.LanguageUsedInContentCode)
+		}
 	case applySettingsOperation, languageFlagSettingsOperation:
 		codes[400] = append(codes[400], siteconfig.InvalidLanguageFlagCode)
 	case appearanceSettingsOperation:

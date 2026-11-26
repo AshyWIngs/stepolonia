@@ -388,6 +388,8 @@ async function publishAsEditor(page, visitor, type, id, slug, title) {
   assert.equal(await workspace.getByLabel('subtitle', { exact: true }).count(), 0)
   await button(page, 'Publish translations').click()
   await workspace.getByText('Translations published.', { exact: true }).waitFor()
+  const row = page.locator(`[data-item-id="${id}"]`).getByRole('button')
+  await row.filter({ hasText: /Published:\s*English/u }).waitFor()
   const path = publicLink(type, slug)
   const link = workspace.getByRole('link', { name: 'English', exact: true })
   await link.waitFor()
@@ -408,6 +410,8 @@ async function unpublishAsEditor(page, visitor, type, id, paths) {
   await button(page, 'Unpublish').click()
   await page.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true }).getByRole('button', { name: 'Confirm', exact: true }).click()
   await page.getByText('Publication removed.', { exact: true }).waitFor()
+  const row = page.locator(`[data-item-id="${id}"]`).getByRole('button')
+  await row.getByText('Unpublished', { exact: true }).waitFor()
   await eachInOrder(paths, async path => assert.equal((await visitor.get(path)).status(), 404))
   await backToDrafts(page)
 }
@@ -440,6 +444,33 @@ async function verifyTargetSessionsRetry(page) {
   assert.ok(await reload.evaluate(element => element === document.activeElement))
   await reload.click()
   await button(account, 'Revoke session').first().waitFor()
+}
+
+async function verifyAccountHandoff(author, editor) {
+  await button(author, 'My account').click()
+  await heading(author, 'workflow-author').waitFor()
+  await chooseAdminLanguage(author, 'pl')
+  const context = author.context()
+  const original = await context.cookies()
+  await context.clearCookies()
+  await context.addCookies(await editor.context().cookies())
+  await author.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await heading(author, 'workflow-editor').waitFor()
+  assert.equal(await heading(author, 'workflow-author').count(), 0)
+  assert.equal(await author.locator('html').getAttribute('lang'), 'pl')
+  await context.clearCookies()
+  await context.addCookies(original)
+  await author.reload()
+  await editor.reload()
+  await heading(author, 'workflow-author').waitFor()
+  await chooseAdminLanguage(author, 'en')
+}
+
+async function chooseAdminLanguage(page, language) {
+  const menu = page.getByTestId('language-switcher')
+  await menu.locator('summary').click()
+  await menu.locator(`button[data-language="${language}"]`).click()
+  await menu.locator(`summary[data-current-language="${language}"]`).waitFor()
 }
 
 export async function verifyAccessAdministration(browser, page, origin, assertTheme, assertFit) {
@@ -491,6 +522,7 @@ export async function verifyAccessAdministration(browser, page, origin, assertTh
       await unpublishAsEditor(editor, visitor.request, type, id, paths)
     })
     await verifyRoleRemoval(page, assertTheme, assertFit)
+    await verifyAccountHandoff(author, editor)
     await button(author, 'Sign out').click()
     await heading(author, 'Sign in').waitFor()
     await button(editor, 'Sign out').click()

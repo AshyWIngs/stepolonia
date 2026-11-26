@@ -1,0 +1,157 @@
+.registry-builder .builder-icon-label--named {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.registry-builder .builder-icon-preview {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.registry-builder .builder-icon-sample {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 44px;
+  block-size: 44px;
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+}
+
+.registry-builder .builder-icon-editor textarea {
+  font-family: ui-monospace, monospace;
+}
+
+.registry-builder .builder-icon-editor button { justify-self: start; }
+
+.registry-builder.builder, .registry-builder .builder, .registry-builder .builder-selection, .registry-builder.builder form, .registry-builder.builder fieldset {
+  display: grid;
+  gap: .55rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.registry-builder .builder-selection {
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  align-items: end;
+}
+
+.registry-builder .builder-control, .registry-builder .builder-field-controls {
+  display: grid;
+  align-items: end;
+  gap: .3rem .75rem;
+  min-width: 0;
+}
+
+.registry-builder .builder-field-controls {
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  row-gap: .55rem;
+}
+
+.registry-builder.builder button:not(:where(.admin-domain-save)) {
+  justify-self: start;
+  white-space: normal;
+}
+
+.registry-builder .builder-field {
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+}
+
+.registry-builder .builder-field summary {
+  box-sizing: border-box;
+  min-block-size: 44px;
+  padding: .55rem .75rem;
+  cursor: pointer;
+}
+
+.registry-builder .builder-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .2rem 1rem;
+  inline-size: calc(100% - 1.35em);
+  vertical-align: middle;
+}
+
+.registry-builder .builder-name { min-width: 0; overflow-wrap: anywhere; }
+
+.registry-builder .builder-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .1rem .65rem;
+  min-width: 0;
+}
+
+.registry-builder .builder-metadata, .registry-builder .builder-hint, .registry-builder .builder-schema p {
+  color: var(--admin-muted);
+  font-size: .875rem;
+}
+
+.registry-builder .builder-metadata span + span::before {
+  content: '·';
+  margin-inline-end: .65rem;
+}
+
+.registry-builder .builder-summary > span { max-width: 100%; }
+.registry-builder .builder-hint, .registry-builder .builder-schema p { margin: 0; }
+
+.registry-builder.builder fieldset {
+  margin: 0;
+  padding: .75rem;
+  border: 0;
+  border-block-start: 1px solid var(--admin-border);
+}
+
+.registry-builder.builder input, .registry-builder.builder select, .registry-builder.builder textarea, .registry-builder.builder button:not(:where(.admin-domain-save)) {
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: .4rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+  font: inherit;
+}
+
+.registry-builder.builder input { margin-bottom: 0; }
+.registry-builder.builder :is(input, select, textarea) { inline-size: 100%; }
+
+.registry-builder.builder textarea { resize: vertical; }
+
+.registry-builder.builder button[type='submit']:not(:where(.admin-domain-save)) {
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+}
+
+.registry-builder.builder :focus-visible:not(:where(.admin-domain-save)) {
+  outline: 3px solid var(--admin-focus);
+  outline-offset: 3px;
+}
+
+.registry-builder .builder-check {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  min-block-size: 44px;
+  justify-self: start;
+}
+
+.registry-builder .builder-check input {
+  flex: 0 0 1.1rem;
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}

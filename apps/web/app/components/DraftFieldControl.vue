@@ -48,8 +48,8 @@ function change(event: Event) {
     >
       <option value="">{{ translate('admin.content_empty_value') }}</option>
       <template v-if="field.kind === 'boolean'">
-        <option value="true">{{ translate('admin.content_yes') }}</option>
-        <option value="false">{{ translate('admin.content_no') }}</option>
+        <option value="true">{{ translate('common.yes') }}</option>
+        <option value="false">{{ translate('common.no') }}</option>
       </template>
       <option v-for="code in field.config.codes" :key="code" :value="code">{{ code }}</option>
     </select>

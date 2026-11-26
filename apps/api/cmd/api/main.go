@@ -53,7 +53,8 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 	runtimeDB := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = runtimeDB.Close() }()
-	auth, closeAuth, err := authentication(ctx, cfg)
+	site := siteconfig.NewReader(runtimeDB)
+	auth, closeAuth, err := authentication(ctx, cfg, site)
 	if err != nil {
 		return err
 	}
@@ -62,9 +63,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler := platform.HandlerWithAuth(pool, content.NewPublicReader(runtimeDB), logger, auth, siteconfig.NewReader(runtimeDB))
+	handler := platform.HandlerWithAuth(pool, content.NewPublicReader(runtimeDB), logger, auth, site)
 	if docs {
-		handler = platform.HandlerWithDocumentation(pool, content.NewPublicReader(runtimeDB), logger, auth, siteconfig.NewReader(runtimeDB))
+		handler = platform.HandlerWithDocumentation(pool, content.NewPublicReader(runtimeDB), logger, auth, site)
 	}
 	server := &http.Server{
 		Addr: ":8080", Handler: handler,

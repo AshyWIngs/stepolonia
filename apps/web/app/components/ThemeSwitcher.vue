@@ -7,7 +7,7 @@ const theme = defineModel<ThemeMode>({ required: true })
 
 <template>
   <HeaderPreference
-    :label="translate('admin.theme')" :current="translate(`admin.${theme}`)" :icon="theme"
+    :label="translate('theme.label')" :current="translate(`theme.${theme}`)" :icon="theme"
     test-id="theme-switcher" :trigger-attrs="{ 'data-current-theme': theme }" interactive
   >
     <template #default="{ close }">
@@ -17,7 +17,7 @@ const theme = defineModel<ThemeMode>({ required: true })
           @click="theme = mode; close()"
         >
           <PreferenceIcon :name="mode" />
-          {{ translate(`admin.${mode}`) }}
+          {{ translate(`theme.${mode}`) }}
         </button>
       </li>
     </template>

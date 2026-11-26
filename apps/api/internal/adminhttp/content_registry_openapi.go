@@ -86,7 +86,7 @@ func collectionIconVersionSchema() *huma.Schema {
 }
 
 func registryScopeVersionSchema(description string) *huma.Schema {
-	return &huma.Schema{Type: huma.TypeString, Pattern: "^[0-9a-f]{64}$", Description: description}
+	return &huma.Schema{Type: huma.TypeString, Pattern: scopeVersionPattern, Description: description}
 }
 
 func collectionIconResponseSchema() *huma.Schema {

@@ -29,16 +29,18 @@ func TestLiveDocumentationBoundary(t *testing.T) {
 		}
 	}
 	handler := HandlerWithDocumentation(failingDatabase{}, nil, logger, nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openapi-auth.json", nil))
-	if w.Code != http.StatusNotFound {
-		t.Fatal("private spec exposed while auth disabled")
+	for _, path := range []string{privateSpecPath, allOperationsSpecPath} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s exposed while auth disabled", path)
+		}
 	}
 }
 
 func assertDocumentationPaths(t *testing.T, handler http.Handler, enabled bool) {
 	t.Helper()
-	for _, path := range []string{"/docs", "/docs/", "/docs/init.js", "/docs/assets/swagger-ui.css", "/docs/assets/swagger-ui-bundle.js", "/docs/assets/swagger-ui-standalone-preset.js", publicSpecPath, "/openapi-auth.json"} {
+	for _, path := range []string{"/docs", "/docs/", "/docs/init.js", "/docs/assets/swagger-ui.css", "/docs/assets/swagger-ui-bundle.js", "/docs/assets/swagger-ui-standalone-preset.js", publicSpecPath, privateSpecPath, allOperationsSpecPath} {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		want := http.StatusNotFound

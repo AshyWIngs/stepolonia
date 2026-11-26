@@ -406,6 +406,7 @@ CREATE TABLE public.security_audit (
             'content.initial_access_granted',
             'content.new_field_access_granted',
             'settings.draft_saved', 'settings.published',
+            'settings.languages_changed',
             'settings.initialized', 'security.session_policy_changed',
             'security.rate_policy_changed',
             'auth.enrollment_started', 'auth.enrollment_completed',

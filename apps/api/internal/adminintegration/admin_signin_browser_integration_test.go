@@ -26,16 +26,16 @@ func TestAdminSignInBrowserIntegration(t *testing.T) {
 	if os.Getenv("ADMIN_UI_BROWSER_TEST") != "1" {
 		t.Skip("NOT RUN: build Nuxt and set ADMIN_UI_BROWSER_TEST=1")
 	}
-	f := newAuthHTTPFixtureWithEditors(t, func(state authFixtureState, auth http.Handler) http.Handler {
+	f := newAuthHTTPFixtureWithPublication(t, func(state authFixtureState, auth http.Handler) http.Handler {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		runtime := openPublicationRuntimeLogin(t, state.db)
+		runtime := state.runtime
 		site := siteconfig.NewReader(runtime)
 		reader := content.NewPublicReader(runtime)
-		public := httptest.NewServer(platform.Handler(nil, reader, logger, site))
+		public := httptest.NewServer(platform.HandlerWithAuth(nil, reader, logger, auth, site))
 		t.Cleanup(public.Close)
 		web := startAdminFrontend(t, public.URL)
 		return adminBrowserProxy(web, platform.HandlerWithAuth(nil, reader, logger, auth, site), logger)
-	}, true)
+	}, true, true)
 	assertUnpublishedAdminUnavailable(t, f)
 	publishTestSiteCatalog(t, f.state.db)
 

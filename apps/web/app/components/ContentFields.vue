@@ -27,7 +27,7 @@ const related = computed(() => props.item.relations.flatMap(relation => relation
         <dt>{{ labels.get(key) ?? readableContentKey(key) }}</dt>
         <dd :data-field="key">
           <time v-if="field.kind === 'datetime'" :datetime="field.value">{{ formatContentValue(field, item.language) }}</time>
-          <template v-else-if="field.kind === 'boolean'">{{ t(field.value ? 'admin.content_yes' : 'admin.content_no') }}</template>
+          <template v-else-if="field.kind === 'boolean'">{{ t(field.value ? 'common.yes' : 'common.no') }}</template>
           <template v-else>{{ formatContentValue(field, item.language) }}</template>
         </dd>
       </div>

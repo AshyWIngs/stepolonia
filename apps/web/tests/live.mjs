@@ -57,7 +57,8 @@ async function checkSSR() {
   assert.ok(!event.html.includes('data-testid="language-switcher"'))
   assert.ok(event.html.includes('>À la une</dt>'))
   const eventFields = event.html.replaceAll('<!--[-->', '').replaceAll('<!--]-->', '')
-  assert.match(eventFields, /data-field="featured"[^>]*>Fixture ru admin\.content_yes</u)
+  assert.match(eventFields, /data-field="featured"[^>]*>Fixture ru common\.yes</u)
+  assert.doesNotMatch(eventFields, /\badmin\.[a-z_]+/u)
   assert.ok(event.html.includes('>Prix</dt>'))
   assert.match(eventFields, /data-field="price"[^>]*>123[\u00a0\u202f]456[\u00a0\u202f]789[\u00a0\u202f]012,123456</u)
   assert.ok(!event.html.includes('private-event-secret'))
@@ -87,7 +88,7 @@ async function checkSSR() {
   const empty = await documentResponse('/en/articles', 200)
   assert.ok(empty.html.includes('Fixture en empty'))
   const links = html.match(/data-language="[^"]+"/gu) ?? []
-  assert.deepEqual(links.sort(), ['data-language="fr"', 'data-language="ru"'])
+  assert.deepEqual(links, ['data-language="ru"'])
   assert.ok(html.includes('/ru/articles/stage22-ru-current'))
   for (const hiddenSlug of ['stage22-ru-first', 'stage22-ru-draft', 'stage22-kk-private', 'stage22-pl-hidden']) {
     assert.ok(!html.includes(hiddenSlug), `Hidden or obsolete translation link: ${hiddenSlug}`)
@@ -281,7 +282,7 @@ async function holdRequest(page, pattern) {
 }
 
 async function checkPendingLanguageChange(page) {
-  await page.goto(`${base}/ru/articles`)
+  await page.goto(`${base}/fr/articles`)
   const heading = page.getByRole('heading', { level: 1 })
   const previousHeading = await heading.textContent()
   const languages = await holdRequest(page, '**/api/v1/languages')
@@ -290,11 +291,11 @@ async function checkPendingLanguageChange(page) {
     await Promise.all([languages.pending, change])
     assert.equal(await heading.textContent(), previousHeading)
     assert.equal(await page.locator('html').getAttribute('lang'), 'ru')
-    assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'ru')
+    assert.equal(await page.getByTestId('language-switcher').locator('summary').getAttribute('data-current-language'), 'fr')
 
-    const catalog = await holdRequest(page, '**/api/v1/site?lang=fr')
+    const catalog = await holdRequest(page, '**/api/v1/site?lang=ru')
     try {
-      await Promise.all([catalog.pending, selectContentLanguage(page, 'fr')])
+      await Promise.all([catalog.pending, selectContentLanguage(page, 'ru')])
       languages.release()
       await page.getByRole('heading', { name: 'Fixture en articles', level: 1, exact: true }).waitFor({ timeout: 10000 })
       await page.waitForFunction(() => document.documentElement.lang === 'en')
@@ -308,9 +309,9 @@ async function checkPendingLanguageChange(page) {
     languages.release()
     await page.unrouteAll({ behavior: 'wait' })
   }
-  await page.waitForURL(`${base}/fr/articles`)
+  await page.waitForURL(`${base}/ru/articles`)
   await page.waitForFunction(() => document.documentElement.lang === 'ru' &&
-    document.querySelector('summary[data-current-language="fr"]'))
+    document.querySelector('summary[data-current-language="ru"]'))
   assert.equal(await heading.textContent(), previousHeading)
   await selectContentLanguage(page, 'en')
   await page.waitForURL(`${base}/en/articles`)
@@ -415,6 +416,7 @@ async function checkOtherInstallation() {
     assert.ok(!(await page.content()).includes(articleTitle))
     const navigation = page.getByRole('navigation', { name: 'Fixture pl navigation', exact: true })
     assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Fixture pl articles'])
+    assert.equal(await page.getByTestId('language-switcher').locator('a[data-language="fr"]').count(), 0)
     await selectContentLanguage(page, 'pl')
     const saved = await context.cookies()
     assert.equal(saved.find(cookie => cookie.domain === 'localhost')?.value, 'pl')

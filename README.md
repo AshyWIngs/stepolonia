@@ -21,6 +21,8 @@ Run `make swagger` from the repository root to serve the public API and Swagger 
 
 The Swagger demo includes published Article and Event items in Polish (`pl`). Use `welcome-to-stepolonia` and `community-meetup` for detail reads, `limit=1` for pagination, and `welcome-old` for an HTTP 301 redirect. `/api/v1/site?lang=kk` selects the published Kazakh UI catalog. The site catalog uses `lang`. Content endpoints use `language`. The API connects with a restricted runtime login, and the fixture writer uses an owner connection before the API starts. Private administration routes are disabled in this demo.
 
+When a local installation enables both documentation and administration, Swagger starts in **All operations** and serves the combined document at `/docs/openapi.json`. The selector also opens the public and administration contracts individually. Huma generates the public document from handler registrations. The administration document uses the same Go route registry as HTTP mounting. Language directory schemas are derived from the Go request and response types. The SDK consumes the public document.
+
 ### Full installation
 
 Install Docker with Compose and BuildKit, Make, and the CPython version in `.python-version`. The initial build needs network access. Go and Node.js are installed in the builder containers. If you use pyenv, run `pyenv install -s "$(cat .python-version)"` to install the pinned Python version.
@@ -60,7 +62,9 @@ SITE ?= another.test
 
 `/{lang}/articles` lists published articles, and `/{lang}/articles/{slug}` opens a published article. The homepage chooses the language from the visitor's saved choice, `Accept-Language`, or the published content default, in that order. A localized URL selects content directly. Article language switches link to published translations.
 
-`GET /api/v1/site` returns settings and UI text from the same published PostgreSQL revision. If the requested catalog is missing, the API uses the installation's published fallback. Missing publication or invalid language configuration returns 503. Compose sets `NUXT_API_ORIGIN` for SSR. Set it explicitly when starting Nuxt separately. Browser requests use the current site's origin. Set `NUXT_PUBLIC_SITE_ORIGIN` to a trusted public HTTPS origin to enable canonical links. Responses carry `noindex, nofollow`. The published revision controls settings and UI text without a frontend rebuild.
+`GET /api/v1/site` returns settings and visitor UI text from the same published PostgreSQL revision. If the requested catalog is missing, the API uses the installation's published fallback. Missing publication or invalid language configuration returns 503. Compose sets `NUXT_API_ORIGIN` for SSR. Set it explicitly when starting Nuxt separately. Browser requests use the current site's origin. Set `NUXT_PUBLIC_SITE_ORIGIN` to a trusted public HTTPS origin to enable canonical links. Responses carry `noindex, nofollow`. The published revision controls settings and UI text without a frontend rebuild.
+
+The administration page reads `GET /api/v1/admin/ui/entry` without credentials for sign-in, MFA, enrollment and recovery text. After a full session is established, `GET /api/v1/admin/ui/catalog` supplies the workspace catalog. Slug suggestions require an active authoring, content type administration or settings grant. Both read the same published settings and appear in the administration and combined OpenAPI documents.
 
 Markdown renders through the allowed Vue nodes. Images currently render as alternative text.
 
@@ -94,7 +98,16 @@ pl,Polish,Polski,ltr
 make SITE=sandbox.test import-languages FILE=/absolute/path/languages.csv
 ```
 
-Normalized BCP 47 codes are stored in lowercase and have a length of 2–63 bytes. Invalid files are rejected atomically. Repeated import updates metadata while preserving availability and translations.
+Normalized BCP 47 codes are stored in lowercase and have a length of 2–63 bytes. Both names must be 1–200 characters after trimming and may not contain control characters. Invalid files are rejected atomically. Repeated import updates metadata while preserving availability and translations.
+
+Administration provides JSON exchange for the language directory. Requests use the installation’s canonical HTTPS origin and a full session with `settings.manage`. Writes also require `X-CSRF-Token` and fresh MFA.
+
+- `GET /api/v1/admin/settings/languages` lists enabled and disabled entries. Add `?code=pl` to filter.
+- `GET /api/v1/admin/settings/languages/definition?code=pl` exports a single editable JSON document.
+- `POST /api/v1/admin/settings/languages` imports that document. Keep the exported `expected_version` to edit the same code. Omit it and choose a new code to create a disabled entry. Correct any overlong names or control characters found in older CSV records before importing them.
+- `POST /api/v1/admin/settings/languages/availability` accepts `code`, `expected_version` and `enabled`. To disable a language, first remove references from active settings and published content.
+
+An enabled language appears in the interface menu after its complete UI catalog has been published. This takes effect without rebuilding the portal.
 
 The bootstrap container initializes the Alpine/musl PostgreSQL 18.7 cluster. The runtime uses UID/GID 999 and `/var/lib/postgresql/18/docker`. Validate locale and collation and use dump/restore before moving a cluster from Debian/glibc. The image includes PL/pgSQL, ICU, XML, LDAP, LLVM JIT and contrib, and uses SCRAM-SHA-256 for authentication. Kerberos/GSS, PL/Perl, PL/Python and PL/Tcl are excluded.
 

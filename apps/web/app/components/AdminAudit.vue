@@ -44,6 +44,7 @@ const eventLabels = new Map([
   ['content.collection_enabled', 'admin.registry_enable'],
   ['content.collection_disabled', 'admin.registry_disable'],
   ['settings.published', 'admin.settings_save_changes'],
+  ['settings.languages_changed', 'admin.language_directory'],
   ['security.session_policy_changed', 'admin.session_policy_save'],
   ['mfa.replaced', 'admin.account_replace_factor'],
   ['mfa.recovery_codes_regenerated', 'admin.account_regenerate_codes'],

@@ -36,6 +36,16 @@ const (
 )
 
 var settingsRoutes = map[string][]route{
+	languageDirectoryPath: {
+		{kind: fullKind, method: http.MethodGet, operationID: readLanguagesOperation, summary: "Export installation languages", response: languageDirectorySchema, description: "Returns enabled and disabled language entries as JSON, optionally filtered by a BCP 47 code. Requires settings.manage."},
+		{kind: fullKind, method: http.MethodPost, operationID: saveLanguageOperation, summary: "Import or edit a language", response: languageEntrySchema, description: "Send the language object from the directory. Omit expected_version to create a disabled language; supply it to replace the metadata of an existing language. Requires settings.manage, CSRF and fresh MFA."},
+	},
+	languageDefinitionPath: {
+		{kind: fullKind, method: http.MethodGet, operationID: readLanguageDefinitionOperation, summary: "Export an editable language definition", response: languageDefinitionSchema, description: "Returns a JSON document accepted by the language import operation. Send the document with its version to edit the same language. Remove the version and select a new code to create a disabled language."},
+	},
+	languageAvailabilityPath: {
+		{kind: fullKind, method: http.MethodPost, operationID: languageAvailabilityOperation, summary: "Change language availability", response: languageEntrySchema, description: "Enables or disables a language at its current version. Disabling requires removing its active catalog and published content references. Requires settings.manage, CSRF and fresh MFA."},
+	},
 	settingsPath: {
 		{kind: fullKind, method: http.MethodGet, operationID: readSettingsOperation, summary: "Read editable portal settings", response: editableSettingsSchemaName, description: "Requires the settings.manage grant and a verified editor database login. Returns pending settings when present, otherwise the current publication, along with the enabled language directory."},
 	},
@@ -110,12 +120,20 @@ func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route
 			writeError(w, identity.ErrValidation)
 			return
 		}
-		h.readSettings(ctx, w, req)
+		if rt.operationID == readLanguagesOperation || rt.operationID == readLanguageDefinitionOperation {
+			h.readLanguageDirectory(ctx, w, r, req, rt.operationID == readLanguageDefinitionOperation)
+		} else {
+			h.readSettings(ctx, w, req)
+		}
 		return
 	}
 	raw, code, status := readJSONBody(w, r, settingsRequestLimit(rt))
 	if code != "" {
 		problem(w, status, code)
+		return
+	}
+	if isLanguageMutation(rt.operationID) {
+		h.changeLanguageDirectory(ctx, w, req, rt.operationID, raw)
 		return
 	}
 	if rt.method == http.MethodPost {
@@ -131,6 +149,9 @@ func (h *handler) serveSettings(w http.ResponseWriter, r *http.Request, rt route
 }
 
 func settingsRequestLimit(rt route) int64 {
+	if isLanguageMutation(rt.operationID) {
+		return 4096
+	}
 	if rt.operationID == catalogSettingsOperation {
 		return settingsBodyBytes
 	}
@@ -231,7 +252,7 @@ func writeSettingsError(w http.ResponseWriter, err error) {
 
 func isScopedSettingsValidation(code string) bool {
 	switch code {
-	case siteconfig.InvalidLanguageFlagCode, siteconfig.InvalidAccentCode, siteconfig.InvalidDetailsCode, siteconfig.InvalidLocaleDefaultsCode, siteconfig.InvalidSlugRulesCode, siteconfig.InvalidCatalogChangeCode:
+	case siteconfig.InvalidLanguageFlagCode, siteconfig.InvalidAccentCode, siteconfig.InvalidDetailsCode, siteconfig.InvalidLocaleDefaultsCode, siteconfig.InvalidSlugRulesCode, siteconfig.InvalidCatalogChangeCode, siteconfig.InvalidLanguageEntryCode:
 		return true
 	default:
 		return false

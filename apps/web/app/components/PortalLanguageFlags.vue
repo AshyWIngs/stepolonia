@@ -43,7 +43,7 @@ defineExpose({ focusInvalid })
 <template>
   <div class="flag-settings">
     <div class="flag-fields">
-      <label for="portal-flag-language">{{ translate('admin.language') }}</label>
+      <label for="portal-flag-language">{{ translate('common.language') }}</label>
       <select id="portal-flag-language" v-model="selected">
         <option v-for="language in languages" :key="language.code" :value="language.code" :lang="language.code" :dir="language.direction">
           {{ language.native_name }}

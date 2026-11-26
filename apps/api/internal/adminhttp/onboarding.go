@@ -96,6 +96,9 @@ func routeForMethod(method string, candidates []route) route {
 }
 
 func staticAdminRoutes(path string) (string, string, []route) {
+	if candidates := adminUIRoutes[path]; candidates != nil {
+		return path, "", candidates
+	}
 	if path == roleGrantOptionsPath {
 		return path, "", []route{readRoleGrantOptionsRoute}
 	}
@@ -244,7 +247,7 @@ func routeMethods(path string) string {
 	switch path {
 	case sessionPolicyPath, contentAssigneesPath:
 		return "GET, PUT"
-	case roleGrantOptionsPath, draftMetadataPath, registryRenderersPath:
+	case roleGrantOptionsPath, draftMetadataPath, registryRenderersPath, adminEntryPath, adminCatalogPath:
 		return http.MethodGet
 	case contentCollectionsPath, ratePolicyPath:
 		return "GET, POST"

@@ -88,18 +88,6 @@ Brak wartości
 Нет значения
 Мән жоқ
 
-admin.content_yes
-Yes
-Tak
-Да
-Иә
-
-admin.content_no
-No
-Nie
-Нет
-Жоқ
-
 admin.content_relation_help
 Enter the ID of an accessible target draft. Clear the value to remove the link.
 Wpisz identyfikator dostępnego szkicu. Wyczyść pole, aby usunąć powiązanie.

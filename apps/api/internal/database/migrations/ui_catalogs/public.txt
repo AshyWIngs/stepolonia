@@ -99,3 +99,51 @@ Collection
 Kolekcja
 Коллекция
 Жинақ
+
+common.language
+Language
+Język
+Язык
+Тіл
+
+common.interface_texts
+Interface texts
+Teksty interfejsu
+Тексты интерфейса
+Интерфейс мәтіндері
+
+common.yes
+Yes
+Tak
+Да
+Иә
+
+common.no
+No
+Nie
+Нет
+Жоқ
+
+theme.label
+Theme
+Motyw
+Тема
+Тақырып
+
+theme.system
+System
+Systemowy
+Системная
+Жүйелік
+
+theme.light
+Light
+Jasny
+Светлая
+Ашық
+
+theme.dark
+Dark
+Ciemny
+Тёмная
+Қараңғы

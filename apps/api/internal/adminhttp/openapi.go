@@ -13,9 +13,13 @@ import (
 	"stepolonia/apps/api/internal/identity"
 )
 
-// OpenAPIJSON describes the registered private auth transport independently of
-// the public Huma API and SDK. Generating it does not register HTTP handlers.
+// OpenAPIJSON exports the private administration contract.
 func OpenAPIJSON() ([]byte, error) {
+	return json.Marshal(OpenAPI())
+}
+
+// OpenAPI builds a private document from the administration route registry.
+func OpenAPI() *huma.OpenAPI {
 	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
 	for name, schema := range privateSchemas() {
 		registry.Map()[name] = schema
@@ -27,7 +31,13 @@ func OpenAPIJSON() ([]byte, error) {
 			if item == nil {
 				item = &huma.PathItem{}
 			}
-			op := privateOperationSchema(registry, path, rt)
+			var op *huma.Operation
+			switch rt.operationID {
+			case adminEntryOperation, adminCatalogOperation:
+				op = adminUIOperation(rt, registry.Map()[rt.response].Examples[0])
+			default:
+				op = privateOperationSchema(registry, path, rt)
+			}
 			switch rt.method {
 			case http.MethodGet:
 				item.Get = op
@@ -43,16 +53,17 @@ func OpenAPIJSON() ([]byte, error) {
 			paths[path] = item
 		}
 	}
-	return json.Marshal(&huma.OpenAPI{
+	return &huma.OpenAPI{
 		OpenAPI: "3.1.0",
 		Info:    &huma.Info{Title: "Private Administration API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, empty draft creation, scoped draft listing, projected draft reads, scalar draft editing, readiness and publication. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants administration permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
-	})
+	}
 }
 
 const openAPIPathParameter = "path"
+const openAPIQueryParameter = "query"
 
 func privateOperationSchema(registry huma.Registry, path string, rt route) *huma.Operation {
 	op := &huma.Operation{OperationID: rt.operationID, Summary: rt.summary, Description: rt.description + " " + boundaryDescription, Tags: []string{authTag(rt)}, Parameters: authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt)}
@@ -69,6 +80,10 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
 	switch rt.operationID {
+	case readLanguagesOperation:
+		op.Parameters = append(op.Parameters, &huma.Param{Name: languageCodeField, In: openAPIQueryParameter, Description: "Optional BCP 47 code. An unknown code returns an empty list.", Schema: languageCodeSchema()})
+	case readLanguageDefinitionOperation:
+		op.Parameters = append(op.Parameters, &huma.Param{Name: languageCodeField, In: openAPIQueryParameter, Required: true, Description: "BCP 47 code of the definition to export. An unknown code returns 404.", Schema: languageCodeSchema()})
 	case createDraftOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection in which to create the draft."))
 	case listDraftsOperation:
@@ -166,7 +181,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users, GET /api/v1/admin/roles, GET /api/v1/admin/content-types and GET /api/v1/admin/content/{type_key} accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "Protected administration routes require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one matching Origin, application/json (optionally charset=utf-8), one 43-character X-CSRF-Token and one matching session cookie. Protected GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Send only the query parameters documented for the operation. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -299,6 +314,7 @@ func privateSchemas() map[string]*huma.Schema {
 	addAccessReadSetSchemas(schemas)
 	addRoleGrantOptionSchemas(schemas)
 	addSettingsSchemas(schemas)
+	addAdminUISchemas(schemas)
 	schemas[sessionPolicySchema] = sessionPolicyResponseSchema()
 	addRatePolicySchemas(schemas)
 	addLifecycleSchemas(schemas)
@@ -583,42 +599,6 @@ func sortedCookieKinds() []string {
 	return kinds
 }
 
-func privateRoutes() map[string][]route {
-	all := make(map[string][]route, len(routes)+len(userRoutes))
-	for path, rt := range routes {
-		all[authPrefix+path] = []route{rt}
-	}
-	for path, methods := range userRoutes {
-		all[path] = methods
-	}
-	for path, methods := range roleRoutes {
-		all[path] = methods
-	}
-	all[sessionPolicyPath] = sessionPolicyRoutes
-	all[ratePolicyPath] = ratePolicyRoutes
-	all[roleGrantOptionsPath] = []route{readRoleGrantOptionsRoute}
-	all[contentAssigneesPath] = []route{readContentAssigneesRoute, replaceContentAssigneesRoute}
-	all[createDraftPath] = collectionDraftRoutes
-	all[contentDraftPath] = itemDraftRoutes
-	all[contentCollectionsPath] = []route{listCollectionsRoute, registryCreateRoute}
-	all[registryCollectionPath] = []route{registryReadRoute, registryReviseRoute}
-	all[registryAvailabilityPath] = []route{registryAvailabilityRoute}
-	all[registryIconPath] = []route{registryIconRoute}
-	all[registryFieldChangesPath] = []route{registryFieldChangesRoute}
-	all[registryRenderersPath] = []route{registryRendererRoute}
-	all[draftMetadataPath] = []route{readDraftMetadataRoute}
-	for path, rt := range draftCandidateRoutes {
-		all[path] = []route{rt}
-	}
-	for path, methods := range settingsRoutes {
-		all[path] = methods
-	}
-	for path, rt := range accountRoutes {
-		all[path] = []route{rt}
-	}
-	return all
-}
-
 func responseDTOSchema(description string, example any) *huma.Schema {
 	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
 	schema := huma.SchemaFromType(registry, reflect.TypeOf(example))
@@ -644,6 +624,7 @@ func authTags() []*huma.Tag {
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
 		{Name: settingsTag, Description: "Authorized editing and atomic publication of installation settings and interface translations."},
+		{Name: adminUITag, Description: "Published interface texts for administration entry and the authenticated workspace."},
 		{Name: sessionPolicyTag, Description: "Installation-wide session lifetime and attempt limit policies."},
 		{Name: contentDraftTag, Description: "Empty draft creation, projected reads, versioned editing, readiness and publication when the installation enables its draft editor."},
 		{Name: registryTag, Description: "Managed collection schemas and explicit initial field access."},
@@ -669,7 +650,7 @@ func authTag(rt route) string {
 		return contentAssigneesTag
 	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return contentDraftTag
-	case readSettingsOperation, applySettingsOperation, appearanceSettingsOperation, languageFlagSettingsOperation, portalDetailsSettingsOperation, localeDefaultsSettingsOperation, slugRulesSettingsOperation, catalogSettingsOperation:
+	case readSettingsOperation, applySettingsOperation, appearanceSettingsOperation, languageFlagSettingsOperation, portalDetailsSettingsOperation, localeDefaultsSettingsOperation, slugRulesSettingsOperation, catalogSettingsOperation, readLanguagesOperation, readLanguageDefinitionOperation, saveLanguageOperation, languageAvailabilityOperation:
 		return settingsTag
 	case readSessionPolicyOperation, replaceSessionPolicyOperation, readRatePoliciesOperation, replaceRatePolicyOperation:
 		return sessionPolicyTag

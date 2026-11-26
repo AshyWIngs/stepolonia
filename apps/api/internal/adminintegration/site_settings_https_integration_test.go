@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -20,6 +21,7 @@ import (
 
 const settingsEndpoint = "/api/v1/admin/settings"
 const applySettingsEndpoint = settingsEndpoint + "/publication"
+const settingsVersionConflictProblem = "site_version_conflict"
 const settingsSignInMessage = "admin.sign_in"
 const settingsInitialPolishSignIn = "Zaloguj się"
 const scopedTestAccent = "#774411"
@@ -59,7 +61,9 @@ func newSettingsHTTPFixture(t *testing.T) settingsHTTPFixture {
 	reader := siteconfig.NewReader(openPublicationRuntimeLogin(t, state.db))
 	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
-	adapter, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: "https://" + server.Listener.Addr().String()}, auth, editor, auth)
+	adapter, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{
+		CanonicalOrigin: "https://" + server.Listener.Addr().String(), PublishedSite: reader,
+	}, auth, editor, auth)
 	requireNoError(t, err)
 	server.Config.Handler = platform.HandlerWithAuth(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), adapter, reader)
 	server.StartTLS()
@@ -95,17 +99,33 @@ func (f settingsHTTPFixture) editable(t *testing.T) observedEditableSettings {
 }
 
 func (f settingsHTTPFixture) public(t *testing.T, language string) siteconfig.Publication {
+	return readSettingsPublication[siteconfig.Publication](t, f.server, "/api/v1/site?lang="+language)
+}
+
+func (f settingsHTTPFixture) entry(t *testing.T, language string) siteconfig.AdminEntry {
+	return readSettingsPublication[siteconfig.AdminEntry](t, f.server, "/api/v1/admin/ui/entry?lang="+language)
+}
+
+func (f settingsHTTPFixture) catalog(t *testing.T, language string) siteconfig.AdminCatalog {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, f.server.URL+"/api/v1/site?lang="+language, nil)
+	body := f.request(t, f.manager, http.MethodGet, "/api/v1/admin/ui/catalog?lang="+language, "", http.StatusOK)
+	var result siteconfig.AdminCatalog
+	requireNoError(t, json.Unmarshal([]byte(body), &result))
+	return result
+}
+
+func readSettingsPublication[T any](t *testing.T, server *httptest.Server, path string) T {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+path, nil)
 	requireNoError(t, err)
-	response, err := f.server.Client().Do(req)
+	response, err := server.Client().Do(req)
 	requireNoError(t, err)
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(response.Body)
-		t.Fatalf("public settings returned %d: %s", response.StatusCode, body)
+		t.Fatalf("%s returned %d: %s", path, response.StatusCode, body)
 	}
-	var result siteconfig.Publication
+	var result T
 	requireNoError(t, json.NewDecoder(response.Body).Decode(&result))
 	return result
 }
@@ -134,7 +154,7 @@ func TestAdminPortalRetiredCatalogKeyHTTPSIntegration(t *testing.T) {
 	f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSavePayload(t, editable), http.StatusOK)
 	_, err = f.owner.ExecContext(ctx, `DELETE FROM public.ui_message_keys WHERE message_key=$1`, retired)
 	requireNoError(t, err)
-	if f.public(t, "en").Messages[retired] != "Community notice" {
+	if f.catalog(t, "en").Messages[retired] != "Community notice" {
 		t.Fatal("retiring the key changed the current publication")
 	}
 	editable = f.editable(t)
@@ -144,7 +164,7 @@ func TestAdminPortalRetiredCatalogKeyHTTPSIntegration(t *testing.T) {
 		}
 	}
 	f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSavePayload(t, editable), http.StatusOK)
-	if _, present := f.public(t, "en").Messages[retired]; present {
+	if _, present := f.catalog(t, "en").Messages[retired]; present {
 		t.Fatal("the new publication contains a retired key")
 	}
 }
@@ -152,6 +172,7 @@ func TestAdminPortalRetiredCatalogKeyHTTPSIntegration(t *testing.T) {
 func TestAdminScopedPortalSettingsHTTPSIntegration(t *testing.T) {
 	f := newSettingsHTTPFixture(t)
 	initial := f.public(t, "pl")
+	initialEntry := f.entry(t, "pl")
 	editable := f.editable(t)
 	flag := `<svg viewBox="0 0 30 20"><rect width="30" height="20" fill="#808080"/></svg>`
 	flagPayload := marshalScopedSettings(t, flagCommand{editable.LanguageFlagVersions["pl"], "pl", flag})
@@ -183,7 +204,7 @@ func TestAdminScopedPortalSettingsHTTPSIntegration(t *testing.T) {
 			t.Fatalf("scoped revision %s copied %d messages", version, messages)
 		}
 	}
-	if result.Messages[settingsSignInMessage] != initial.Messages[settingsSignInMessage] {
+	if !maps.Equal(result.Messages, initial.Messages) || !maps.Equal(f.entry(t, "pl").Messages, initialEntry.Messages) {
 		t.Fatal("scoped publication changed the existing catalog")
 	}
 	beforeConflict := f.public(t, "en")
@@ -214,8 +235,8 @@ func TestAdminScopedCatalogHTTPSIntegration(t *testing.T) {
 	assertOnlyOwnedCatalog(t, f, f.public(t, "pl").Version, "pl")
 	f.request(t, f.manager, http.MethodPost, catalogPath, marshalScopedSettings(t, english), http.StatusOK)
 	published := f.public(t, "en")
-	if published.Messages[settingsSignInMessage] != english.Messages[settingsSignInMessage] ||
-		f.public(t, "pl").Messages[settingsSignInMessage] != polish.Messages[settingsSignInMessage] {
+	if f.entry(t, "en").Messages[settingsSignInMessage] != english.Messages[settingsSignInMessage] ||
+		f.entry(t, "pl").Messages[settingsSignInMessage] != polish.Messages[settingsSignInMessage] {
 		t.Fatal("consecutive catalog changes did not preserve independent locales")
 	}
 	assertOnlyOwnedCatalog(t, f, published.Version, "en")
@@ -248,6 +269,7 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	const title = "Polacy w Kazachstanie"
 	const signIn = "Enter the community portal"
 	initialPublic := f.public(t, "en")
+	initialCatalog := f.catalog(t, "en")
 	editable := f.editable(t)
 	assertInitialEditableSettings(t, editable, initialPublic.Version)
 	verifySettingsDenials(t, f, settingsSavePayload(t, editable))
@@ -282,18 +304,30 @@ func TestAdminPortalSettingsHTTPSIntegration(t *testing.T) {
 	requireNoError(t, json.Unmarshal([]byte(response), &applied))
 	published := f.public(t, "en")
 	if published.Version == initialPublic.Version || published.Settings.Title != title ||
-		published.Settings.Description != pendingDescription || published.Messages[settingsSignInMessage] != signIn ||
-		applied.Version != "5" || applied.PublicationID != published.Version || !slices.Equal(published.SlugRules, initialPublic.SlugRules) {
+		published.Settings.Description != pendingDescription || applied.Version != "5" || applied.PublicationID != published.Version {
 		t.Fatalf("publication did not expose the new title and translation: %+v", published)
 	}
-	if f.public(t, "pl").Messages[settingsSignInMessage] != settingsInitialPolishSignIn {
-		t.Fatal("publication dropped the untouched Polish translation")
-	}
+	assertPublishedAdminCatalog(t, f, published.Version, signIn, initialCatalog.SlugRules)
 	result := f.editable(t)
 	if result.Version != "5" || result.HasDraft || result.PublishedID != published.Version {
 		t.Fatalf("editable settings did not return to the published state: %+v", result)
 	}
 	assertSettingsSuccessAudit(t, f.owner, 0, 1)
+}
+
+func assertPublishedAdminCatalog(t *testing.T, f settingsHTTPFixture, version, signIn string, slugRules []siteconfig.SlugRule) {
+	t.Helper()
+	english := f.entry(t, "en")
+	if english.Version != version || english.Messages[settingsSignInMessage] != signIn {
+		t.Fatal("entry did not receive the published translation")
+	}
+	if f.entry(t, "pl").Messages[settingsSignInMessage] != settingsInitialPolishSignIn {
+		t.Fatal("publication dropped the untouched Polish translation")
+	}
+	catalog := f.catalog(t, "en")
+	if catalog.Version != version || !slices.Equal(catalog.SlugRules, slugRules) {
+		t.Fatal("workspace published a different version or changed the existing slug rules")
+	}
 }
 
 func verifyScopedSettingsPending(t *testing.T, f settingsHTTPFixture, pending observedEditableSettings) {
@@ -314,7 +348,7 @@ func verifyScopedSettingsPending(t *testing.T, f settingsHTTPFixture, pending ob
 
 func TestAdminPortalSlugRulesHTTPSIntegration(t *testing.T) {
 	f := newSettingsHTTPFixture(t)
-	initial := f.public(t, "pl")
+	initial := f.catalog(t, "pl")
 	editable := f.editable(t)
 	if len(initial.SlugRules) == 0 || !slices.Equal(editable.SlugRules, initial.SlugRules) {
 		t.Fatal("initial published and editable rules must match")
@@ -338,12 +372,12 @@ func TestAdminPortalSlugRulesHTTPSIntegration(t *testing.T) {
 	if applied.HasDraft || applied.Version != "4" || !slices.Equal(applied.SlugRules, want) {
 		t.Fatalf("slug rules did not activate in one save: %#v", applied)
 	}
-	published := f.public(t, "pl")
+	published := f.catalog(t, "pl")
 	if published.Version == initial.Version || !slices.Equal(published.SlugRules, want) {
 		t.Fatalf("slug rules were not published with the new revision: %#v", published.SlugRules)
 	}
 	f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSlugRulesPayload(t, applied, []siteconfig.SlugRule{}), http.StatusOK)
-	if current := f.public(t, "pl"); current.Version == published.Version || len(current.SlugRules) != 0 {
+	if current := f.catalog(t, "pl"); current.Version == published.Version || current.SlugRules == nil || len(current.SlugRules) != 0 {
 		t.Fatal("an explicit empty array did not clear the rules")
 	}
 	assertSettingsSuccessAudit(t, f.owner, 0, 2)
@@ -386,7 +420,7 @@ func verifySettingsDenials(t *testing.T, f settingsHTTPFixture, body string) {
 	stale := f.editable(t)
 	stale.Version = "2"
 	rejected := f.request(t, f.manager, http.MethodPut, applySettingsEndpoint, settingsSavePayload(t, stale), http.StatusConflict)
-	assertPublicationProblem(t, rejected, "site_version_conflict")
+	assertPublicationProblem(t, rejected, settingsVersionConflictProblem)
 	if state := f.editable(t); state.Version != "3" || state.HasDraft {
 		t.Fatalf("rejected writes changed editable state: %+v", state)
 	}
@@ -413,7 +447,7 @@ CHECK (operation <> 'settings.published' OR result <> 'success')`)
 func assertPublicSettingsUnchanged(t *testing.T, f settingsHTTPFixture, initial siteconfig.Publication) {
 	t.Helper()
 	if current := f.public(t, "en"); current.Version != initial.Version || current.Settings.Title != initial.Settings.Title ||
-		current.Messages[settingsSignInMessage] != initial.Messages[settingsSignInMessage] {
+		!maps.Equal(current.Messages, initial.Messages) {
 		t.Fatalf("public settings exposed an unpublished draft: %+v", current)
 	}
 }

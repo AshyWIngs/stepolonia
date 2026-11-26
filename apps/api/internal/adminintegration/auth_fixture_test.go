@@ -23,6 +23,7 @@ import (
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/identity"
 	"stepolonia/apps/api/internal/platform"
+	"stepolonia/apps/api/internal/siteconfig"
 	"stepolonia/apps/api/internal/testpostgres"
 )
 
@@ -40,6 +41,7 @@ type authFixtureState struct {
 	codes   []string
 	user    string
 	config  identity.AuthConfig
+	runtime *sql.DB
 }
 
 func authFixture(t *testing.T) authFixtureState {
@@ -63,7 +65,7 @@ func authFixtureFromBootstrap(t *testing.T, db *sql.DB, bootstrap *identity.Boot
 	service, err := identity.NewAuthService(db, config)
 	requireNoError(t, err)
 	requireNoError(t, service.CheckReady(ctx))
-	return authFixtureState{db, service, enrollment.Secret, codes, enrollment.UserID, config}
+	return authFixtureState{db: db, service: service, secret: enrollment.Secret, codes: codes, user: enrollment.UserID, config: config}
 }
 func authReq(tokens identity.SessionTokens) identity.AuthRequest {
 	return identity.AuthRequest{Token: tokens.Token, CSRF: tokens.CSRF, ClientIP: netip.MustParseAddr("192.0.2.1")}
@@ -120,6 +122,11 @@ func newAuthHTTPFixtureWithHandler(t *testing.T, wrap func(authFixtureState, htt
 
 func newAuthHTTPFixtureWithEditors(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler, editorsEnabled bool) authHTTPFixture {
 	t.Helper()
+	return newAuthHTTPFixtureWithPublication(t, wrap, editorsEnabled, false)
+}
+
+func newAuthHTTPFixtureWithPublication(t *testing.T, wrap func(authFixtureState, http.Handler) http.Handler, editorsEnabled, siteEnabled bool) authHTTPFixture {
+	t.Helper()
 	owner, bootstrap, config := bootstrapFixture(t)
 	if editorsEnabled {
 		requireNoError(t, content.SeedInitialRegistry(context.Background(), owner))
@@ -150,7 +157,12 @@ func newAuthHTTPFixtureWithEditors(t *testing.T, wrap func(authFixtureState, htt
 		settings, err = identity.NewAuthService(settingsDB, f.config)
 		requireNoError(t, err)
 	}
-	server := newAuthTLSServerWithEditors(t, service, editor, settings, func(auth http.Handler) http.Handler { return wrap(f, auth) })
+	var site *siteconfig.Reader
+	if siteEnabled {
+		f.runtime = openPublicationRuntimeLogin(t, f.db)
+		site = siteconfig.NewReader(f.runtime)
+	}
+	server := newAuthTLSServerWithEditors(t, service, editor, settings, site, func(auth http.Handler) http.Handler { return wrap(f, auth) })
 	client := server.Client()
 	client.Jar, err = cookiejar.New(nil)
 	requireNoError(t, err)
@@ -159,15 +171,15 @@ func newAuthHTTPFixtureWithEditors(t *testing.T, wrap func(authFixtureState, htt
 
 func newAuthTLSServer(t *testing.T, service *identity.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
 	t.Helper()
-	return newAuthTLSServerWithEditors(t, service, nil, nil, wrap)
+	return newAuthTLSServerWithEditors(t, service, nil, nil, nil, wrap)
 }
 
-func newAuthTLSServerWithEditors(t *testing.T, service *identity.AuthService, editor adminhttp.DraftEditor, settings *identity.AuthService, wrap func(http.Handler) http.Handler) *httptest.Server {
+func newAuthTLSServerWithEditors(t *testing.T, service *identity.AuthService, editor adminhttp.DraftEditor, settings *identity.AuthService, site *siteconfig.Reader, wrap func(http.Handler) http.Handler) *httptest.Server {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
 	origin := "https://" + server.Listener.Addr().String()
-	auth, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: origin}, service, editor, settings)
+	auth, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: origin, PublishedSite: site}, service, editor, settings)
 	requireNoError(t, err)
 	server.Config.Handler = wrap(auth)
 	server.StartTLS()

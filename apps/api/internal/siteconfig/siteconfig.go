@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -35,8 +37,7 @@ type Publication struct {
 	RequestedLanguage string            `json:"requested_language" doc:"Normalized requested UI language; empty when omitted."`
 	Language          Language          `json:"language" doc:"Language of the complete returned UI catalog, after fallback."`
 	Languages         []Language        `json:"languages" nullable:"false" doc:"Published active UI languages ordered by code. Each has a complete catalog in this publication."`
-	Messages          map[string]string `json:"messages" doc:"Complete catalog keyed by registered UI message key. Values are message templates and may contain named placeholders. The entire catalog uses language.code."`
-	SlugRules         []SlugRule        `json:"slug_rules" nullable:"false" doc:"Published slug suggestion rules ordered by content language code and source character."`
+	Messages          map[string]string `json:"messages" doc:"Visitor catalog keyed by public UI message key. Values are templates in language.code and may contain named placeholders."`
 	LanguageFlags     map[string]string `json:"language_flags,omitempty" doc:"Static SVG flags for enabled languages, keyed by exact language code. Missing entries use the standard globe."`
 }
 type Draft struct {
@@ -108,7 +109,12 @@ type Reader struct{ db *sql.DB }
 
 func NewReader(db *sql.DB) *Reader { return &Reader{db: db} }
 func (r *Reader) Read(ctx context.Context, requested, version string) (Publication, error) {
-	result := Publication{Languages: []Language{}, Messages: map[string]string{}, SlugRules: []SlugRule{}}
+	result, err := r.read(ctx, requested, version, visitorUI, false)
+	return result.Publication, err
+}
+
+func (r *Reader) read(ctx context.Context, requested, version string, audience uiAudience, includeSlugRules bool) (publicationSnapshot, error) {
+	result := publicationSnapshot{slugRules: []SlugRule{}}
 	if requested != "" {
 		value, err := normalize(requested)
 		if err != nil {
@@ -127,27 +133,34 @@ func (r *Reader) Read(ctx context.Context, requested, version string) (Publicati
 		return result, dbError(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err = checkPublicRole(ctx, tx); err != nil {
+	if err = readPublication(ctx, tx, &result, version, audience, includeSlugRules); err != nil {
 		return result, err
-	}
-	err = tx.QueryRowContext(ctx, `SELECT id::text,title,description,default_language,fallback_language,tagline,notice,accent FROM public.public_site`).Scan(&result.Version, &result.Settings.Title, &result.Settings.Description, &result.Settings.DefaultLanguage, &result.Settings.FallbackLanguage, &result.Settings.Tagline, &result.Settings.Notice, &result.Settings.Accent)
-	if err != nil {
-		return result, dbError(err)
-	}
-	if version != "" && !strings.EqualFold(version, result.Version) {
-		return result, failure(409, versionConflictCode)
-	}
-	if err = readLocalization(ctx, tx, &result); err != nil {
-		return result, err
-	}
-	result.SlugRules, err = readSlugRules(ctx, tx, publishedSlugRulesQuery, result.Version)
-	if err != nil {
-		return result, dbError(err)
 	}
 	if err = tx.Commit(); err != nil {
 		return result, dbError(err)
 	}
 	return result, nil
+}
+
+func readPublication(ctx context.Context, tx *sql.Tx, result *publicationSnapshot, version string, audience uiAudience, includeSlugRules bool) error {
+	if err := checkPublicRole(ctx, tx); err != nil {
+		return err
+	}
+	err := tx.QueryRowContext(ctx, `SELECT id::text,title,description,default_language,fallback_language,tagline,notice,accent FROM public.public_site`).Scan(&result.Version, &result.Settings.Title, &result.Settings.Description, &result.Settings.DefaultLanguage, &result.Settings.FallbackLanguage, &result.Settings.Tagline, &result.Settings.Notice, &result.Settings.Accent)
+	if err != nil {
+		return dbError(err)
+	}
+	if version != "" && !strings.EqualFold(version, result.Version) {
+		return failure(409, versionConflictCode)
+	}
+	if err = readLocalization(ctx, tx, &result.Publication, audience); err != nil {
+		return err
+	}
+	if includeSlugRules {
+		result.slugRules, err = readSlugRules(ctx, tx, publishedSlugRulesQuery, result.Version)
+		return dbError(err)
+	}
+	return nil
 }
 
 func normalizeDraft(input Draft) (Draft, error) {
@@ -264,7 +277,7 @@ func checkPublicRole(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func readLocalization(ctx context.Context, tx *sql.Tx, result *Publication) error {
+func readLocalization(ctx context.Context, tx *sql.Tx, result *Publication, audience uiAudience) error {
 	languages, err := readLanguages(ctx, tx, result.Version)
 	if err != nil {
 		return err
@@ -274,7 +287,7 @@ func readLocalization(ctx context.Context, tx *sql.Tx, result *Publication) erro
 	if result.Language.Code == "" {
 		return failure(503, unavailableCode)
 	}
-	messages, err := readMessages(ctx, tx, result.Version, result.Language.Code)
+	messages, err := readMessages(ctx, tx, result.Version, result.Language.Code, audience)
 	if err != nil {
 		return err
 	}
@@ -313,8 +326,44 @@ func readLanguages(ctx context.Context, tx *sql.Tx, version string) ([]Language,
 	}
 	return result, dbError(rows.Err())
 }
-func readMessages(ctx context.Context, tx *sql.Tx, version, code string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT message_key,message_value FROM public.public_ui_messages WHERE revision_id=$1 AND language_code=$2`, version, code)
+
+// Existing immutable publications may still store these shared texts under their former keys.
+var legacySharedMessageKeys = map[string]string{
+	"admin.content_no":      "common.no",
+	"admin.content_yes":     "common.yes",
+	"admin.interface_texts": "common.interface_texts",
+	"admin.language":        "common.language",
+	"admin.dark":            "theme.dark",
+	"admin.light":           "theme.light",
+	"admin.system":          "theme.system",
+	"admin.theme":           "theme.label",
+}
+
+var legacySharedKeys = slices.Sorted(maps.Keys(legacySharedMessageKeys))
+var entryPublicationKeys = adminEntryPublicationKeys()
+
+func adminEntryPublicationKeys() []string {
+	keys := slices.Clone(adminEntryKeys)
+	for _, legacy := range legacySharedKeys {
+		if slices.Contains(adminEntryKeys, legacySharedMessageKeys[legacy]) {
+			keys = append(keys, legacy)
+		}
+	}
+	return keys
+}
+
+func readMessages(ctx context.Context, tx *sql.Tx, version, code string, audience uiAudience) (map[string]string, error) {
+	query := `SELECT message_key,message_value FROM public.public_ui_messages WHERE revision_id=$1 AND language_code=$2`
+	args := []any{version, code}
+	switch audience {
+	case visitorUI:
+		query += ` AND (message_key NOT LIKE 'admin.%' OR message_key = ANY($3::text[]))`
+		args = append(args, legacySharedKeys)
+	case entryUI:
+		query += ` AND message_key = ANY($3::text[])`
+		args = append(args, entryPublicationKeys)
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, dbError(err)
 	}
@@ -326,6 +375,14 @@ func readMessages(ctx context.Context, tx *sql.Tx, version, code string) (map[st
 			return nil, dbError(err)
 		}
 		result[key] = value
+	}
+	for legacy, shared := range legacySharedMessageKeys {
+		if value, present := result[legacy]; present {
+			if _, canonical := result[shared]; !canonical {
+				result[shared] = value
+			}
+			delete(result, legacy)
+		}
 	}
 	return result, dbError(rows.Err())
 }
@@ -344,6 +401,6 @@ func (Language) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sche
 
 // TransformSchema documents the public Publication contract without changing validation.
 func (Publication) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Description = "One atomic site publication containing settings, slug suggestion rules, available UI languages and one complete catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback. No draft or historical revision is exposed."
+	schema.Description = "One atomic site publication containing visitor-facing settings, available UI languages and the visitor catalog. requested_language records the normalized request or an empty string. language identifies the actual catalog after fallback."
 	return schema
 }

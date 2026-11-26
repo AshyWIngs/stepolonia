@@ -3,10 +3,9 @@ import { AdminContentError } from '~/utils/admin-request'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { components } from '@stepolonia/sdk'
 import { commandDraft, readDraft, saveDraft } from '~/utils/admin-content'
-import type { DraftCommand, DraftSummary, EditableDraft, EditorField, EditorMetadata, Scalar } from '~/utils/admin-content'
-import { draftPatch, ownValue, savedFieldValue } from '~/utils/draft-edit-buffer'
-import type { FieldEdit } from '~/utils/draft-edit-buffer'
-import { suggestSlug } from '~/utils/slug-suggestion'
+import type { DraftCommand, DraftSummary, EditableDraft, EditorMetadata } from '~/utils/admin-content'
+import { draftPatch, ownValue } from '~/utils/draft-edit-buffer'
+import { DraftFields } from '~/features/content-draft/DraftFields'
 import type { SlugRule } from '~/utils/slug-suggestion'
 
 const props = defineProps<{
@@ -22,6 +21,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   close: [], 'step-up': [], 'session-changed': [], 'language-changed': [locale: string], changed: [],
+  'published-languages': [languages: string[] | null],
   'editing-state': [state: { dirty: boolean, busy: boolean }],
 }>()
 const draft = ref<EditableDraft>()
@@ -31,9 +31,8 @@ const form = ref<HTMLFormElement | null>(null)
 const confirmationHeading = ref<HTMLElement | null>(null)
 const publicationHeading = ref<HTMLElement | null>(null)
 const nextAction = ref<HTMLButtonElement | null>(null)
-const edits = ref(new Map<string, FieldEdit>())
-const invalid = ref(new Set<string>())
-const selectedLanguage = ref('')
+const fields = new DraftFields(draft, metadata, props)
+const { edits, invalid, selectedLanguage, sharedFields, localeFields, addressField, visibleLocaleFields, hiddenLanguages, missingAddress } = fields
 const selectedPublications = ref<string[]>([])
 const confirmation = ref<'publish' | 'unpublish' | 'reload' | 'close' | 'close_assignments' | null>(null)
 const reviewPublishedTranslations = ref(false)
@@ -41,37 +40,19 @@ const busy = ref(false)
 const conflict = ref(false)
 const feedback = ref('')
 const failure = ref('')
-const publicationRefreshRequired = computed(() => failure.value === 'admin.content_publication_unknown' || failure.value === 'admin.content_publication_reload_links')
+const publicationRefreshRequired = ref(false)
 const assignmentsOpen = ref(false)
 const assignmentsState = ref({ dirty: false, busy: false })
 const assignmentsButton = ref<HTMLElement>()
 let active = true
 
-const sharedFields = computed(() => metadata.value?.fields.filter(field => field.scope === 'shared') ?? [])
-const contentFieldOrder = ['title', 'slug', 'body']
-const localeFields = computed(() => (metadata.value?.fields.filter(field => field.scope === 'localized') ?? [])
-  .sort((left, right) => fieldOrder(left.key) - fieldOrder(right.key)))
-const addressField = computed(() => localeFields.value.find(field => field.key === 'slug' && field.config.slug))
-const visibleLocaleFields = computed(() => localeFields.value.filter(field => field !== addressField.value))
-const hiddenLanguages = computed(() => Object.keys(draft.value?.locales ?? {}).filter(code => !activeLanguage(code)))
 const publicLinks = computed(() => metadata.value?.published.filter(item => /^\/[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+$/u.test(item.canonical_url)) ?? [])
 const locked = computed(() => busy.value || conflict.value || edits.value.size > 0)
 const outdated = computed(() => draft.value?.schema_no !== metadata.value?.current_schema_no)
 const hasChanges = computed(() => edits.value.size > 0 || assignmentsState.value.dirty)
 const editorBusy = computed(() => busy.value || assignmentsState.value.busy)
-const missingAddress = computed(() => {
-  const source = draft.value
-  const field = addressField.value
-  const locale = selectedLanguage.value
-  const title = localeFields.value.find(candidate => candidate.key === 'title')
-  if (!source?.locales || source.version !== metadata.value?.version || !field?.editable || !title || !activeLanguage(locale)) return
-  if (valueFor(field, locale) !== undefined) return
-  const text = valueFor(title, locale)
-  const value = typeof text === 'string' ? suggestSlug(text, locale, props.slugRules, field.config.max_length, field.config.min_length) : ''
-  return value ? { field, locale, value } : undefined
-})
 const needsSave = computed(() => edits.value.size > 0 || Boolean(missingAddress.value))
-const hasTranslation = computed(() => activeLanguage(selectedLanguage.value) && Boolean(ownValue(draft.value?.locales, selectedLanguage.value)))
+const hasTranslation = computed(() => fields.activeLanguage(selectedLanguage.value) && Boolean(ownValue(draft.value?.locales, selectedLanguage.value)))
 const publishLanguages = computed(() => {
   const actions = metadata.value?.actions
   if (!actions?.publish || outdated.value || (!draft.value?.shared_ready_seq && !actions.shared_ready)) return []
@@ -118,7 +99,7 @@ const publicationHint = computed(() => {
 function publicationIdleHint() {
   if (publishedChecksMissing.value) return 'admin.content_publication_await_published_checks'
   if (hasTranslation.value && draft.value?.shared_ready_seq && localeReady(selectedLanguage.value)) return 'admin.content_publication_handoff'
-  if (selectedLanguage.value && !activeLanguage(selectedLanguage.value)) return 'admin.content_language_disabled'
+  if (selectedLanguage.value && !fields.activeLanguage(selectedLanguage.value)) return 'admin.content_language_disabled'
   if (!hasTranslation.value && metadata.value?.fields.some(field => field.editable && field.scope === 'localized')) return 'admin.content_publication_add_translation'
   if (metadata.value?.actions.publish) return 'admin.content_publication_await_checks'
   return 'admin.content_publication_access'
@@ -126,19 +107,6 @@ function publicationIdleHint() {
 watch([hasChanges, editorBusy], ([dirty, isBusy]) => {
   emit('editing-state', { dirty, busy: isBusy })
 })
-
-function fieldOrder(key: string) {
-  const position = contentFieldOrder.indexOf(key)
-  return position >= 0 ? position : contentFieldOrder.length
-}
-
-function activeLanguage(code: string) {
-  return props.languages.some(language => language.code === code)
-}
-
-function languageName(code: string) {
-  return props.languages.find(language => language.code === code)?.native_name ?? code
-}
 
 function omitsPublishedTranslations(locales: string[]) {
   return publicLinks.value.some(item => !locales.includes(item.language))
@@ -196,16 +164,9 @@ async function refresh() {
   if (draft.value?.publication_id !== result.draft.publication_id) reviewPublishedTranslations.value = false
   draft.value = result.draft
   metadata.value = result.metadata
-  if (!activeLanguage(selectedLanguage.value) && !ownValue(result.draft.locales, selectedLanguage.value)) {
-    const available = props.languages.map(language => language.code)
-    const populated = new Set(Object.keys(result.draft.locales).filter(code => {
-      const locale = ownValue(result.draft.locales, code)
-      return locale && Object.keys(locale.values).length > 0
-    }))
-    const preferences = [props.uiLanguage, props.defaultLanguage, ...available, ...hiddenLanguages.value]
-    selectedLanguage.value = [props.initialLanguage, ...preferences.filter(code => populated.has(code)), ...preferences]
-      .find(code => activeLanguage(code) || ownValue(result.draft.locales, code)) ?? ''
-  }
+  publicationRefreshRequired.value = false
+  emit('published-languages', result.metadata.published.map(item => item.language))
+  fields.selectExistingLanguage(result.draft)
   conflict.value = false
 }
 
@@ -236,58 +197,6 @@ async function assignmentsSaved() {
   await run(refresh)
 }
 
-function description(field: EditorField) {
-  const labels = ownValue(field.display_labels, props.uiLanguage)
-  const builtIn = field.scope === 'localized' && field.visibility === 'public'
-  return {
-    label: labels?.label || (builtIn && fieldOrder(field.key) < contentFieldOrder.length
-      ? props.translate(`admin.content_field_${field.key}`)
-      : field.key),
-    help: labels?.help || fieldHelp(field, builtIn),
-  }
-}
-
-function fieldHelp(field: EditorField, builtIn: boolean) {
-  if (field.kind === 'relation') return props.translate('admin.content_relation_help')
-  if (builtIn && field.key === 'slug' && field.config.slug) return props.translate('admin.content_field_slug_help')
-  return undefined
-}
-
-function editKey(field: EditorField, locale: string) {
-  return `${field.field_id}/${locale}`
-}
-
-function valueFor(field: EditorField, locale: string) {
-  const edit = edits.value.get(editKey(field, locale))
-  if (edit) return edit.value
-  return draft.value ? savedFieldValue(draft.value, field, locale) : undefined
-}
-
-function writeEdit(field: EditorField, locale: string, value: Scalar | undefined) {
-  if (!draft.value || !field.editable) return
-  const key = editKey(field, locale)
-  if (value === savedFieldValue(draft.value, field, locale)) edits.value.delete(key)
-  else edits.value.set(key, { field, locale, value })
-  invalid.value.delete(field.field_id)
-}
-
-function edit(field: EditorField, locale: string, value: Scalar | undefined) {
-  writeEdit(field, locale, value)
-  const slug = addressField.value
-  if (!locale || !draft.value?.locales || !field.editable || field.key !== 'title' || !slug?.editable) return
-  if (typeof value !== 'string' || !value.trim() || value === savedFieldValue(draft.value, field, locale)) {
-    edits.value.delete(editKey(slug, locale))
-    return
-  }
-  writeEdit(slug, locale, suggestSlug(value, locale, props.slugRules, slug.config.max_length, slug.config.min_length))
-}
-
-function clearRelation(field: EditorField, locale: string) {
-  if (draft.value && field.editable && field.kind === 'relation') {
-    edits.value.set(editKey(field, locale), { field, locale, value: undefined })
-  }
-}
-
 async function save() {
   const source = draft.value
   const address = missingAddress.value
@@ -309,13 +218,9 @@ async function save() {
   nextAction.value?.focus()
 }
 
-function missingFields(fields: EditorField[], locale: string) {
-  return fields.filter(field => field.required && valueFor(field, locale) === undefined)
-}
-
 async function checkRequired(locales: string[]) {
-  const locale = locales.find(code => missingFields(localeFields.value, code).length > 0)
-  const missing = [...missingFields(sharedFields.value, ''), ...(locale ? missingFields(localeFields.value, locale) : [])]
+  const locale = locales.find(code => fields.missingFields(localeFields.value, code).length > 0)
+  const missing = [...fields.missingFields(sharedFields.value, ''), ...(locale ? fields.missingFields(localeFields.value, locale) : [])]
   if (missing.length === 0) return true
   confirmation.value = null
   if (locale && selectedLanguage.value !== locale) {
@@ -355,6 +260,18 @@ async function reconcileCandidate() {
   if (active) await refresh().catch(() => { conflict.value = true })
 }
 
+function publicationOutcomeUnknown(error: unknown) {
+  return !(error instanceof AdminContentError) || error.status >= 500 || error.status === 408
+}
+
+function requirePublicationReload(message: 'admin.content_publication_unknown' | 'admin.content_publication_reload_links', languages: string[] | null = null) {
+  confirmation.value = null
+  conflict.value = true
+  failure.value = message
+  publicationRefreshRequired.value = true
+  emit('published-languages', languages)
+}
+
 async function applyCandidate(locales: string[], publish: boolean) {
   const source = draft.value
   if (!source || locked.value || outdated.value || !(await checkRequired(locales))) return
@@ -382,13 +299,11 @@ async function publishCandidate(source: DraftSummary, locales: string[]) {
   catch (error: unknown) {
     await reconcileCandidate()
     if (!active) return
-    if (!(error instanceof AdminContentError) || error.status >= 500 || error.status === 408) {
-      confirmation.value = null
-      conflict.value = true
-      failure.value = 'admin.content_publication_unknown'
+    if (publicationOutcomeUnknown(error)) {
+      requirePublicationReload('admin.content_publication_unknown')
       return
     }
-    if (error.code === 'not_ready' && omitsPublishedTranslations(locales)) {
+    if (error instanceof AdminContentError && error.code === 'not_ready' && omitsPublishedTranslations(locales)) {
       reviewPublishedTranslations.value = true
       if (publishedChecksMissing.value) confirmation.value = null
     }
@@ -401,23 +316,43 @@ async function publishCandidate(source: DraftSummary, locales: string[]) {
   try { await refresh() }
   catch {
     if (!active) return
-    conflict.value = true
-    failure.value = 'admin.content_publication_reload_links'
+    requirePublicationReload('admin.content_publication_reload_links')
   }
 }
 
-async function transition(action: 'adopt-schema' | 'unpublish') {
+function transition(action: 'adopt-schema' | 'unpublish') {
   const source = draft.value
   if (!source || locked.value) return
-  const adopt = action === 'adopt-schema'
-  await run(async () => {
-    await sendCandidateCommand(source, action, adopt ? { schema_no: metadata.value?.current_schema_no } : undefined)
-    if (!active) return
-    reviewPublishedTranslations.value = adopt && publicLinks.value.length > 0
-    confirmation.value = null
-    await refresh()
-    feedback.value = adopt ? 'admin.content_schema_adopted' : 'admin.content_unpublished'
-  })
+  return run(() => action === 'adopt-schema' ? adoptSchema(source) : removePublication(source))
+}
+
+async function adoptSchema(source: DraftSummary) {
+  await sendCandidateCommand(source, 'adopt-schema', { schema_no: metadata.value?.current_schema_no })
+  if (!active) return
+  reviewPublishedTranslations.value = publicLinks.value.length > 0
+  confirmation.value = null
+  await refresh()
+  if (active) feedback.value = 'admin.content_schema_adopted'
+}
+
+async function removePublication(source: DraftSummary) {
+  try { await sendCandidateCommand(source, 'unpublish') }
+  catch (error: unknown) {
+    if (!publicationOutcomeUnknown(error)) throw error
+    await reconcileCandidate()
+    if (active) requirePublicationReload('admin.content_publication_reload_links')
+    return
+  }
+  if (!active) return
+  emit('published-languages', [])
+  reviewPublishedTranslations.value = false
+  confirmation.value = null
+  try { await refresh() }
+  catch {
+    if (active) requirePublicationReload('admin.content_publication_reload_links', [])
+    return
+  }
+  if (active) feedback.value = 'admin.content_unpublished'
 }
 
 function publish() {
@@ -558,7 +493,7 @@ onBeforeUnmount(() => { active = false })
           <ul aria-labelledby="draft-links-caption">
             <li v-for="item in publicLinks" :key="item.language">
               <a :href="item.canonical_url" :lang="item.language" :hreflang="item.language" target="_blank" rel="noopener">
-                {{ languageName(item.language) }}
+                {{ fields.languageName(item.language) }}
               </a>
             </li>
           </ul>
@@ -569,27 +504,27 @@ onBeforeUnmount(() => { active = false })
         <fieldset v-if="sharedFields.length" :disabled="busy || confirmation !== null">
           <legend>{{ translate('admin.content_shared') }}</legend>
           <DraftFieldControl
-            v-for="field in sharedFields" :key="field.field_id" :field="field" v-bind="description(field)"
-            :value="valueFor(field, '')" :invalid="invalid.has(field.field_id)" :translate="translate"
-            @change="edit(field, '', $event)" @clear-relation="clearRelation(field, '')"
+            v-for="field in sharedFields" :key="field.field_id" :field="field" v-bind="fields.description(field)"
+            :value="fields.valueFor(field, '')" :invalid="invalid.has(field.field_id)" :translate="translate"
+            @change="fields.edit(field, '', $event)" @clear-relation="fields.clearRelation(field, '')"
           />
         </fieldset>
         <fieldset v-if="languages.length || hiddenLanguages.length" :disabled="busy || confirmation !== null">
           <legend>{{ translate('admin.content_translation') }}</legend>
-          <label for="content-edit-language">{{ translate('admin.language') }}</label>
+          <label for="content-edit-language">{{ translate('common.language') }}</label>
           <select id="content-edit-language" v-model="selectedLanguage" @change="changeDraftLanguage">
             <option v-for="language in languages" :key="language.code" :value="language.code" :lang="language.code" :dir="language.direction">
               {{ language.native_name }}
             </option>
             <option v-for="code in hiddenLanguages" :key="code" :value="code">{{ code }}</option>
           </select>
-          <p v-if="selectedLanguage && !activeLanguage(selectedLanguage)">{{ translate('admin.content_language_disabled') }}</p>
+          <p v-if="selectedLanguage && !fields.activeLanguage(selectedLanguage)">{{ translate('admin.content_language_disabled') }}</p>
           <p v-if="localeReady(selectedLanguage)">{{ translate('admin.content_locale_ready') }}</p>
           <template v-if="selectedLanguage">
             <DraftFieldControl
-              v-for="field in visibleLocaleFields" :key="`${field.field_id}/${selectedLanguage}`" :field="field" v-bind="description(field)"
-              :value="valueFor(field, selectedLanguage)" :invalid="invalid.has(field.field_id)" :translate="translate"
-              @change="edit(field, selectedLanguage, $event)" @clear-relation="clearRelation(field, selectedLanguage)"
+              v-for="field in visibleLocaleFields" :key="`${field.field_id}/${selectedLanguage}`" :field="field" v-bind="fields.description(field)"
+              :value="fields.valueFor(field, selectedLanguage)" :invalid="invalid.has(field.field_id)" :translate="translate"
+              @change="fields.edit(field, selectedLanguage, $event)" @clear-relation="fields.clearRelation(field, selectedLanguage)"
             />
           </template>
         </fieldset>

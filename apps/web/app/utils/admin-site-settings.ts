@@ -9,10 +9,10 @@ export type SlugRuleKey = Pick<SlugRule, 'language_code' | 'character'>
 export type PortalLanguage = components['schemas']['Language']
 
 export const portalSettingsPages = {
-  identity: { section: 'settings', label: 'settings_identity' },
-  appearance: { section: 'settings', label: 'settings_appearance' },
-  languages: { section: 'localization', label: 'settings_languages' },
-  translations: { section: 'localization', label: 'interface_texts' },
+  identity: { section: 'settings', label: 'admin.settings_identity' },
+  appearance: { section: 'settings', label: 'admin.settings_appearance' },
+  languages: { section: 'localization', label: 'admin.settings_languages' },
+  translations: { section: 'localization', label: 'common.interface_texts' },
 } as const
 
 export type PortalSettingsPage = keyof typeof portalSettingsPages
@@ -181,4 +181,43 @@ export async function saveScopedPortalSetting(
 
 function validScopedValue(scope: ScopedSettingsSection, value: unknown) {
   return scope !== 'appearance' && scope !== 'language-flags' || typeof value === 'string'
+}
+
+const languageDirectoryURL = '/api/v1/admin/settings/languages'
+
+export interface LanguageDirectoryEntry {
+  language: PortalLanguage
+  enabled: boolean
+  catalog_published: boolean
+  version: string
+}
+
+type LanguageDirectoryCommand =
+  | { language: PortalLanguage, expected_version?: string }
+  | { code: string, enabled: boolean, expected_version: string }
+
+function isLanguageDirectoryEntry(value: unknown): value is LanguageDirectoryEntry {
+  return isRecord(value) && typeof value.version === 'string' && /^[0-9a-f]{64}$/u.test(value.version) &&
+    isPortalLanguage(value.language) &&
+    typeof value.enabled === 'boolean' && typeof value.catalog_published === 'boolean'
+}
+
+export async function getLanguageDirectory(): Promise<LanguageDirectoryEntry[]> {
+  const json = await readResponse(fetch(languageDirectoryURL, requestOptions()))
+  if (!isRecord(json) || !Array.isArray(json.items) || !json.items.every(isLanguageDirectoryEntry)) {
+    throw new AdminSettingsError(503)
+  }
+  return json.items
+}
+
+export async function saveLanguageDirectoryEntry(csrf: string, command: LanguageDirectoryCommand) {
+  const url = 'enabled' in command ? `${languageDirectoryURL}/availability` : languageDirectoryURL
+  const json = await readResponse(fetch(url, {
+    ...requestOptions(),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(command),
+  }))
+  if (!isLanguageDirectoryEntry(json)) throw new AdminSettingsError(503)
+  return json
 }

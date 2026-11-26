@@ -285,3 +285,123 @@ Apply saved settings
 Zastosuj zapisane ustawienia
 Применить сохранённые настройки
 Сақталған параметрлерді қолдану
+
+admin.language_directory
+Language directory
+Rejestr języków
+Справочник языков
+Тілдер тізілімі
+
+admin.language_directory_add
+Add language
+Dodaj język
+Добавить язык
+Тіл қосу
+
+admin.language_directory_code
+Language code (BCP 47)
+Kod języka (BCP 47)
+Код языка (BCP 47)
+Тіл коды (BCP 47)
+
+admin.language_directory_name
+Language name
+Nazwa języka
+Название языка
+Тіл атауы
+
+admin.language_directory_native
+Name in the language itself
+Nazwa w tym języku
+Самоназвание
+Тілдің өз атауы
+
+admin.language_directory_direction
+Writing direction
+Kierunek pisma
+Направление письма
+Жазу бағыты
+
+admin.language_directory_ltr
+Left to right
+Od lewej do prawej
+Слева направо
+Солдан оңға
+
+admin.language_directory_rtl
+Right to left
+Od prawej do lewej
+Справа налево
+Оңнан солға
+
+admin.language_directory_enabled_unused
+Save or cancel this language’s flag and translation edits before disabling it.
+Zapisz lub anuluj zmiany flagi i tłumaczeń tego języka przed jego wyłączeniem.
+Сохраните или отмените правки флага и переводов этого языка перед отключением.
+Тілді өшірмес бұрын оның жалауы мен аудармаларындағы өзгерістерді сақтаңыз немесе болдырмаңыз.
+
+admin.language_directory_disabled
+Disabled
+Wyłączony
+Выключен
+Өшірулі
+
+admin.language_directory_published
+Available in the language menu
+Dostępny w menu języków
+Доступен в списке языков
+Тіл мәзірінде қолжетімді
+
+admin.language_directory_no_catalog
+Enabled. Interface translations are unpublished.
+Włączony. Tłumaczenia interfejsu są nieopublikowane.
+Включён. Переводы интерфейса не опубликованы.
+Қосулы. Интерфейс аудармалары жарияланбаған.
+
+admin.language_directory_enable
+Enable language
+Włącz język
+Включить язык
+Тілді қосу
+
+admin.language_directory_disable
+Disable language
+Wyłącz język
+Отключить язык
+Тілді өшіру
+
+admin.language_directory_edit_catalog
+Edit interface translations
+Edytuj tłumaczenia interfejsu
+Заполнить переводы интерфейса
+Интерфейс аудармаларын өңдеу
+
+admin.language_directory_invalid
+Enter a valid language code, both names and a writing direction.
+Podaj poprawny kod języka, obie nazwy i kierunek pisma.
+Укажите корректный код языка, оба названия и направление письма.
+Жарамды тіл кодын, екі атауды және жазу бағытын енгізіңіз.
+
+admin.language_directory_duplicate
+A language with this code already exists. Edit the code or cancel and choose the saved language.
+Język o tym kodzie już istnieje. Zmień kod lub anuluj i wybierz zapisany język.
+Язык с таким кодом уже есть. Измените код или отмените создание и выберите сохранённый язык.
+Бұл кодпен тіл тіркелген. Кодты өзгертіңіз немесе бас тартып, сақталған тілді таңдаңыз.
+
+admin.language_directory_limit
+Up to 16 languages can be enabled.
+Można włączyć do 16 języków.
+Можно включить до 16 языков.
+16 тілге дейін қосуға болады.
+
+admin.language_directory_used_settings
+Choose other default and fallback languages and remove this interface catalog before disabling the language.
+Przed wyłączeniem wybierz inne języki domyślne i zapasowe oraz usuń ten katalog interfejsu.
+Перед отключением назначьте другие языки по умолчанию и удалите каталог переводов этого языка.
+Өшірмес бұрын басқа әдепкі және резервтік тілдерді таңдап, осы интерфейс каталогын жойыңыз.
+
+admin.language_directory_used_content
+This language has published material. Unpublish the affected translations first.
+W tym języku są opublikowane materiały. Najpierw wycofaj publikację tych tłumaczeń.
+На этом языке есть опубликованные материалы. Сначала снимите с публикации соответствующие переводы.
+Бұл тілде жарияланған материалдар бар. Алдымен тиісті аудармаларды жарияланымнан алыңыз.

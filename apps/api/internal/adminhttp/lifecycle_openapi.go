@@ -37,8 +37,8 @@ func privatePageSchema(description, itemRef string, maxLimit, maxOffset int, exa
 
 func privatePageParameters(defaultLimit, maxLimit, maxOffset int) []*huma.Param {
 	return []*huma.Param{
-		{Name: "limit", In: "query", Description: fmt.Sprintf("Single unsigned decimal page size from 1 to %d; default %d. Unknown and repeated parameters are rejected.", maxLimit, defaultLimit), Schema: &huma.Schema{Type: huma.TypeInteger, Minimum: floatPointer(1), Maximum: floatPointer(float64(maxLimit)), Default: defaultLimit, Examples: []any{defaultLimit}}},
-		{Name: "offset", In: "query", Description: fmt.Sprintf("Single unsigned decimal offset from 0 to %d; default 0. Use next_offset for the following page.", maxOffset), Schema: &huma.Schema{Type: huma.TypeInteger, Minimum: floatPointer(0), Maximum: floatPointer(float64(maxOffset)), Default: 0, Examples: []any{0}}},
+		{Name: "limit", In: openAPIQueryParameter, Description: fmt.Sprintf("Single unsigned decimal page size from 1 to %d; default %d. Unknown and repeated parameters are rejected.", maxLimit, defaultLimit), Schema: &huma.Schema{Type: huma.TypeInteger, Minimum: floatPointer(1), Maximum: floatPointer(float64(maxLimit)), Default: defaultLimit, Examples: []any{defaultLimit}}},
+		{Name: "offset", In: openAPIQueryParameter, Description: fmt.Sprintf("Single unsigned decimal offset from 0 to %d; default 0. Use next_offset for the following page.", maxOffset), Schema: &huma.Schema{Type: huma.TypeInteger, Minimum: floatPointer(0), Maximum: floatPointer(float64(maxOffset)), Default: 0, Examples: []any{0}}},
 	}
 }
 

@@ -10,12 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"golang.org/x/text/language"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 type Language struct{ Code, Name, NativeName, Direction string }
-
-const directionLTR = "ltr"
 
 // ReadLanguages validates the entire UTF-8 CSV before writing.
 // Metadata import preserves whether each language is enabled.
@@ -60,24 +58,16 @@ func ReadLanguages(reader io.Reader) ([]Language, error) {
 }
 
 func readLanguageRecord(record []string, line int, seen map[string]bool) (Language, error) {
-	for i := range record {
-		record[i] = strings.TrimSpace(record[i])
+	definition, err := siteconfig.NormalizeLanguageDefinition(siteconfig.Language{
+		Code: record[0], Name: record[1], NativeName: record[2], Direction: strings.TrimSpace(record[3]),
+	})
+	if err != nil {
+		return Language{}, fmt.Errorf("CSV row %d: invalid BCP 47 code, language names or writing direction", line)
 	}
-	if strings.ContainsAny(record[0], "_@. ") {
-		return Language{}, fmt.Errorf("CSV row %d: invalid BCP 47 code", line)
+	if seen[definition.Code] {
+		return Language{}, fmt.Errorf("CSV row %d: duplicate language %s", line, definition.Code)
 	}
-	tag, err := language.Parse(record[0])
-	if err != nil || record[0] == "" {
-		return Language{}, fmt.Errorf("CSV row %d: invalid BCP 47 code", line)
-	}
-	code := strings.ToLower(tag.String())
-	if len(code) < 2 || len(code) > 63 || seen[code] {
-		return Language{}, fmt.Errorf("CSV row %d: invalid code length or duplicate language", line)
-	}
-	if record[1] == "" || record[2] == "" || strings.ContainsRune(strings.Join(record, ""), 0) || (record[3] != directionLTR && record[3] != "rtl") {
-		return Language{}, fmt.Errorf("CSV row %d: names and an ltr or rtl direction are required", line)
-	}
-	return Language{code, record[1], record[2], record[3]}, nil
+	return Language{definition.Code, definition.Name, definition.NativeName, definition.Direction}, nil
 }
 
 // ImportLanguages writes a validated file atomically. Sorting the upserts

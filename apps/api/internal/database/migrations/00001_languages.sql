@@ -7,7 +7,7 @@ BEGIN
  OR EXISTS (SELECT 1 FROM pg_catalog.pg_type WHERE typnamespace='public'::regnamespace AND typname IN
  ('article_draft_translations','article_revision_translations','article_revisions','articles','auth_attempt_buckets','auth_attempts','content_draft_locales','content_draft_relations','content_drafts','content_field_definitions','content_fields','content_item_assignments','content_items','content_publication_locales','content_publication_relations','content_publications','content_routes','content_schemas','content_types','enrollment_attempts','grant_fields','initial_site_defaults','initial_slug_rules','initial_ui_messages','languages','mfa_totp','onboarding_tokens','permission_operations','public_article_routes','public_article_translations','public_content_items','public_content_relations','public_content_routes','public_content_types','public_languages','public_routes','public_site','public_language_flags','public_slug_rules','public_ui_languages','public_ui_messages','recovery_attempts','recovery_codes','role_display_names','role_grants','roles','security_audit','security_state','session_policy','sessions','site_revision_keys','site_revision_languages','site_revision_messages','site_revision_language_flags','site_revision_slug_rules','site_revisions','site_state','ui_message_keys','user_roles','users'))
  OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc WHERE pronamespace='public'::regnamespace AND proname IN
- ('installation_write_mutex','delete_archived_role','guard_bound_role_identity','guard_bound_role_membership','guard_bound_role_grant','guard_content_definition','guard_content_identity','guard_content_item_identity','guard_content_locale_relation','guard_content_publication','guard_content_publication_child','guard_content_relation','guard_content_route','guard_content_schema','guard_language_generation','guard_published_revision','guard_revision','guard_revision_translation','guard_security_audit','guard_security_state','guard_site_child','guard_site_revision','guard_site_state','guard_user_activation','keep_route_reservation','lock_languages','require_closed_revision','require_content_publication_sealed','require_content_schema_sealed','reset_draft_ready','ui_placeholders','valid_slug_rule')) THEN
+ ('installation_write_mutex','delete_archived_role','guard_bound_role_identity','guard_bound_role_membership','guard_bound_role_grant','guard_content_definition','guard_content_identity','guard_content_item_identity','guard_content_locale_relation','guard_content_publication','guard_content_publication_child','guard_content_relation','guard_content_route','guard_content_schema','guard_language_generation','guard_published_revision','guard_revision','guard_revision_translation','guard_security_audit','guard_security_state','guard_site_child','guard_site_revision','guard_site_state','guard_user_activation','keep_route_reservation','lock_languages','require_closed_revision','require_content_publication_sealed','require_content_schema_sealed','reset_draft_ready','set_language_availability','ui_placeholders','valid_slug_rule')) THEN
  RAISE EXCEPTION 'application objects already exist; installation stopped before DDL';
  END IF;
 END;
@@ -91,9 +91,8 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_language_generation();
 COMMENT ON COLUMN public.languages.generation IS
 'Increments on every enabled toggle; old published locale snapshots stay '
 'hidden.';
--- Publisher cannot update language metadata. PostgreSQL FOR SHARE needs UPDATE;
--- this single static function supplies the lock without granting that
--- privilege.
+-- Publication takes an ordered share lock without granting writes to the
+-- availability or generation columns.
 -- +goose StatementBegin
 CREATE FUNCTION public.lock_languages(
     codes text[]
@@ -108,6 +107,8 @@ REVOKE CREATE ON SCHEMA public FROM public;
 REVOKE ALL ON public.languages FROM public;
 GRANT USAGE ON SCHEMA public TO sp_publisher, sp_language_importer;
 GRANT SELECT ON public.languages TO sp_publisher;
+GRANT INSERT (code, name, native_name, direction),
+UPDATE (name, native_name, direction) ON public.languages TO sp_publisher;
 GRANT EXECUTE ON FUNCTION public.lock_languages(text[]) TO sp_publisher;
 GRANT SELECT ON public.languages TO sp_language_importer;
 GRANT INSERT (code, name, native_name, direction),
