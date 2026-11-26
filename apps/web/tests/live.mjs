@@ -349,6 +349,35 @@ async function checkTranslatedDetail(page) {
   assert.equal(await page.locator('article').getAttribute('lang'), 'ru')
 }
 
+async function checkLanguageFocusAfterHistoryNavigation(page) {
+  const source = `${base}/ru/articles`
+  const target = `${base}/en/articles`
+  await page.goto(source)
+  await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
+  const language = page.getByTestId('language-switcher')
+  const listing = await holdRequest(page, url => url.pathname === '/api/v1/content/article' && url.searchParams.get('language') === 'en')
+  try {
+    await language.locator('summary').press('Enter')
+    await language.locator('a[data-language="en"]').press('Enter')
+    await Promise.all([listing.pending, page.waitForURL(target)])
+    assert.equal(await language.locator('summary').getAttribute('data-current-language'), 'ru')
+
+    const returning = await holdRequest(page, '**/api/v1/site?lang=ru')
+    try {
+      await Promise.all([page.goBack(), page.waitForURL(source), returning.pending])
+      await Promise.all([page.goForward(), page.waitForURL(target)])
+    } finally {
+      returning.release()
+    }
+  } finally {
+    listing.release()
+    await page.unrouteAll({ behavior: 'wait' })
+  }
+  await page.waitForFunction(() => document.documentElement.lang === 'en' &&
+    document.querySelector('summary[data-current-language="en"]'))
+  assert.ok(await page.evaluate(() => !document.activeElement?.closest('.site-preferences')))
+}
+
 async function checkLanguageBrowser() {
   const browser = await chromium.launch({ headless: true })
   try {
@@ -360,6 +389,7 @@ async function checkLanguageBrowser() {
       if (/hydration/i.test(message.text())) errors.push(message.text())
     })
     await checkTranslatedDetail(page)
+    await checkLanguageFocusAfterHistoryNavigation(page)
     await checkPendingLanguageChange(page)
     await selectContentLanguage(page, 'en')
     await page.reload()

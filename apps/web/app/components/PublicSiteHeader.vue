@@ -46,6 +46,7 @@ function restoreFocusOnArrival(path: string) {
   function clear() {
     if (focusTarget.value === request) focusTarget.value = null
     document.removeEventListener('focusin', clear)
+    window.removeEventListener('popstate', clear)
     stopRoute()
     stopPage()
     stopError()
@@ -59,6 +60,7 @@ function restoreFocusOnArrival(path: string) {
   })
   const stopError = nuxt.hook('app:error', clear)
   document.addEventListener('focusin', clear, { once: true })
+  window.addEventListener('popstate', clear, { once: true })
   return clear
 }
 
