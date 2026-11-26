@@ -350,19 +350,21 @@ async function checkTranslatedDetail(page) {
 }
 
 async function checkLanguageFocusAfterHistoryNavigation(page) {
-  const source = `${base}/ru/articles`
+  const source = `${base}/fr/articles`
   const target = `${base}/en/articles`
   await page.goto(source)
   await page.waitForFunction(() => document.querySelector('#__nuxt')?.__vue_app__?.$nuxt?.isHydrating === false)
   const language = page.getByTestId('language-switcher')
-  const listing = await holdRequest(page, url => url.pathname === '/api/v1/content/article' && url.searchParams.get('language') === 'en')
+  const summary = language.locator('summary')
+  const english = language.locator('a[data-language="en"]')
+  await summary.press('Enter')
+  await english.waitFor()
+  const listing = await holdRequest(page, '**/api/v1/languages')
   try {
-    await language.locator('summary').press('Enter')
-    await language.locator('a[data-language="en"]').press('Enter')
-    await Promise.all([listing.pending, page.waitForURL(target)])
-    assert.equal(await language.locator('summary').getAttribute('data-current-language'), 'ru')
+    await Promise.all([listing.pending, page.waitForURL(target), english.press('Enter')])
+    assert.equal(await summary.getAttribute('data-current-language'), 'fr')
 
-    const returning = await holdRequest(page, '**/api/v1/site?lang=ru')
+    const returning = await holdRequest(page, '**/api/v1/site?lang=fr')
     try {
       await Promise.all([page.goBack(), page.waitForURL(source), returning.pending])
       await Promise.all([page.goForward(), page.waitForURL(target)])
