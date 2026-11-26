@@ -56,7 +56,7 @@ export class PortalCatalogDrafts {
   addCatalog() {
     const editable = this.editableSettings.value
     const code = this.selectedLanguage.value
-    if (!editable || !editable.languages.some(item => item.code === code) || this.messages.value) return
+    if (!editable?.languages.some(item => item.code === code) || this.messages.value) return
     this.stage(editable, code, {})
   }
 

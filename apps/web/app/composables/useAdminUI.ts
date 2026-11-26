@@ -25,7 +25,7 @@ const entryPath = '/api/v1/admin/ui/entry'
 const workspacePath = '/api/v1/admin/ui/catalog'
 
 function query(language?: string | null) {
-  return language ? '?' + new URLSearchParams({ lang: language }) : ''
+  return language ? `?${new URLSearchParams({ lang: language }).toString()}` : ''
 }
 
 export function useAdminUI() {
