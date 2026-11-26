@@ -3,6 +3,8 @@ import { administrationRequest } from './admin-request'
 export interface CollectionChoice {
   type_id: string
   type_key: string
+  display_name?: string
+  icon_svg?: string
   schema_no: string
   can_create: boolean
 }
@@ -17,6 +19,9 @@ export interface DraftSummary {
   type_id: string
   schema_no: string
   version: string
+  titles?: Record<string, string>
+  published_locales?: string[]
+  publication_id?: string
 }
 
 export interface DraftRelation {
@@ -31,7 +36,6 @@ export interface EditableDraft extends DraftSummary {
   shared_ready_seq: string | null
   locales: Record<string, { values: Record<string, Scalar>, ready: object | null } | undefined>
   relations: DraftRelation[]
-  publication_id?: string
 }
 
 export type Scalar = string | boolean
@@ -66,7 +70,7 @@ interface ScalarPatch {
 }
 
 export interface ContentPatch {
-  shared?: ScalarPatch['values']
+  shared?: NonNullable<ScalarPatch['values']>
   unset_shared?: string[]
   locales?: Record<string, ScalarPatch>
   relation_changes?: { field_id: string, locale?: string, target_item_id?: string }[]
@@ -119,10 +123,10 @@ export function saveDraft(type: string, draft: EditableDraft, csrf: string, patc
 
 export function commandDraft(
   type: string,
-  draft: EditableDraft,
+  draft: DraftSummary,
   action: DraftCommand,
   csrf: string,
-  input: { locale?: string, intended_locales?: string[], schema_no?: string } = {},
+  input: { locale?: string, intended_locales?: string[], schema_no?: string, allocate_slug?: boolean } = {},
 ) {
   return administrationRequest<DraftSummary>(`${draftPath(type, draft.item_id)}/${action}`, csrf, 'POST', {
     expected_version: draft.version,
@@ -149,13 +153,20 @@ export interface RegistryRenderer {
   fields: RegistryField[]
 }
 
-export interface ManagedCollection {
+export interface RegistryCollection {
   type_id: string
   type_key: string
+  display_name?: string
+  icon_svg?: string
+  enabled: boolean
+}
+
+export interface ManagedCollection extends RegistryCollection {
   route_namespace: string
+  icon_version: string
   version: string
   schema_no: string
-  fields: (RegistryField & { field_id: string })[]
+  fields: (RegistryField & { field_id: string, label_version: string })[]
   applied_access?: {
     role_id: string
     grants: { operation: string, object_scope?: string, field_ids?: string[] }[]
@@ -167,25 +178,47 @@ function registryPath(type: string) {
 }
 
 export function listRegistryRenderers() {
-  return administrationRequest<{ items: RegistryRenderer[] }>(`${collectionsPath}/renderers`)
+  return administrationRequest<{ items: RegistryRenderer[], collections: RegistryCollection[] }>(`${collectionsPath}/renderers`)
 }
 
 export function readManagedCollection(type: string) {
   return administrationRequest<ManagedCollection>(registryPath(type))
 }
 
-export function createCollection(renderer: RegistryRenderer, fields: RegistryField[], initialize: boolean, csrf: string) {
+export function createCollection(renderer: RegistryRenderer, fields: RegistryField[], initialize: boolean, csrf: string, metadata?: { type_key?: string, display_name?: string, icon_svg?: string }) {
   return administrationRequest<ManagedCollection>(collectionsPath, csrf, 'POST', {
     route_namespace: renderer.route_namespace,
+    ...metadata,
     initial_access: initialize,
     fields,
   })
 }
 
-export function reviseCollection(collection: ManagedCollection, fields: RegistryField[], initialize: boolean, csrf: string) {
-  return administrationRequest<ManagedCollection>(registryPath(collection.type_key), csrf, 'PATCH', {
+interface FieldLabelUpdate {
+  key: string
+  expected_version: string
+  display_labels: NonNullable<RegistryField['display_labels']>
+}
+
+export function changeCollectionFields(collection: ManagedCollection, add: RegistryField[], labels: FieldLabelUpdate[], initialize: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(`${registryPath(collection.type_key)}/fields`, csrf, 'POST', {
+    expected_schema_no: add.length ? collection.schema_no : undefined,
+    add: add.length ? add : undefined,
+    labels: labels.length ? labels : undefined,
+    initialize_new_field_access: add.length && initialize ? true : undefined,
+  })
+}
+
+export function saveCollectionIcon(collection: ManagedCollection, svg: string, csrf: string) {
+  return administrationRequest<{ previous_version: string, version: string, icon_svg: string, icon_version: string }>(
+    `${registryPath(collection.type_key)}/icon`, csrf, 'POST', { expected_version: collection.icon_version, icon_svg: svg },
+  )
+}
+
+
+export function setCollectionAvailability(collection: ManagedCollection, enabled: boolean, csrf: string) {
+  return administrationRequest<ManagedCollection>(`${registryPath(collection.type_key)}/availability`, csrf, 'PATCH', {
     expected_version: collection.version,
-    initialize_new_field_access: initialize,
-    fields,
+    enabled,
   })
 }

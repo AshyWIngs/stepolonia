@@ -1,0 +1,173 @@
+admin.name
+Administration
+Administracja
+Администрирование
+Әкімшілендіру
+
+admin.continue
+Continue
+Dalej
+Продолжить
+Жалғастыру
+
+admin.two_step
+Two-step verification
+Weryfikacja dwuetapowa
+Двухэтапная проверка
+Екі қадамдық тексеру
+
+admin.verify
+Verify
+Zweryfikuj
+Подтвердить
+Растау
+
+admin.restart
+Start over
+Zacznij od nowa
+Начать заново
+Қайта бастау
+
+admin.checking
+Checking your session…
+Sprawdzanie sesji…
+Проверяем сессию…
+Сессия тексеріліп жатыр…
+
+admin.working
+Working…
+Przetwarzanie…
+Выполняем запрос…
+Сұрау орындалып жатыр…
+
+admin.retry
+Retry
+Spróbuj ponownie
+Повторить
+Қайталап көру
+
+admin.invalid_credentials
+We could not verify your credentials. Check your entries and try again.
+Nie udało się zweryfikować danych logowania. Sprawdź je i spróbuj ponownie.
+Не удалось проверить данные для входа. Проверьте их и повторите попытку.
+Кіру деректері расталмады. Деректерді тексеріп, қайталап көріңіз.
+
+admin.invalid_code
+We could not verify the code. Try a fresh code.
+Nie udało się zweryfikować kodu. Spróbuj użyć nowego kodu.
+Не удалось проверить код. Попробуйте новый код.
+Код расталмады. Жаңа кодты енгізіңіз.
+
+admin.unavailable
+Administration is temporarily unavailable. Try again.
+Panel administracyjny jest chwilowo niedostępny. Spróbuj ponownie.
+Администрирование временно недоступно. Повторите попытку.
+Әкімшілендіру уақытша қолжетімсіз. Қайталап көріңіз.
+
+admin.limited
+Too many attempts. Try again when the button is available.
+Zbyt wiele prób. Spróbuj ponownie, gdy przycisk będzie dostępny.
+Слишком много попыток. Повторите, когда кнопка станет доступна.
+Әрекет тым көп болды. Түйме қайта қолжетімді болғанда қайталап көріңіз.
+
+admin.changed
+Your session changed. Check your session to continue.
+Sesja się zmieniła. Sprawdź sesję, aby kontynuować.
+Сессия изменилась. Проверьте её, чтобы продолжить.
+Сессия өзгерді. Жалғастыру үшін сессияны тексеріңіз.
+
+admin.restricted
+Account setup or recovery is in progress. You can end that session and start over.
+Trwa konfiguracja lub odzyskiwanie konta. Możesz zakończyć tę sesję i zacząć od nowa.
+Идёт настройка или восстановление аккаунта. Можно завершить эту сессию и начать заново.
+Аккаунт бапталып немесе қалпына келтіріліп жатыр. Сессияны аяқтап, қайта бастай аласыз.
+
+admin.localization
+Languages and translations
+Języki i tłumaczenia
+Языки и переводы
+Тілдер мен аудармалар
+
+admin.save_draft
+Save draft
+Zapisz szkic
+Сохранить черновик
+Нобайды сақтау
+
+admin.publish_draft
+Publish settings
+Opublikuj ustawienia
+Опубликовать настройки
+Параметрлерді жариялау
+
+admin.confirm_publish
+Publish the saved settings and interface texts?
+Opublikować zapisane ustawienia i teksty interfejsu?
+Опубликовать сохранённые настройки и тексты интерфейса?
+Сақталған параметрлер мен интерфейс мәтіндерін жариялау керек пе?
+
+admin.published
+Settings published.
+Ustawienia opublikowane.
+Настройки опубликованы.
+Параметрлер жарияланды.
+
+admin.reload_settings
+Discard local edits and reload
+Odrzuć lokalne zmiany i wczytaj ponownie
+Отбросить локальные правки и загрузить заново
+Жергілікті өзгерістерді алып тастап, қайта жүктеу
+
+admin.cancel
+Cancel
+Anuluj
+Отмена
+Бас тарту
+
+admin.close
+Close
+Zamknij
+Закрыть
+Жабу
+
+admin.add_catalog
+Add interface language
+Dodaj język interfejsu
+Добавить язык интерфейса
+Интерфейс тілін қосу
+
+admin.remove_catalog
+Remove catalog from draft
+Usuń katalog ze szkicu
+Убрать каталог из черновика
+Каталогты нобайдан алып тастау
+
+admin.leave_unsaved
+Leave this section without saving your changes?
+Opuścić sekcję bez zapisania zmian?
+Покинуть раздел без сохранения изменений?
+Өзгерістерді сақтамай бөлімнен шығу керек пе?
+
+admin.stay_editing
+Keep editing
+Wróć do edycji
+Продолжить редактирование
+Өңдеуді жалғастыру
+
+admin.discard_changes
+Discard changes
+Odrzuć zmiany
+Отменить изменения
+Өзгерістерден бас тарту
+
+admin.svg_preview_unavailable
+This SVG could not be previewed.
+Nie można wyświetlić podglądu tego SVG.
+Не удалось показать предпросмотр SVG.
+SVG алдын ала көрінісін көрсету мүмкін болмады.
+
+admin.navigation_labels
+Section names
+Nazwy sekcji
+Названия разделов
+Бөлім атаулары

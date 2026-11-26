@@ -66,7 +66,7 @@ def main():
                        "ADMIN_HTTP_BROWSER_TEST": "1"}
         # Both packages share this PostgreSQL cluster and its installation roles.
         command(["go", "-C", "apps/api", "test", "-p=1", "-race", "-count=1", "-timeout=7m", "-run",
-                 "^Test(Auth|Admin|Bootstrap|Domain)", "./internal/database", "./internal/adminintegration", "./cmd/db"],
+                 "^Test(Auth|Admin|Bootstrap|Domain|SessionPolicy)", "./internal/database", "./internal/adminintegration", "./cmd/db"],
                 environment=environment, timeout=480)
         command(["go", "-C", "apps/api", "test", "-race", "-count=1", "./internal/adminhttp"],
                 environment=environment)

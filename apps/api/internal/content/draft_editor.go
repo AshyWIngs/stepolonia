@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"stepolonia/apps/api/internal/identity"
@@ -49,14 +50,24 @@ const (
 	draftReadTimeout = 8 * time.Second
 )
 
-// ListDraftsForType returns one page of draft identities visible to the actor.
+// ListDraftsForType returns one page of editor summaries visible to the actor.
 func (e *DraftEditor) ListDraftsForType(ctx context.Context, req identity.AuthRequest, typeKey string, limit, offset int) (identity.DraftPage, error) {
 	if e == nil || e.auth == nil {
 		return identity.DraftPage{}, identity.ErrSecurityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, draftReadTimeout)
 	defer cancel()
-	return e.auth.ReadDraftPage(ctx, req, typeKey, limit, offset)
+	namespaces := make([]string, 0, len(rendererChoices)+1)
+	for _, renderer := range rendererChoices {
+		namespaces = append(namespaces, renderer.Namespace)
+	}
+	generic := collectionNamespacePrefix + strings.ReplaceAll(typeKey, "_", "-")
+	if registeredNamespace(generic) {
+		namespaces = append(namespaces, generic)
+	}
+	return e.auth.ReadDraftPage(ctx, req, typeKey, limit, offset, identity.DraftListPresentation{
+		RendererNamespaces: namespaces, TitleKey: titleFieldKey, MaxLocales: MaxDraftLocales,
+	})
 }
 
 // ReadDraftForType returns the actor-readable draft for the persisted collection.

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 const (
@@ -24,6 +26,7 @@ const (
 type Config struct {
 	CanonicalOrigin   string
 	TrustedProxyCIDRs []string
+	PublishedSite     *siteconfig.Reader
 }
 
 type boundary struct {
@@ -92,18 +95,18 @@ func (b boundary) check(r *http.Request) (string, string) {
 	if !b.validRequestOrigin(r, origins) {
 		return "", originCode
 	}
-	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && !allowsPageQuery(r) {
+	if (r.URL.RawQuery != "" || r.URL.ForceQuery) && !allowsReadQuery(r) {
 		return "", validationCode
 	}
 	return ip, ""
 }
 
-func allowsPageQuery(r *http.Request) bool {
+func allowsReadQuery(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
 	switch r.URL.Path {
-	case usersPath, rolesPath, contentCollectionsPath, accountSessionsPath, auditPath:
+	case usersPath, rolesPath, contentCollectionsPath, accountSessionsPath, auditPath, languageDirectoryPath, languageDefinitionPath, adminCatalogPath:
 		return true
 	}
 	if path, _ := userRoutePath(r.URL.Path); path == targetSessionsPath {

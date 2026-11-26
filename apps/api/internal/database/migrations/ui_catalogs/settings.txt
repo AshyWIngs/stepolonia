@@ -1,0 +1,407 @@
+admin.settings
+Portal settings
+Ustawienia portalu
+Настройки портала
+Портал параметрлері
+
+admin.portal_name
+Portal name
+Nazwa portalu
+Название портала
+Портал атауы
+
+admin.tagline
+Tagline
+Hasło portalu
+Слоган
+Ұран
+
+admin.description
+Description
+Opis
+Описание
+Сипаттама
+
+admin.notice
+Notice
+Komunikat
+Объявление
+Хабарландыру
+
+admin.accent
+Accent color
+Kolor akcentu
+Цвет акцента
+Екпін түсі
+
+admin.default_language
+Default content language
+Domyślny język treści
+Язык контента по умолчанию
+Мазмұнның әдепкі тілі
+
+admin.fallback_language
+Fallback interface language
+Zapasowy język interfejsu
+Резервный язык интерфейса
+Интерфейстің резервтік тілі
+
+admin.settings_review_publish
+Review publication
+Sprawdź przed publikacją
+Проверить перед публикацией
+Жариялау алдында тексеру
+
+admin.settings_save_changes
+Save changes
+Zapisz zmiany
+Сохранить изменения
+Өзгерістерді сақтау
+
+admin.settings_saved
+Settings saved.
+Ustawienia zapisane.
+Настройки сохранены.
+Параметрлер сақталды.
+
+admin.settings_pending
+Saving also applies the previously saved changes in these sections.
+Zapis zastosuje także wcześniej zapisane zmiany w tych sekcjach.
+При сохранении также применятся ранее сохранённые изменения в этих разделах.
+Сақтағанда осы бөлімдердегі бұрын сақталған өзгерістер де қолданылады.
+
+admin.settings_remove_catalog
+Remove interface translations
+Usuń tłumaczenia interfejsu
+Убрать переводы интерфейса
+Интерфейс аудармаларын алып тастау
+
+admin.settings_conflict
+Settings changed in another session. Reload before saving again.
+Ustawienia zmieniono w innej sesji. Wczytaj je ponownie przed zapisem.
+Настройки изменились в другой сессии. Загрузите их заново перед сохранением.
+Параметрлер басқа сессияда өзгерді. Сақтау алдында қайта жүктеңіз.
+
+admin.settings_invalid
+Check the portal fields and complete each selected translation.
+Sprawdź pola portalu i uzupełnij wszystkie wybrane tłumaczenia.
+Проверьте поля портала и заполните все выбранные переводы.
+Портал өрістерін тексеріп, таңдалған аудармаларды толтырыңыз.
+
+admin.settings_identity
+Portal details
+Informacje o portalu
+О портале
+Портал туралы
+
+admin.settings_appearance
+Appearance
+Wygląd
+Оформление
+Безендіру
+
+admin.settings_languages
+Languages
+Języki
+Языки
+Тілдер
+
+admin.settings_search_messages
+Search texts
+Szukaj tekstów
+Поиск текстов
+Мәтіндерді іздеу
+
+admin.settings_message_group
+Section
+Sekcja
+Раздел
+Бөлім
+
+admin.settings_select_message
+Text to edit
+Tekst do edycji
+Текст для редактирования
+Өңделетін мәтін
+
+admin.settings_message_value
+Translation
+Tłumaczenie
+Перевод
+Аударма
+
+admin.settings_no_messages
+No matching texts.
+Nie znaleziono pasujących tekstów.
+Подходящих текстов нет.
+Сәйкес мәтіндер табылмады.
+
+admin.settings_all_texts
+All texts
+Wszystkie teksty
+Все тексты
+Барлық мәтіндер
+
+admin.settings_admin_texts
+Sign-in and common controls
+Logowanie i wspólne elementy
+Вход и общие элементы
+Кіру және ортақ элементтер
+
+admin.settings_content_texts
+Content editing
+Edycja materiałów
+Редактирование материалов
+Материалдарды өңдеу
+
+admin.settings_structure_texts
+Collection structure
+Struktura kolekcji
+Структура коллекций
+Жинақ құрылымы
+
+admin.settings_access_texts
+Users and access
+Użytkownicy i dostęp
+Пользователи и доступ
+Пайдаланушылар және қолжетімділік
+
+admin.settings_settings_texts
+Portal configuration
+Konfiguracja portalu
+Конфигурация портала
+Портал конфигурациясы
+
+admin.settings_public_texts
+Public portal
+Portal publiczny
+Публичный портал
+Ашық портал
+
+admin.settings_missing_only
+Only untranslated texts
+Tylko brakujące tłumaczenia
+Только строки без перевода
+Тек аударылмаған мәтіндер
+
+admin.settings_confirm_remove_catalog
+Remove this language and its translations from the draft?
+Usunąć ten język i jego tłumaczenia ze szkicu?
+Удалить этот язык и его переводы из черновика?
+Бұл тілді және оның аудармаларын нобайдан алып тастау керек пе?
+
+admin.settings_complete_catalog
+Fill in the missing texts or remove this language.
+Przed publikacją uzupełnij brakujące tłumaczenia lub usuń ten język.
+Заполните пропуски или удалите этот язык перед публикацией.
+Бос аудармаларды толтырыңыз немесе тілді алып тастаңыз.
+
+admin.settings_reference_text
+Reference text
+Tekst odniesienia
+Исходный текст
+Бастапқы мәтін
+
+admin.settings_back_to_texts
+Back to texts
+Wróć do tekstów
+К списку текстов
+Мәтіндер тізіміне оралу
+
+admin.settings_choose_accent
+Choose accent color
+Wybierz kolor akcentu
+Выбрать цвет акцента
+Акцент түсін таңдау
+
+admin.settings_save_appearance
+Save appearance
+Zapisz wygląd
+Сохранить оформление
+Безендіруді сақтау
+
+admin.settings_accent_help
+Choose a color or enter a hex color, for example
+Wybierz kolor lub wpisz kod szesnastkowy, np.
+Выберите цвет или введите код, например
+Түсті таңдаңыз немесе он алтылық код енгізіңіз, мысалы
+
+admin.settings_scoped_pending
+Apply the pending portal settings before saving changes here.
+Zastosuj oczekujące ustawienia portalu przed zapisaniem zmian w tej sekcji.
+Примените сохранённые настройки портала, прежде чем сохранять изменения в этом разделе.
+Осы бөлімдегі өзгерістерді сақтамас бұрын порталдың сақталған параметрлерін қолданыңыз.
+
+admin.settings_details_invalid
+Enter a portal name and check the length of the other fields.
+Wpisz nazwę portalu i sprawdź długość pozostałych pól.
+Укажите название портала и проверьте длину остальных полей.
+Портал атауын енгізіп, қалған өрістердің ұзындығын тексеріңіз.
+
+admin.settings_accent_invalid
+Enter a hexadecimal color with six digits after the # sign.
+Wpisz sześciocyfrowy kod koloru po znaku #.
+Введите шестизначный шестнадцатеричный код цвета после знака #.
+# белгісінен кейін алты таңбалы он алтылық түс кодын енгізіңіз.
+
+admin.settings_locale_defaults_invalid
+Choose an enabled content language and an available interface translation.
+Wybierz włączony język treści i dostępne tłumaczenie interfejsu.
+Выберите включённый язык материалов и доступный перевод интерфейса.
+Қосылған материал тілін және қолжетімді интерфейс аудармасын таңдаңыз.
+
+admin.settings_scoped_reload
+Load saved version and keep my edits
+Wczytaj zapisaną wersję i zachowaj moje zmiany
+Загрузить сохранённую версию и оставить мои правки
+Сақталған нұсқаны жүктеу және өзгерістерімді сақтау
+
+admin.settings_save_locale_defaults
+Save language preferences
+Zapisz preferencje językowe
+Сохранить языковые настройки
+Тіл параметрлерін сақтау
+
+admin.settings_save_slug_rules
+Save address rules
+Zapisz reguły adresów
+Сохранить правила адресов
+Мекенжай ережелерін сақтау
+
+admin.settings_review_saved_values
+Review values saved in another session
+Sprawdź wartości zapisane w innej sesji
+Проверьте значения, сохранённые в другой сессии
+Басқа сессияда сақталған мәндерді тексеріңіз
+
+admin.settings_removed_value
+Removed
+Usunięto
+Удалено
+Жойылды
+
+admin.settings_apply_pending
+Apply saved settings
+Zastosuj zapisane ustawienia
+Применить сохранённые настройки
+Сақталған параметрлерді қолдану
+
+admin.language_directory
+Language directory
+Rejestr języków
+Справочник языков
+Тілдер тізілімі
+
+admin.language_directory_add
+Add language
+Dodaj język
+Добавить язык
+Тіл қосу
+
+admin.language_directory_code
+Language code (BCP 47)
+Kod języka (BCP 47)
+Код языка (BCP 47)
+Тіл коды (BCP 47)
+
+admin.language_directory_name
+Language name
+Nazwa języka
+Название языка
+Тіл атауы
+
+admin.language_directory_native
+Name in the language itself
+Nazwa w tym języku
+Самоназвание
+Тілдің өз атауы
+
+admin.language_directory_direction
+Writing direction
+Kierunek pisma
+Направление письма
+Жазу бағыты
+
+admin.language_directory_ltr
+Left to right
+Od lewej do prawej
+Слева направо
+Солдан оңға
+
+admin.language_directory_rtl
+Right to left
+Od prawej do lewej
+Справа налево
+Оңнан солға
+
+admin.language_directory_enabled_unused
+Save or cancel this language’s flag and translation edits before disabling it.
+Zapisz lub anuluj zmiany flagi i tłumaczeń tego języka przed jego wyłączeniem.
+Сохраните или отмените правки флага и переводов этого языка перед отключением.
+Тілді өшірмес бұрын оның жалауы мен аудармаларындағы өзгерістерді сақтаңыз немесе болдырмаңыз.
+
+admin.language_directory_disabled
+Disabled
+Wyłączony
+Выключен
+Өшірулі
+
+admin.language_directory_published
+Available in the language menu
+Dostępny w menu języków
+Доступен в списке языков
+Тіл мәзірінде қолжетімді
+
+admin.language_directory_no_catalog
+Enabled. Interface translations are unpublished.
+Włączony. Tłumaczenia interfejsu są nieopublikowane.
+Включён. Переводы интерфейса не опубликованы.
+Қосулы. Интерфейс аудармалары жарияланбаған.
+
+admin.language_directory_enable
+Enable language
+Włącz język
+Включить язык
+Тілді қосу
+
+admin.language_directory_disable
+Disable language
+Wyłącz język
+Отключить язык
+Тілді өшіру
+
+admin.language_directory_edit_catalog
+Edit interface translations
+Edytuj tłumaczenia interfejsu
+Заполнить переводы интерфейса
+Интерфейс аудармаларын өңдеу
+
+admin.language_directory_invalid
+Enter a valid language code, both names and a writing direction.
+Podaj poprawny kod języka, obie nazwy i kierunek pisma.
+Укажите корректный код языка, оба названия и направление письма.
+Жарамды тіл кодын, екі атауды және жазу бағытын енгізіңіз.
+
+admin.language_directory_duplicate
+A language with this code already exists. Edit the code or cancel and choose the saved language.
+Język o tym kodzie już istnieje. Zmień kod lub anuluj i wybierz zapisany język.
+Язык с таким кодом уже есть. Измените код или отмените создание и выберите сохранённый язык.
+Бұл кодпен тіл тіркелген. Кодты өзгертіңіз немесе бас тартып, сақталған тілді таңдаңыз.
+
+admin.language_directory_limit
+Up to 16 languages can be enabled.
+Można włączyć do 16 języków.
+Можно включить до 16 языков.
+16 тілге дейін қосуға болады.
+
+admin.language_directory_used_settings
+Choose other default and fallback languages and remove this interface catalog before disabling the language.
+Przed wyłączeniem wybierz inne języki domyślne i zapasowe oraz usuń ten katalog interfejsu.
+Перед отключением назначьте другие языки по умолчанию и удалите каталог переводов этого языка.
+Өшірмес бұрын басқа әдепкі және резервтік тілдерді таңдап, осы интерфейс каталогын жойыңыз.
+
+admin.language_directory_used_content
+This language has published material. Unpublish the affected translations first.
+W tym języku są opublikowane materiały. Najpierw wycofaj publikację tych tłumaczeń.
+На этом языке есть опубликованные материалы. Сначала снимите с публикации соответствующие переводы.
+Бұл тілде жарияланған материалдар бар. Алдымен тиісті аудармаларды жарияланымнан алыңыз.

@@ -1,6 +1,7 @@
 FROM golang:1.27.4-alpine3.24 AS go-base
 # Apply the same builder updates as the API image.
-RUN apk upgrade --no-cache musl zlib
+RUN apk upgrade --no-cache musl zlib \
+    && apk add --no-cache --upgrade 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1'
 
 FROM go-base AS go-tool
 # Rebuild 2.15.0 with the patched Go toolchain.
@@ -40,7 +41,10 @@ COPY scripts ./scripts
 RUN ["/ruff", "check", "--no-cache", "scripts"]
 
 FROM dhi.io/node:26.13.1-alpine3.24-dev AS duplicates-build
+RUN apk add --no-cache --upgrade 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1'
 ENV NUXT_TELEMETRY_DISABLED=1
+RUN npm install --global --ignore-scripts --prefix /opt/build-npm npm@11.21.2
+ENV PATH=/opt/build-npm/bin:${PATH}
 RUN test "$(npm --version)" = "11.21.2"
 USER node
 WORKDIR /home/node

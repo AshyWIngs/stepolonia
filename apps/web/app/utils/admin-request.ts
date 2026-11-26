@@ -1,7 +1,12 @@
 export class AdminContentError extends Error {
-  constructor(readonly status: number, readonly code?: string) {
+  constructor(readonly status: number, readonly code?: string, readonly retryAfter?: number) {
     super('Administration content request failed')
   }
+}
+
+export function retryAfterSeconds(headers: Headers) {
+  const delay = Number(headers.get('Retry-After'))
+  return Number.isSafeInteger(delay) && delay > 0 ? delay : undefined
 }
 
 export async function administrationRequest<T>(path: string, csrf?: string, method = 'GET', data?: object): Promise<T> {
@@ -32,7 +37,7 @@ async function administrationResponse(path: string, csrf: string | undefined, me
     const result: unknown = await response.json().catch(() => null)
     const code = typeof result === 'object' && result !== null && 'code' in result && typeof result.code === 'string'
       ? result.code : undefined
-    throw new AdminContentError(response.status, code)
+    throw new AdminContentError(response.status, code, retryAfterSeconds(response.headers))
   }
   return response
 }

@@ -5,8 +5,12 @@ RUN CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/out go install \
     && go version -m /out/esbuild
 
 FROM dhi.io/node:26.13.1-alpine3.24-dev AS dependencies
+RUN apk add --no-cache --upgrade 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1'
 WORKDIR /workspace/apps/web
 ENV NUXT_TELEMETRY_DISABLED=1
+# Install the package manager pinned by the project independently of the base image.
+RUN npm install --global --ignore-scripts --prefix /opt/build-npm npm@11.21.2
+ENV PATH=/opt/build-npm/bin:${PATH}
 RUN test "$(npm --version)" = "11.21.2"
 COPY apps/web/package.json apps/web/package-lock.json apps/web/.npmrc ./
 COPY packages/sdk /workspace/packages/sdk

@@ -3,10 +3,14 @@ package database
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+//go:embed schema_contract.json
+var schemaContractJSON []byte
 
 // Canonical definitions describe the complete domain migration set on PostgreSQL 18.
 // Compare complete catalog definitions, including literal whitespace and function bodies.
@@ -28,11 +32,7 @@ type schemaContract struct {
 
 func readSchemaContract() (schemaContract, error) {
 	var contract schemaContract
-	raw, err := migrations.ReadFile("schema_contract.json")
-	if err != nil {
-		return contract, err
-	}
-	err = json.Unmarshal(raw, &contract)
+	err := json.Unmarshal(schemaContractJSON, &contract)
 	return contract, err
 }
 

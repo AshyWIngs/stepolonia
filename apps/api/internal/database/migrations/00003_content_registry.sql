@@ -5,6 +5,9 @@ CREATE TABLE public.content_types (
     route_namespace text COLLATE "C" NOT NULL
     CONSTRAINT content_types_namespace_key UNIQUE,
     kind text NOT NULL DEFAULT 'collection',
+    display_name text NOT NULL DEFAULT '',
+    icon_svg text NOT NULL DEFAULT '',
+    enabled boolean NOT NULL DEFAULT true,
     current_schema_no bigint NOT NULL DEFAULT 1,
     version bigint NOT NULL DEFAULT 1,
     CONSTRAINT content_types_key_check CHECK (key ~ '^[a-z][a-z0-9_]{0,63}$'),
@@ -12,6 +15,12 @@ CREATE TABLE public.content_types (
         route_namespace ~ '^[a-z][a-z0-9-]{0,63}$'
     ),
     CONSTRAINT content_types_kind_check CHECK (kind = 'collection'),
+    CONSTRAINT content_types_display_name_check CHECK (
+        char_length(display_name) <= 120
+    ),
+    CONSTRAINT content_types_icon_svg_size_check CHECK (
+        octet_length(icon_svg) <= 4096
+    ),
     CONSTRAINT content_types_version_check CHECK (
         version > 0 AND current_schema_no > 0
     )
@@ -213,6 +222,15 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_content_identity();
 COMMENT ON TABLE public.content_types IS
 'Stable Collection identities and the current immutable semantic schema.';
 
+COMMENT ON COLUMN public.content_types.display_name IS
+'Collection name. An empty name uses the translated built-in label.';
+
+COMMENT ON COLUMN public.content_types.icon_svg IS
+'Static SVG for administrative navigation. Empty uses the default icon.';
+
+COMMENT ON COLUMN public.content_types.enabled IS
+'Whether authoring is available. Existing public snapshots are unaffected.';
+
 COMMENT ON TABLE public.content_schemas IS
 'Semantic versions assembled and sealed atomically before commit.';
 
@@ -262,7 +280,7 @@ public.content_fields,
 public.content_field_definitions TO sp_publisher;
 
 GRANT UPDATE (
-    current_schema_no, version
+    current_schema_no, version, enabled, icon_svg
 ) ON public.content_types TO sp_publisher;
 
 GRANT UPDATE (sealed) ON public.content_schemas TO sp_publisher;

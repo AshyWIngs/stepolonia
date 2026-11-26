@@ -29,16 +29,18 @@ func TestLiveDocumentationBoundary(t *testing.T) {
 		}
 	}
 	handler := HandlerWithDocumentation(failingDatabase{}, nil, logger, nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openapi-auth.json", nil))
-	if w.Code != http.StatusNotFound {
-		t.Fatal("private spec exposed while auth disabled")
+	for _, path := range []string{privateSpecPath, allOperationsSpecPath} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s exposed while auth disabled", path)
+		}
 	}
 }
 
 func assertDocumentationPaths(t *testing.T, handler http.Handler, enabled bool) {
 	t.Helper()
-	for _, path := range []string{"/docs", "/docs/", "/docs/init.js", "/docs/assets/swagger-ui.css", "/docs/assets/swagger-ui-bundle.js", "/docs/assets/swagger-ui-standalone-preset.js", publicSpecPath, "/openapi-auth.json"} {
+	for _, path := range []string{"/docs", "/docs/", "/docs/init.js", "/docs/assets/swagger-ui.css", "/docs/assets/swagger-ui-bundle.js", "/docs/assets/swagger-ui-standalone-preset.js", publicSpecPath, privateSpecPath, allOperationsSpecPath} {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		want := http.StatusNotFound
@@ -82,7 +84,7 @@ func TestPrivateUserRoutesRequireConfiguredBoundary(t *testing.T) {
 			want = http.StatusForbidden
 		}
 		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/users", "/api/v1/admin/users/00000000-0000-4000-8000-000000000001/onboarding-token", "/api/v1/admin/users/00000000-0000-4000-8000-000000000001", "/api/v1/admin/users/00000000-0000-4000-8000-000000000001/activate", "/api/v1/admin/users/00000000-0000-4000-8000-000000000001/disable"})
-		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/roles", "/api/v1/admin/roles/00000000-0000-4000-8000-000000000001"})
+		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/roles", "/api/v1/admin/roles/00000000-0000-4000-8000-000000000001", "/api/v1/admin/security/session-policy"})
 		const itemPath = "/api/v1/admin/content/article/00000000-0000-4000-8000-000000000001"
 		assertAdminRouteStatus(t, handler, want, []string{"/api/v1/admin/content-types", "/api/v1/admin/content/article", itemPath, itemPath + "/assignees", itemPath + "/ready-shared", itemPath + "/ready", itemPath + "/publish", itemPath + "/schema"})
 		assertAdminRouteStatus(t, handler, want, []string{itemPath + "/adopt-schema", itemPath + "/unpublish"})

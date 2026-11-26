@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"stepolonia/apps/api/internal/identity"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
 // AuthService is the private transport's authenticated transaction boundary.
@@ -35,10 +36,11 @@ type AuthService interface {
 var _ AuthService = (*identity.AuthService)(nil)
 
 type handler struct {
-	boundary    boundary
-	service     AuthService
-	draftEditor DraftEditor
-	settings    *identity.AuthService
+	boundary      boundary
+	service       AuthService
+	draftEditor   DraftEditor
+	settings      *identity.AuthService
+	publishedSite *siteconfig.Reader
 }
 
 // NewHandler validates configuration without mounting any public API routes.
@@ -60,7 +62,7 @@ func NewHandlerWithEditors(cfg Config, service AuthService, editor DraftEditor, 
 	if service == nil {
 		return nil, errors.New("administration authentication service is required")
 	}
-	return &handler{boundary: b, service: service, draftEditor: editor, settings: settings}, nil
+	return &handler{boundary: b, service: service, draftEditor: editor, settings: settings, publishedSite: cfg.PublishedSite}, nil
 }
 
 const maxCredentialBodyBytes = 4096
@@ -84,6 +86,7 @@ const (
 
 const (
 	csrfOperation               = "authCSRF"
+	stepUpOperation             = "authStepUp"
 	logoutOperation             = "authLogout"
 	recoverOperation            = "authRecover"
 	completeRecoveryOperation   = "authCompleteRecovery"
@@ -111,9 +114,9 @@ var routes = map[string]route{
 	loginPath: {kind: preauthKind, fields: "login,password", method: http.MethodPost, operationID: "authLogin", summary: "Verify the password and begin MFA", response: csrfResponseSchema,
 		description: "Requires a preauth session and its CSRF token. A successful password check replaces preauth with a five-minute restricted login session; it does not grant full access. Submit a fresh TOTP to MFA verification with the returned CSRF token."},
 	"/mfa/verify": {kind: loginKind, fields: credentialCodeField, method: http.MethodPost, operationID: "authVerifyMFA", summary: "Complete login with a TOTP", response: csrfResponseSchema,
-		description: "Requires a restricted login session. A valid unused TOTP replaces it with a full session and rotates CSRF. Full sessions have a 12-hour absolute lifetime, a 30-minute idle timeout and five-minute strong-authentication freshness from this successful MFA. Invalid, expired or replayed factors do not grant access."},
-	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: "authStepUp", summary: "Refresh strong authentication", response: csrfResponseSchema,
-		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute session expiry."},
+		description: "Requires a restricted login session. A valid unused TOTP replaces it with a full session and rotates CSRF. A full session uses the installation lifetime policy at sign-in, which defaults to 12 hours absolute and 30 minutes idle. Strong authentication stays fresh for five minutes from this successful MFA. Invalid, expired or replayed factors do not grant access."},
+	"/step-up": {kind: fullKind, fields: "password,code", method: http.MethodPost, operationID: stepUpOperation, summary: "Refresh strong authentication", response: csrfResponseSchema,
+		description: "Requires a full session, its current CSRF token, password and a fresh TOTP. Success rotates the full session and records five-minute authentication freshness for sensitive actions, retaining the original absolute expiry and idle timeout."},
 	"/recovery": {kind: preauthKind, fields: "login,password,code", method: http.MethodPost, operationID: recoverOperation, summary: "Reserve recovery and enroll a replacement factor", response: "RecoveryEnrollment",
 		description: "Requires preauth, password and an unused recovery code. Returns a pending TOTP seed and a ten-minute restricted recovery session, not full access. Enroll the seed locally, then confirm a fresh TOTP through recovery completion. A pending reservation prevents concurrent use; cancellation releases it."},
 	"/recovery/complete": {kind: recoveryKind, fields: credentialCodeField, method: http.MethodPost, operationID: completeRecoveryOperation, summary: "Confirm the replacement factor", response: recoveryCodesSchema,
@@ -134,6 +137,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rt, target, ok := resolveRoute(r.URL.Path, r.Method, h.draftEditor != nil)
 	if !ok || settingsRoutes[target.path] != nil && h.settings == nil {
 		problem(w, http.StatusNotFound, notFoundCode)
+		return
+	}
+	if target.path == adminEntryPath {
+		h.serveAdminEntry(w, r, rt)
 		return
 	}
 	ip, code := h.boundary.check(r)
@@ -164,6 +171,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt route, target routeTarget, ip string) {
 	path := target.path
+	if path == adminCatalogPath {
+		h.serveAdminCatalog(w, r, rt, ip)
+		return
+	}
 	if rt.operationID == readRoleGrantOptionsOperation {
 		h.serveRoleGrantOptions(w, r, rt, ip)
 		return
@@ -174,6 +185,14 @@ func (h *handler) serveOperation(w http.ResponseWriter, r *http.Request, rt rout
 	}
 	if _, ok := accountRoutes[path]; ok {
 		h.serveAccount(w, r, rt, target, ip)
+		return
+	}
+	if path == sessionPolicyPath {
+		h.serveSessionPolicy(w, r, rt, ip)
+		return
+	}
+	if path == ratePolicyPath {
+		h.serveRatePolicy(w, r, rt, ip)
 		return
 	}
 	if settingsRoutes[path] != nil {

@@ -3,9 +3,8 @@ import { contentTitle } from '~/utils/content-fields'
 import { computed } from 'vue'
 import { useAsyncData, useHead, useRoute, useRuntimeConfig } from '#imports'
 import { usePublicContent } from '~/composables/usePublicContent'
-import { usePublicSite } from '~/composables/usePublicSite'
 import { usePublicUi } from '~/composables/usePublicUi'
-import { contentPageSize, contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
+import { contentCollectionTitle, contentPageSize, contentListPage, contentPath, contentSeoLinks, contentNamespace, publicError, routeSegment } from '~/utils/public-content'
 
 defineOptions({ name: 'PublishedContentList' })
 
@@ -14,13 +13,12 @@ const namespace = contentNamespace(route.params.namespace)
 const language = routeSegment(route.params.lang).toLowerCase()
 const page = contentListPage(route.query.page)
 const content = usePublicContent()
-const { t } = usePublicUi()
+const { publication, t } = usePublicUi()
 const { data, error } = await useAsyncData(`content:${namespace}:${language}:${page}`, () => content.list(namespace, language, (page - 1) * contentPageSize), {
   getCachedData: (key, app) => app.isHydrating ? app.payload.data[key] : undefined,
 })
 if (error.value) throw publicError(error.value.status ?? 503)
-const { publication } = usePublicSite()
-const site = computed(() => publication.value?.settings)
+const site = publication?.settings
 const origin = useRuntimeConfig().public.site.origin
 const listPath = page > 1 ? `${contentPath(namespace, language)}?page=${page}` : contentPath(namespace, language)
 const seoLinks = computed(() => {
@@ -29,16 +27,17 @@ const seoLinks = computed(() => {
   return contentSeoLinks(origin, listPath, namespace, translations)
 })
 useHead(() => ({
-  title: `${t(namespace)} | ${site.value?.title}`,
+  title: `${t(contentCollectionTitle(namespace))} | ${site?.title}`,
   link: seoLinks.value,
-  meta: [{ name: 'description', content: site.value?.description }],
+  meta: [{ name: 'description', content: site?.description }],
 }))
 </script>
 
 <template>
-  <section v-if="data">
-    <ContentLanguageNav :namespace="namespace" :languages="data.languages" :current="data.language.code" />
-    <h1>{{ t(namespace) }} <span :lang="data.language.code" :dir="data.language.direction">{{ data.language.native_name }}</span></h1>
+  <section v-if="data" :lang="publication?.language.code" :dir="publication?.language.direction">
+    <PublicSiteHeader :namespace="namespace" :languages="data.languages" :current="data.language" :current-path="listPath" />
+    <ContentCollectionNav :namespace="namespace" :language="data.language.code" />
+    <h1>{{ t(contentCollectionTitle(namespace)) }}</h1>
     <ul v-if="data.items.length" class="article-list" :lang="data.language.code" :dir="data.language.direction">
       <li v-for="article in data.items" :key="article.item_id">
         <h2><NuxtLink :to="contentPath(namespace, article.language, article.slug)">{{ contentTitle(article) }}</NuxtLink></h2>

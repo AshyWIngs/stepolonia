@@ -65,11 +65,11 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','v')
  ), expected AS (
  SELECT e.*, CASE e.privilege
- WHEN 'SELECT' THEN e.relname IN ('users','roles','user_roles','permission_operations','role_grants',
- 'grant_fields','security_state','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempt_buckets','onboarding_tokens','enrollment_attempts','content_item_assignments')
- WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempt_buckets','recovery_codes','security_audit','users','mfa_totp','onboarding_tokens','enrollment_attempts','role_grants','grant_fields','user_roles','content_item_assignments')
+ WHEN 'SELECT' THEN e.relname IN ('users','roles','role_display_names','public_languages','user_roles','permission_operations','role_grants',
+ 'grant_fields','security_state','session_policy','auth_rate_policies','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempt_buckets','onboarding_tokens','enrollment_attempts','content_item_assignments')
+ WHEN 'INSERT' THEN e.relname IN ('sessions','recovery_attempts','auth_attempt_buckets','recovery_codes','security_audit','users','mfa_totp','onboarding_tokens','enrollment_attempts','role_grants','grant_fields','user_roles','content_item_assignments','role_display_names')
  WHEN 'UPDATE' THEN e.relname IN ('users','mfa_totp','recovery_codes','sessions','recovery_attempts','auth_attempt_buckets','onboarding_tokens','enrollment_attempts')
- WHEN 'DELETE' THEN e.relname IN ('auth_attempt_buckets','sessions','role_grants','grant_fields','user_roles','content_item_assignments')
+ WHEN 'DELETE' THEN e.relname IN ('auth_attempt_buckets','sessions','role_grants','grant_fields','user_roles','content_item_assignments','role_display_names')
  ELSE false END AS allowed FROM effective e
  ) SELECT
  current_user=session_user AND session_user=$1 AND r.rolcanlogin AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
@@ -110,8 +110,12 @@ func checkSecurityConnection(ctx context.Context, connection *sql.Conn, login st
  OR e.privilege='INSERT' AND e.relname='roles'
     AND col.attname IN ('id','name','self_access_user_id','self_access_type_id')
  OR e.privilege='UPDATE' AND e.relname='roles' AND col.attname IN ('name','state','version')
+ OR e.privilege='UPDATE' AND e.relname='role_display_names' AND col.attname='display_name'
+ OR e.privilege='UPDATE' AND e.relname='session_policy' AND col.attname IN ('version','idle_timeout_minutes','absolute_timeout_hours')
+ OR e.privilege='UPDATE' AND e.relname='auth_rate_policies'
+    AND col.attname IN ('version','window_seconds','subject_attempts','ip_attempts','installation_attempts','hash_jobs')
  OR e.privilege='UPDATE' AND e.relname='content_items' AND col.attname='version'
- OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key')
+ OR e.privilege='SELECT' AND (e.relname='content_types' AND col.attname IN ('id','key','enabled')
  OR e.relname='content_items' AND col.attname IN ('id','type_id','version')
  OR e.relname='content_fields' AND col.attname IN ('type_id','field_id','key')
  OR e.relname='security_audit' AND col.attname IN ('id','occurred_at','operation','result','reason','actor_id','target_id','request_id'))))

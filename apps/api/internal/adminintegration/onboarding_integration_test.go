@@ -481,11 +481,14 @@ func waitOnboardingMutex(t *testing.T, f authFixtureState) {
 func TestAuthOnboardingUnauthenticatedAuditBudgetIntegration(t *testing.T) {
 	f := authFixture(t)
 	ctx := context.Background()
+	var peer string
 	for i := range 8 {
 		pre, err := f.service.NewPreauth(ctx)
 		requireNoError(t, err)
 		// Different valid random bearers must share the same trusted-IP budget.
-		_, err = f.service.CreateUser(ctx, authReq(pre), "anonymous-no-write")
+		req := authReq(pre)
+		peer = req.ClientIP.String()
+		_, err = f.service.CreateUser(ctx, req, "anonymous-no-write")
 		if i < 5 {
 			onboardingError(t, err, identity.ErrAuthenticationRequired)
 		} else {
@@ -493,14 +496,29 @@ func TestAuthOnboardingUnauthenticatedAuditBudgetIntegration(t *testing.T) {
 		}
 	}
 	var bounded bool
-	requireNoError(t, f.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied')=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='anonymous-no-write') AND (SELECT COALESCE(sum(count),0) FROM public.auth_attempt_buckets WHERE kind='account')=5`).Scan(&bounded))
+	requireNoError(t, f.db.QueryRow(`SELECT (SELECT count(*) FROM public.security_audit WHERE operation='users.created' AND result='denied')=5 AND NOT EXISTS(SELECT 1 FROM public.users WHERE login_key='anonymous-no-write')`).Scan(&bounded))
 	if !bounded {
 		t.Fatal("forged cookie rotation bypassed persistent denial aggregation")
 	}
+	assertOnboardingDenialBuckets(t, f, peer)
 	// Failure saturation must not block a properly authorized full command.
 	full := authFull(t, f)
 	_, err := f.service.CreateUser(ctx, authReq(full), "authorized-after-denial")
 	requireNoError(t, err)
+}
+
+func assertOnboardingDenialBuckets(t *testing.T, f authFixtureState, peer string) {
+	t.Helper()
+	var valid bool
+	requireNoError(t, f.db.QueryRow(`SELECT
+ COALESCE(sum(count) FILTER (WHERE kind='denial_action' AND key_digest=$1),0)=5 AND
+ COALESCE(sum(count) FILTER (WHERE kind='denial_ip' AND key_digest=$2),0)=5 AND
+ COALESCE(sum(count) FILTER (WHERE kind='denial_site' AND key_digest=$3),0)=5 AND
+ COALESCE(sum(count) FILTER (WHERE kind IN ('account','ip','site')),0)=0
+ FROM public.auth_attempt_buckets`, authDigest("users.created:"+peer), authDigest(peer), authDigest(f.config.Site)).Scan(&valid))
+	if !valid {
+		t.Fatal("denial attempts did not share action, IP and installation budgets independent of credentials")
+	}
 }
 
 func TestAuthOnboardingSQLInvariantsIntegration(t *testing.T) {

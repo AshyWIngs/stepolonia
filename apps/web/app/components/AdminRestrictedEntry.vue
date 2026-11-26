@@ -78,7 +78,7 @@ async function submit() {
 
 <template>
   <div class="access-panel" :aria-busy="busy">
-    <p v-if="busy" role="status">{{ translate('admin.working') }}</p>
+    <p v-if="busy"><output>{{ translate('admin.working') }}</output></p>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
     <template v-if="codes.length">
       <h2 ref="focusTarget" tabindex="-1">{{ translate('admin.account_codes') }}</h2>

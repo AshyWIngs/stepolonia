@@ -78,6 +78,10 @@ func (s *AuthService) securityCommand(ctx context.Context, req AuthRequest, oper
 }
 
 func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, permissions []string, operation string, fn func(context.Context, *sql.Tx, Session) error) error {
+	return s.authorizedCommandWithFreshness(ctx, req, permissions, operation, true, fn)
+}
+
+func (s *AuthService) authorizedCommandWithFreshness(ctx context.Context, req AuthRequest, permissions []string, operation string, requireFreshMFA bool, fn func(context.Context, *sql.Tx, Session) error) error {
 	return s.auditedCommand(ctx, req, operation, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		if len(permissions) == 0 {
 			return ErrPermissionDenied
@@ -87,7 +91,7 @@ func (s *AuthService) authorizedCommand(ctx context.Context, req AuthRequest, pe
 				return err
 			}
 		}
-		if !x.FreshStepUp() {
+		if requireFreshMFA && !x.FreshStepUp() {
 			return ErrStepUpRequired
 		}
 		return fn(ctx, tx, x)
@@ -126,7 +130,7 @@ func (s *AuthService) auditCommandDenial(ctx context.Context, req AuthRequest, o
 	}
 	// The key excludes the bearer: rotating forged cookies cannot reset the
 	// persistent per-command/address failure budget. Failed reservations remain.
-	if _, err := s.limit(ctx, req, operation+":"+req.ClientIP.Unmap().String()); err != nil {
+	if _, err := s.limitScope(ctx, req, RateDenialAudit, operation+":"+req.ClientIP.Unmap().String()); err != nil {
 		return err
 	}
 	auditErr := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {

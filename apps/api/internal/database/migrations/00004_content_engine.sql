@@ -769,7 +769,65 @@ GRANT DELETE ON public.content_draft_relations TO sp_publisher;
 
 REVOKE ALL ON FUNCTION public.guard_content_item_identity() FROM public;
 
+-- +goose StatementBegin
+CREATE FUNCTION public.set_language_availability(
+    requested_code text, enabled boolean
+) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $body$
+DECLARE
+    previous boolean;
+BEGIN
+    PERFORM pg_catalog.pg_advisory_xact_lock(1398031696, 1);
+    SELECT l.is_enabled INTO previous FROM public.languages AS l
+    WHERE l.code = requested_code FOR UPDATE;
+    IF NOT FOUND OR enabled IS NULL THEN
+        RETURN 'site_version_conflict';
+    END IF;
+    IF previous = enabled THEN
+        RETURN '';
+    END IF;
+
+    IF enabled AND (SELECT count(*) FROM public.languages WHERE is_enabled) >= 16 THEN
+        RETURN 'language_limit';
+    END IF;
+    IF NOT enabled AND EXISTS (
+        SELECT 1 FROM public.site_state AS s
+        INNER JOIN public.site_revisions AS r ON r.id = s.published_id OR r.id = s.draft_id
+        WHERE requested_code IN (r.default_language, r.fallback_language)
+        OR EXISTS (
+            SELECT 1 FROM public.site_revision_languages AS c
+            WHERE c.revision_id = r.id AND c.language_code = requested_code
+        )
+    ) THEN
+        RETURN 'language_used_in_settings';
+    END IF;
+    IF NOT enabled AND EXISTS (
+        SELECT 1 FROM public.content_items AS i
+        INNER JOIN public.content_publication_locales AS l ON l.publication_id = i.published_id
+        INNER JOIN public.languages AS active ON active.code = l.locale_code
+        WHERE l.locale_code = requested_code AND l.locale_generation = active.generation
+    ) THEN
+        RETURN 'language_used_in_content';
+    END IF;
+
+    UPDATE public.languages SET is_enabled = enabled WHERE code = requested_code;
+    RETURN '';
+END;
+$body$;
+-- +goose StatementEnd
+
+REVOKE ALL ON FUNCTION public.set_language_availability(text, boolean)
+FROM public;
+GRANT EXECUTE ON FUNCTION public.set_language_availability(text, boolean)
+TO sp_publisher;
+
+COMMENT ON FUNCTION public.set_language_availability(text, boolean) IS
+'Changes installation language availability under the write lock without '
+'hiding active publications or settings.';
+
 -- +goose Down
+DROP FUNCTION public.set_language_availability(text, boolean);
 DROP VIEW public.public_content_relations;
 DROP VIEW public.public_content_routes;
 DROP VIEW public.public_content_items;

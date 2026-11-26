@@ -18,7 +18,6 @@ func TestContentSchemaIntegration(t *testing.T) {
 	defer cancel()
 	requireNoError(t, PrepareRoles(ctx, db))
 	requireNoError(t, Up(ctx, db, runtimeTestRole))
-	requireNoError(t, Seed(ctx, db))
 	var article string
 	requireNoError(t, db.QueryRowContext(ctx, "SELECT id::text FROM public.content_types WHERE key='article'").Scan(&article))
 	requireNoError(t, Up(ctx, db, runtimeTestRole))
@@ -33,7 +32,6 @@ func TestContentSchemaIntegration(t *testing.T) {
 	requireNoError(t, Down(ctx, db, os.Getenv(disposableTokenEnv)))
 	requireNoError(t, CheckSchema(ctx, db))
 	requireNoError(t, Up(ctx, db, runtimeTestRole))
-	requireNoError(t, Seed(ctx, db))
 	testContentCatalog(t, ctx, db)
 	testSiteConfiguration(t, ctx, db, cfg)
 }

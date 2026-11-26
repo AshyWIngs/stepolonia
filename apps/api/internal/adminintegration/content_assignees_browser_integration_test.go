@@ -85,8 +85,7 @@ func seedAssigneePublication(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	const publicationID = "a3000000-0000-4000-8000-000000000006"
 	requireNoError(t, identity.WithWriteMutex(context.Background(), db, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
- VALUES('en','English','English','ltr',true)`); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE public.languages SET is_enabled=true WHERE code='en'`); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq)

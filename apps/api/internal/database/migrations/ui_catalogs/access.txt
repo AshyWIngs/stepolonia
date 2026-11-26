@@ -1,0 +1,449 @@
+admin.access_denied
+You do not have permission for this action.
+Nie masz uprawnień do tego działania.
+У вас нет разрешения на это действие.
+Бұл әрекетті орындауға рұқсатыңыз жоқ.
+
+admin.audit
+Audit log
+Dziennik audytu
+Журнал аудита
+Аудит журналы
+
+admin.audit_empty
+No events on this page.
+Brak zdarzeń na tej stronie.
+На этой странице нет событий.
+Бұл бетте оқиғалар жоқ.
+
+admin.audit_success
+Succeeded
+Powodzenie
+Выполнено
+Орындалды
+
+admin.audit_denied
+Denied
+Odmowa
+Отклонено
+Қабылданбады
+
+admin.audit_failure
+Failed
+Błąd
+Ошибка
+Қате
+
+admin.audit_actor
+Actor ID
+Identyfikator wykonawcy
+Идентификатор инициатора
+Орындаушы идентификаторы
+
+admin.audit_target
+Target ID
+Identyfikator celu
+Идентификатор цели
+Нысан идентификаторы
+
+admin.audit_request
+Request ID
+Identyfikator żądania
+Идентификатор запроса
+Сұрау идентификаторы
+
+admin.audit_reason
+Reason
+Powód
+Причина
+Себебі
+
+admin.access
+Access
+Dostęp
+Доступ
+Қолжетімділік
+
+admin.access_saved
+Changes saved.
+Zapisano zmiany.
+Изменения сохранены.
+Өзгерістер сақталды.
+
+admin.access_reload
+Reload
+Wczytaj ponownie
+Перезагрузить
+Қайта жүктеу
+
+admin.access_version_conflict
+This record changed. Reload it and review your changes before retrying.
+Dane zostały zmienione. Wczytaj je ponownie i sprawdź swój wybór.
+Запись изменилась. Перезагрузите её и проверьте изменения перед повтором.
+Жазба өзгерді. Қайта жүктеп, өзгерістерді тексеріңіз.
+
+admin.access_last_admin
+At least one administrator must keep access and be able to recover their account.
+Co najmniej jeden administrator musi zachować dostęp i możliwość odzyskania konta.
+Хотя бы один администратор должен сохранить доступ и возможность восстановления записи.
+Кемінде бір әкімшінің қолжетімділігі мен тіркелгіні қалпына келтіру мүмкіндігі сақталуы керек.
+
+admin.access_transition
+This action is unavailable in the current state.
+Zmiana jest niedostępna w bieżącym stanie.
+Действие недоступно при текущем состоянии.
+Бұл әрекет ағымдағы күйде қолжетімсіз.
+
+admin.access_role_in_use
+Remove the role’s dependencies before deleting it.
+Usuń powiązania roli przed jej usunięciem.
+Удалите зависимости роли перед её удалением.
+Рөлді жоймас бұрын тәуелділіктерін алып тастаңыз.
+
+admin.access_unavailable_target
+The selected record is unavailable.
+Wybrany rekord jest niedostępny.
+Выбранная запись недоступна.
+Таңдалған жазба қолжетімсіз.
+
+admin.access_input
+Check the fields and try again.
+Sprawdź pola i spróbuj ponownie.
+Проверьте поля и повторите попытку.
+Өрістерді тексеріп, қайталап көріңіз.
+
+admin.access_state_pending
+Pending
+Oczekujące
+Ожидает настройки
+Баптауды күтуде
+
+admin.access_state_disabled
+Disabled
+Wyłączone
+Отключено
+Өшірілген
+
+admin.access_state_active
+Active
+Aktywne
+Активно
+Белсенді
+
+admin.access_state_archived
+Archived
+Zarchiwizowane
+В архиве
+Мұрағатталған
+
+admin.access_enable
+Enable
+Włącz
+Включить
+Қосу
+
+admin.access_disable
+Disable
+Wyłącz
+Отключить
+Өшіру
+
+admin.access_archive
+Archive
+Archiwizuj
+Архивировать
+Мұрағаттау
+
+admin.access_restore
+Restore
+Przywróć
+Восстановить
+Қалпына келтіру
+
+admin.access_delete
+Delete
+Usuń
+Удалить
+Жою
+
+admin.users
+Accounts
+Konta
+Учётные записи
+Тіркелгілер
+
+admin.users_create
+Create account
+Utwórz konto
+Создать учётную запись
+Тіркелгі жасау
+
+admin.users_created
+Pending account created.
+Utworzono oczekujące konto.
+Создана ожидающая учётная запись.
+Баптауды күтетін тіркелгі жасалды.
+
+admin.users_issue_invite
+Issue invitation
+Wydaj zaproszenie
+Выдать приглашение
+Шақыру беру
+
+admin.users_view_roles
+Manage roles
+Zarządzaj rolami
+Управлять ролями
+Рөлдерді басқару
+
+admin.users_activate
+Activate account
+Aktywuj konto
+Активировать учётную запись
+Тіркелгіні белсендіру
+
+admin.users_memberships
+Account roles
+Role konta
+Роли учётной записи
+Тіркелгі рөлдері
+
+admin.users_apply_roles
+Save role assignments
+Zapisz przypisania ról
+Сохранить роли
+Рөл тағайындауларын сақтау
+
+admin.users_role_code
+Role code
+Kod roli
+Код роли
+Рөл коды
+
+admin.users_role_status
+Status
+Stan
+Состояние
+Күйі
+
+admin.users_roles_assigned
+Assigned
+Przypisana
+Назначена
+Тағайындалған
+
+admin.users_roles_mixed
+Multiple domains
+Wiele obszarów
+Несколько разделов
+Бірнеше бөлім
+
+admin.users_roles_other
+Other roles
+Pozostałe role
+Другие роли
+Басқа рөлдер
+
+admin.users_roles_none
+No roles are available.
+Brak dostępnych ról.
+Нет доступных ролей.
+Қолжетімді рөлдер жоқ.
+
+admin.users_roles_unavailable
+Some selected roles are no longer available. Review the remaining selection.
+Część wybranych ról nie jest już dostępna. Sprawdź pozostałe role.
+Некоторые выбранные роли больше недоступны. Проверьте оставшиеся роли.
+Таңдалған кейбір рөлдер енді қолжетімсіз. Қалған рөлдерді тексеріңіз.
+
+admin.users_roles_limit
+Uncheck a role to assign another.
+Odznacz rolę, aby przypisać inną.
+Снимите отметку с одной из ролей, чтобы назначить другую.
+Басқа рөлді тағайындау үшін бір рөлдің белгісін алып тастаңыз.
+
+admin.users_confirm_invite
+A new token replaces the previous invitation and interrupts any enrollment already in progress.
+Nowy token unieważni poprzednie zaproszenie i przerwie rozpoczętą konfigurację.
+Новый токен заменит прежнее приглашение и прервёт начатую настройку.
+Жаңа токен бұрынғы шақыруды ауыстырып, басталған баптауды тоқтатады.
+
+admin.users_confirm_activate
+Activate this account and enable its active role grants?
+Aktywować konto i przywrócić uprawnienia jego aktywnych ról?
+Активировать запись и применить разрешения её активных ролей?
+Тіркелгіні және оның белсенді рөлдерінің рұқсаттарын қосу керек пе?
+
+admin.users_confirm_disable
+Disable this account and revoke its sessions?
+Wyłączyć konto i zakończyć jego sesje?
+Отключить запись и завершить её сессии?
+Тіркелгіні өшіріп, оның сеанстарын аяқтау керек пе?
+
+admin.users_invite_delivery
+Send this one-time token through a verified channel.
+Przekaż ten jednorazowy token zweryfikowanym kanałem.
+Передайте одноразовый токен по проверенному каналу.
+Бір реттік токенді тексерілген арнамен жіберіңіз.
+
+admin.assignees
+Assignees
+Przypisane osoby
+Назначенные пользователи
+Тағайындалған пайдаланушылар
+
+admin.assignees_choose
+Accounts assigned to this item
+Konta przypisane do tego materiału
+Учётные записи, назначенные на этот материал
+Осы материалға тағайындалған тіркелгілер
+
+admin.assignees_confirm
+Save the complete assignment set?
+Zapisać cały zestaw przypisań?
+Сохранить полный список назначений?
+Тағайындаулардың толық тізімін сақтау керек пе?
+
+admin.assignees_save
+Review assignments
+Sprawdź przypisania
+Проверить назначения
+Тағайындауларды тексеру
+
+admin.security
+Security
+Bezpieczeństwo
+Безопасность
+Қауіпсіздік
+
+admin.session_policy_heading
+Session duration
+Czas trwania sesji
+Длительность сеансов
+Сеанс ұзақтығы
+
+admin.session_policy_idle_minutes
+Inactivity limit (minutes)
+Limit bezczynności (minuty)
+Время бездействия (минуты)
+Әрекетсіздік шегі (минут)
+
+admin.session_policy_absolute_hours
+Maximum session length (hours)
+Maksymalny czas sesji (godziny)
+Максимальная длительность сеанса (часы)
+Сеанстың ең ұзақ мерзімі (сағат)
+
+admin.session_policy_help
+The inactivity limit signs users out after a period without activity. The maximum length applies even while they are active. Changes apply at the next sign-in.
+Limit bezczynności kończy sesję po okresie bez aktywności. Maksymalny czas sesji obowiązuje także podczas pracy. Zmiany zaczną obowiązywać po następnym zalogowaniu.
+Время бездействия отсчитывается от последнего действия. Максимальная длительность учитывается и при активной работе. Изменения вступают в силу при следующем входе.
+Әрекетсіздік уақыты соңғы әрекеттен бастап есептеледі. Ең ұзақ мерзім белсенді жұмыс кезінде де қолданылады. Өзгерістер келесі кірген кезде күшіне енеді.
+
+admin.session_policy_save
+Save session policy
+Zapisz zasady sesji
+Сохранить политику сеансов
+Сеанс саясатын сақтау
+
+admin.session_policy_saved
+Session policy saved.
+Zasady sesji zapisane.
+Политика сеансов сохранена.
+Сеанс саясаты сақталды.
+
+admin.rate_limits
+Rate limits
+Limity prób
+Лимиты попыток
+Әрекет шектері
+
+admin.rate_credentials
+Credential checks
+Weryfikacja danych logowania
+Проверка учётных данных
+Кіру деректерін тексеру
+
+admin.rate_preauth
+Sign-in page access
+Dostęp do strony logowania
+Открытие страницы входа
+Кіру бетін ашу
+
+admin.rate_step_up
+Identity confirmation
+Potwierdzenie tożsamości
+Подтверждение личности
+Жеке тұлғаны растау
+
+admin.rate_denial_audit
+Denied actions
+Odrzucone działania
+Отклонённые действия
+Қабылданбаған әрекеттер
+
+admin.rate_window_seconds
+Rolling window in seconds
+Ruchome okno w sekundach
+Скользящее окно в секундах
+Жылжымалы терезе, секунд
+
+admin.rate_subject_attempts
+Attempts per account
+Próby na konto
+Попыток на учётную запись
+Есептік жазбаға шаққандағы әрекет
+
+admin.rate_action_attempts
+Attempts per action and client address
+Próby na działanie i adres klienta
+Попыток на действие и адрес клиента
+Әрекет пен клиент мекенжайына шаққандағы әрекет саны
+
+admin.rate_ip_attempts
+Attempts per client IP
+Próby na adres IP klienta
+Попыток на IP-адрес клиента
+Клиенттің IP мекенжайына шаққандағы әрекет
+
+admin.rate_installation_attempts
+Attempts across this portal
+Próby w obrębie portalu
+Попыток на весь портал
+Портал бойынша әрекет саны
+
+admin.rate_hash_jobs
+Password jobs per API process
+Równoległe operacje na hasłach na proces API
+Параллельных операций с паролями на процесс API
+API процесіндегі құпиясөз операцияларының саны
+
+admin.rate_hash_help
+Applies to credential checks. Identity confirmation can use remaining process capacity.
+Dotyczy weryfikacji danych logowania. Potwierdzenie tożsamości może korzystać z wolnych zasobów procesu.
+Лимит действует при проверке учётных данных. Подтверждение личности может использовать свободные ресурсы процесса.
+Шек кіру деректерін тексеруге қолданылады. Жеке тұлғаны растау процестің бос ресурстарын пайдалана алады.
+
+admin.rate_policy_save
+Save attempt limits
+Zapisz limity prób
+Сохранить лимиты попыток
+Әрекет шектерін сақтау
+
+admin.rate_policy_saved
+Attempt limits saved.
+Limity prób zapisane.
+Лимиты попыток сохранены.
+Әрекет шектері сақталды.
+
+admin.rate_policy_reload
+Reload these limits
+Wczytaj ponownie te limity
+Загрузить эти лимиты заново
+Осы шектерді қайта жүктеу
+
+admin.rate_retry_seconds
+Try again in {seconds} seconds.
+Spróbuj ponownie za {seconds} s.
+Повторите попытку через {seconds} с.
+{seconds} секундтан кейін қайталап көріңіз.

@@ -96,11 +96,20 @@ func routeForMethod(method string, candidates []route) route {
 }
 
 func staticAdminRoutes(path string) (string, string, []route) {
+	if candidates := adminUIRoutes[path]; candidates != nil {
+		return path, "", candidates
+	}
 	if path == roleGrantOptionsPath {
 		return path, "", []route{readRoleGrantOptionsRoute}
 	}
 	if key, id := accountTarget(path); key != "" {
 		return key, id, []route{accountRoutes[key]}
+	}
+	switch path {
+	case sessionPolicyPath:
+		return path, "", sessionPolicyRoutes
+	case ratePolicyPath:
+		return path, "", ratePolicyRoutes
 	}
 	if candidates := settingsRoutes[path]; candidates != nil {
 		return path, "", candidates
@@ -235,20 +244,18 @@ func isOnboardingRoute(path string) bool {
 }
 
 func routeMethods(path string) string {
-	if path == roleGrantOptionsPath {
+	switch path {
+	case sessionPolicyPath, contentAssigneesPath:
+		return "GET, PUT"
+	case roleGrantOptionsPath, draftMetadataPath, registryRenderersPath, adminEntryPath, adminCatalogPath:
 		return http.MethodGet
+	case contentCollectionsPath, ratePolicyPath:
+		return "GET, POST"
+	case registryCollectionPath:
+		return "GET, PATCH"
 	}
 	if rt, ok := accountRoutes[path]; ok {
 		return rt.method
-	}
-	if path == contentCollectionsPath {
-		return "GET, POST"
-	}
-	if path == registryCollectionPath {
-		return "GET, PATCH"
-	}
-	if path == draftMetadataPath || path == registryRenderersPath {
-		return http.MethodGet
 	}
 	if rt, ok := draftCandidateRoutes[path]; ok {
 		return rt.method
@@ -258,9 +265,6 @@ func routeMethods(path string) string {
 	}
 	if path == contentDraftPath {
 		return readDraftRoute.method + ", " + saveDraftRoute.method
-	}
-	if path == contentAssigneesPath {
-		return "GET, PUT"
 	}
 	if rt, ok := routes[path]; ok {
 		return rt.method

@@ -10,7 +10,7 @@ func hasAdminAuthority(grants []accessGrant) bool {
 	required := []string{}
 	for _, operation := range bootstrapInstallationOperations {
 		switch operation {
-		case string(OpContentTypesManage), opContentInitializeAccess, opContentDelegate, opSettingsManage:
+		case string(OpContentTypesManage), opContentInitializeAccess, opContentDelegate, opSettingsManage, opSessionPolicyManage:
 			continue
 		default:
 			required = append(required, operation)

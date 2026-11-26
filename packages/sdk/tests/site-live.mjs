@@ -30,20 +30,26 @@ function assertPublication(result, version, language, requestedLanguage) {
   assert.equal(site.settings.default_language, 'pl')
   assert.equal(site.settings.fallback_language, 'en')
   assert.equal(site.settings.title, 'Fixture title')
-  assert.deepEqual(new Set(Object.keys(site)), new Set(['language', 'languages', 'messages', 'requested_language', 'settings', 'version']))
+  assert.deepEqual(new Set(Object.keys(site)), new Set(['language', 'language_flags', 'languages', 'messages', 'requested_language', 'settings', 'version']))
   assert.deepEqual(new Set(Object.keys(site.settings)), new Set(['accent', 'default_language', 'description', 'fallback_language', 'notice', 'tagline', 'title']))
   assert.equal(site.languages.length, 2)
   assert.deepEqual(new Set(site.languages.map(item => item.code)), new Set(['en', 'pl']))
+  assert.deepEqual(new Set(Object.keys(site.language_flags)), new Set(['en', 'pl', 'ru']))
+  for (const flag of Object.values(site.language_flags)) {
+    assert.ok(flag.startsWith('<svg ') && flag.endsWith('</svg>'))
+  }
   for (const item of [site.language, ...site.languages]) {
     assert.deepEqual(new Set(Object.keys(item)), new Set(['code', 'direction', 'name', 'native_name']))
   }
-  const fixtureKeys = process.env.STAGE22_MESSAGE_KEYS
-  assert.ok(fixtureKeys, 'STAGE22_MESSAGE_KEYS from the disposable site fixture is required')
-  const keys = JSON.parse(fixtureKeys)
-  assert.ok(Array.isArray(keys) && keys.length > 0)
-  assert.deepEqual(new Set(Object.keys(site.messages)), new Set(keys))
-  for (const key of keys) {
-    assert.equal(site.messages[key], `Fixture ${language} ${key}`)
+  const fixtureSignatures = process.env.STAGE22_MESSAGE_SIGNATURES
+  assert.ok(fixtureSignatures, 'STAGE22_MESSAGE_SIGNATURES from the disposable site fixture is required')
+  const signatures = Object.entries(JSON.parse(fixtureSignatures))
+  const visitorSignatures = signatures.filter(([key]) => !key.startsWith('admin.'))
+  assert.ok(visitorSignatures.length > 0 && visitorSignatures.length < signatures.length)
+  assert.deepEqual(new Set(Object.keys(site.messages)), new Set(visitorSignatures.map(([key]) => key)))
+  for (const [key, placeholders] of visitorSignatures) {
+    const expected = [`Fixture ${language} ${key}`, ...placeholders.map(name => `{${name}}`)].join(' ')
+    assert.equal(site.messages[key], expected)
   }
 }
 

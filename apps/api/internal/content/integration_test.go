@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
+	"stepolonia/apps/api/internal/database/migrations"
 )
 
 const fixtureFeaturedFieldKey = "featured"
@@ -67,7 +67,7 @@ func testService(db *sql.DB) *Service {
 }
 func prepareContent(t *testing.T, db *sql.DB) {
 	t.Helper()
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS("../database/migrations"))
+	provider, err := migrations.Provider(db)
 	must(t, err)
 	_, err = provider.Up(context.Background())
 	must(t, err)

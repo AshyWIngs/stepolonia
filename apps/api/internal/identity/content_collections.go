@@ -6,10 +6,12 @@ import (
 )
 
 type ReadableCollection struct {
-	TypeID    string `json:"type_id"`
-	TypeKey   string `json:"type_key"`
-	SchemaNo  int64  `json:"schema_no,string"`
-	CanCreate bool   `json:"can_create"`
+	TypeID      string `json:"type_id"`
+	TypeKey     string `json:"type_key"`
+	DisplayName string `json:"display_name"`
+	IconSVG     string `json:"icon_svg"`
+	SchemaNo    int64  `json:"schema_no,string"`
+	CanCreate   bool   `json:"can_create"`
 }
 
 type ReadableCollectionPage struct {
@@ -36,7 +38,7 @@ func (s *AuthService) ListReadableCollections(ctx context.Context, req AuthReque
 }
 
 func readCollectionPage(ctx context.Context, tx *sql.Tx, userID string, limit, offset int) (ReadableCollectionPage, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT t.id::text, t.key, t.current_schema_no, grants.can_create
+	rows, err := tx.QueryContext(ctx, `SELECT t.id::text, t.key, t.display_name, t.icon_svg, t.current_schema_no, grants.can_create
  FROM public.content_types t
  JOIN public.content_schemas s ON s.type_id=t.id AND s.schema_no=t.current_schema_no AND s.sealed
  CROSS JOIN LATERAL (
@@ -47,7 +49,7 @@ func readCollectionPage(ctx context.Context, tx *sql.Tx, userID string, limit, o
  JOIN public.roles r ON r.id=g.role_id AND r.state='active'
  JOIN public.user_roles m ON m.role_id=r.id AND m.user_id=$1
  WHERE g.type_id=t.id AND g.operation IN ($2,$3) AND g.scope='content') AS grants
- WHERE grants.can_read
+ WHERE t.enabled AND grants.can_read
  ORDER BY t.key LIMIT $4 OFFSET $5`, userID, OpContentRead, opContentCreate, limit+1, offset)
 	if err != nil {
 		return ReadableCollectionPage{}, err
@@ -60,7 +62,7 @@ func readCollectionPage(ctx context.Context, tx *sql.Tx, userID string, limit, o
 			break
 		}
 		var item ReadableCollection
-		if err := rows.Scan(&item.TypeID, &item.TypeKey, &item.SchemaNo, &item.CanCreate); err != nil {
+		if err := rows.Scan(&item.TypeID, &item.TypeKey, &item.DisplayName, &item.IconSVG, &item.SchemaNo, &item.CanCreate); err != nil {
 			return ReadableCollectionPage{}, err
 		}
 		page.Items = append(page.Items, item)

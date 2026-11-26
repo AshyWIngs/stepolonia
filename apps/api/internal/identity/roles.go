@@ -31,6 +31,7 @@ type Role struct {
 	ID, Name, State string
 	Version         int64
 	Grants          []RoleGrant
+	DisplayNames    map[string]string
 	bound           bool
 }
 
@@ -41,6 +42,22 @@ type RoleGrant struct {
 	TargetScope, ObjectCeiling            string
 	MayDelegateContent                    bool
 	DelegateOperations, FieldIDs          []string
+	collectionKey                         string
+}
+
+// CollectionKeys identifies only the collections referenced by the role's grants.
+func (r Role) CollectionKeys() map[string]string {
+	var keys map[string]string
+	for _, grant := range r.Grants {
+		if grant.collectionKey == "" {
+			continue
+		}
+		if keys == nil {
+			keys = make(map[string]string)
+		}
+		keys[grant.TypeID] = grant.collectionKey
+	}
+	return keys
 }
 
 // RoleInput replaces the complete explicit name and grant set.
@@ -118,7 +135,16 @@ func queryRolePage(ctx context.Context, tx *sql.Tx, page RolePage) (RoleList, er
 	if err = rows.Close(); err != nil {
 		return out, err
 	}
+	ids := make([]string, 0, len(out.Items))
+	for _, role := range out.Items {
+		ids = append(ids, role.ID)
+	}
+	labels, err := roleDisplayNames(ctx, tx, ids)
+	if err != nil {
+		return out, err
+	}
 	for i := range out.Items {
+		out.Items[i].DisplayNames = labels[out.Items[i].ID]
 		out.Items[i].Grants, err = queryRoleGrants(ctx, tx, out.Items[i].ID)
 		if err != nil {
 			return out, err
@@ -160,6 +186,11 @@ func findRole(ctx context.Context, tx *sql.Tx, id string) (Role, error) {
 		return out, err
 	}
 	out.Grants, err = queryRoleGrants(ctx, tx, id)
+	if err != nil {
+		return out, err
+	}
+	labels, err := roleDisplayNames(ctx, tx, []string{id})
+	out.DisplayNames = labels[out.ID]
 	return out, err
 }
 
@@ -238,12 +269,12 @@ func (s *AuthService) createRole(ctx context.Context, tx *sql.Tx, x Session, inp
 // EditRole atomically replaces explicit policy without state or membership changes.
 func (s *AuthService) EditRole(ctx context.Context, req AuthRequest, id string, expectedVersion int64, input RoleInput) (Role, error) {
 	var out Role
-	err := s.authorizedCommand(ctx, req, []string{opRolesEdit}, "roles.edited", func(ctx context.Context, tx *sql.Tx, x Session) error {
+	err := s.authorizedCommand(ctx, req, []string{opRolesEdit}, roleEditedEvent, func(ctx context.Context, tx *sql.Tx, x Session) error {
 		plan, err := prepareRoleMutation(ctx, tx, x, id, expectedVersion)
 		if err != nil {
 			return err
 		}
-		out, err = s.applyRoleEdit(ctx, tx, x, plan, normalizeRoleInput(input))
+		out, err = s.applyRoleEdit(ctx, tx, x, plan, normalizeRoleInput(input), replaceRoleGrants)
 		return err
 	})
 	if err != nil {
@@ -294,7 +325,9 @@ func prepareRoleMutation(ctx context.Context, tx *sql.Tx, x Session, id string, 
 	return plan, nil
 }
 
-func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput) (Role, error) {
+type roleGrantWriter func(context.Context, *sql.Tx, string, []RoleGrant) error
+
+func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, plan roleMutation, input RoleInput, writeGrants roleGrantWriter) (Role, error) {
 	if plan.role.bound {
 		return Role{}, ErrPermissionDenied
 	}
@@ -310,7 +343,7 @@ func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, 
 	if err != nil {
 		return Role{}, roleWriteError(err)
 	}
-	if err = replaceRoleGrants(ctx, tx, out.ID, input.Grants); err != nil {
+	if err = writeGrants(ctx, tx, out.ID, input.Grants); err != nil {
 		return Role{}, err
 	}
 	after, err := loadAccess(ctx, tx)
@@ -327,7 +360,7 @@ func (s *AuthService) applyRoleEdit(ctx context.Context, tx *sql.Tx, x Session, 
 	if err != nil {
 		return Role{}, err
 	}
-	return out, securityAudit(ctx, tx, "roles.edited", x.user, out.ID, "")
+	return out, securityAudit(ctx, tx, roleEditedEvent, x.user, out.ID, "")
 }
 
 func ownAccessDoesNotGrow(before, after userAccess) bool {

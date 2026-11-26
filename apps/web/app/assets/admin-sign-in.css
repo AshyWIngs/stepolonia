@@ -64,13 +64,10 @@
 }
 
 .admin-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.5rem;
-  align-items: center;
-  justify-content: space-between;
-  max-width: 72rem;
-  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: .5rem 1rem;
 }
 
 .admin-name {
@@ -78,17 +75,111 @@
   font-weight: 700;
 }
 
-.admin-preferences {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+.admin-brand {
+  display: grid;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
-.admin-preferences > div {
+.admin-brand small { color: var(--admin-muted); }
+
+.admin-preferences {
+  position: relative;
   display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-  color: var(--admin-muted);
+  grid-auto-flow: column;
+  justify-self: end;
+  gap: .5rem;
+}
+
+.admin-preferences :deep(.header-preference) { position: static; }
+
+.admin-header-action {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: .45rem;
+  background: var(--admin-card);
+  color: inherit;
+  cursor: pointer;
+}
+
+.admin-header-action:hover:not(:disabled) { background: var(--admin-bg); }
+
+.admin-workspace {
+  display: grid;
+  grid-template-columns: clamp(13rem, 16vw, 17rem) minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(1rem, 3vw, 2rem);
+  margin-block-start: 1.5rem;
+}
+
+:where(.admin-navigation) :deep(button), .admin-leave button {
+  min-height: 44px;
+  min-width: 0;
+  padding: .5rem .75rem;
+  border: 1px solid transparent;
+  border-radius: .4rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.admin-header-action[aria-current="page"] {
+  border-color: var(--admin-action);
+  background: var(--admin-action);
+  color: var(--admin-action-text);
+}
+
+.admin-header-action:disabled {
+  opacity: .65;
+  cursor: default;
+}
+
+@media (max-width: 48rem) {
+  .admin-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 40rem) {
+  .admin-brand small { line-height: 1.2; min-block-size: 2.4em; }
+}
+
+@media (max-width: 32rem) {
+  .admin-header--signed-in { grid-template-columns: minmax(0, 1fr); }
+}
+
+.admin-dialog {
+  box-sizing: border-box;
+  max-width: min(30rem, calc(100% - 2rem));
+  padding: 1.25rem;
+  border: 1px solid var(--admin-border);
+  border-radius: .75rem;
+  background: var(--admin-card);
+  color: var(--admin-text);
+}
+
+.admin-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.admin-dialog h2 {
+  margin-block-start: 0;
+}
+
+:is(.admin-leave form, .admin-step-up-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.admin-leave button {
+  border-color: var(--admin-border);
 }
 
 .admin-card {
@@ -101,12 +192,11 @@
   background: var(--admin-card);
 }
 
-.admin-card--wide {
-  max-width: 52rem;
-}
-
 .admin-card--workspace {
-  max-width: 75rem;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
 }
 
 .admin-card h1 {
@@ -115,18 +205,18 @@
   font: 700 clamp(1.55rem, 4vw, 2rem)/1.15 system-ui, sans-serif;
 }
 
-.admin-card form {
+.admin-card--workspace > h1 { inline-size: fit-content; max-inline-size: 100%; overflow-wrap: break-word; }
+
+:is(.admin-card, .admin-step-up) form {
   display: grid;
   gap: 0.55rem;
 }
 
-.admin-card p {
+:is(.admin-card, .admin-step-up) p {
   line-height: 1.5;
 }
 
-.admin-card input,
-.admin-card button,
-.admin-preferences select {
+:is(.admin-card, .admin-step-up) :is(input, button) {
   box-sizing: border-box;
   min-height: 44px;
   min-width: 0;
@@ -139,12 +229,12 @@
   font: inherit;
 }
 
-.admin-card input {
+:is(.admin-card, .admin-step-up) input {
   width: 100%;
   margin-bottom: 0.5rem;
 }
 
-.admin-card button {
+:is(.admin-card, .admin-step-up) button {
   margin-top: 0.25rem;
   border-color: var(--admin-action);
   background: var(--admin-action);
@@ -153,19 +243,35 @@
   cursor: pointer;
 }
 
-.admin-card button:disabled {
+:is(.admin-card, .admin-step-up) button:disabled {
   opacity: 0.65;
   cursor: default;
 }
 
-.admin-card .admin-secondary {
+:is(.admin-card, .admin-step-up) .admin-secondary {
   background: var(--admin-card);
   color: var(--admin-text);
 }
 
-.admin-shell :focus-visible {
+.admin-shell :deep(:focus-visible) {
   outline: 3px solid var(--admin-focus);
   outline-offset: 3px;
+}
+
+@media (hover: hover) {
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"])) {
+    cursor: pointer;
+  }
+
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"]):hover) {
+    box-shadow: inset 0 0 0 100rem color-mix(in srgb, currentColor 13%, transparent);
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .admin-shell :deep(button:not(:disabled, [aria-disabled="true"])) {
+    transition: box-shadow 140ms ease-out;
+  }
 }
 
 .admin-status {
@@ -174,21 +280,9 @@
   color: var(--admin-muted);
 }
 
-.admin-error {
+.admin-error, .admin-navigation :deep(.admin-error) {
   padding: 0.65rem;
   border-inline-start: 3px solid var(--admin-error);
   background: var(--admin-error-bg);
   color: var(--admin-error);
-}
-
-nav.access-navigation {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
-}
-
-nav.access-navigation [aria-pressed="true"] {
-  border-color: var(--admin-action);
-  background: var(--admin-action);
-  color: var(--admin-action-text);
 }

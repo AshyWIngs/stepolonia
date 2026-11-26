@@ -17,7 +17,11 @@ const describedBy = computed(() => [
   props.invalid && `${id.value}-error`,
 ].filter(Boolean).join(' ') || undefined)
 const isTextArea = computed(() => ['text', 'markdown'].includes(props.field.kind))
-const inputMode = computed(() => props.field.kind === 'integer' ? 'numeric' : props.field.kind === 'decimal' ? 'decimal' : 'text')
+const inputMode = computed(() => {
+  if (props.field.kind === 'integer') return 'numeric'
+  if (props.field.kind === 'decimal') return 'decimal'
+  return 'text'
+})
 
 function change(event: Event) {
   const control = event.currentTarget
@@ -44,8 +48,8 @@ function change(event: Event) {
     >
       <option value="">{{ translate('admin.content_empty_value') }}</option>
       <template v-if="field.kind === 'boolean'">
-        <option value="true">{{ translate('admin.content_yes') }}</option>
-        <option value="false">{{ translate('admin.content_no') }}</option>
+        <option value="true">{{ translate('common.yes') }}</option>
+        <option value="false">{{ translate('common.no') }}</option>
       </template>
       <option v-for="code in field.config.codes" :key="code" :value="code">{{ code }}</option>
     </select>

@@ -11,9 +11,10 @@ import (
 	"stepolonia/apps/api/internal/config"
 	"stepolonia/apps/api/internal/database"
 	"stepolonia/apps/api/internal/identity"
+	"stepolonia/apps/api/internal/siteconfig"
 )
 
-func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler, func(), error) {
+func authentication(ctx context.Context, runtime *pgxpool.Config, publishedSite *siteconfig.Reader) (http.Handler, func(), error) {
 	cfg, err := config.Authentication(runtime)
 	if err != nil {
 		return nil, nil, err
@@ -49,7 +50,9 @@ func authentication(ctx context.Context, runtime *pgxpool.Config) (http.Handler,
 		return nil, nil, err
 	}
 	closeAuth := func() { closeDraft(); closePool() }
-	handler, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{CanonicalOrigin: cfg.Origin, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs}, service, editor, settings)
+	handler, err := adminhttp.NewHandlerWithEditors(adminhttp.Config{
+		CanonicalOrigin: cfg.Origin, TrustedProxyCIDRs: cfg.TrustedProxyCIDRs, PublishedSite: publishedSite,
+	}, service, editor, settings)
 	if err != nil {
 		closeAuth()
 		return nil, nil, err

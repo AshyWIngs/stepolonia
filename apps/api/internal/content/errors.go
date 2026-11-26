@@ -13,6 +13,7 @@ const (
 	schemaConflictCode     = "schema_conflict"
 	versionConflictCode    = "version_conflict"
 	notReadyCode           = "not_ready"
+	routeConflictCode      = "route_conflict"
 	incompatibleSchemaCode = "incompatible_schema"
 )
 
@@ -69,7 +70,7 @@ func databaseError(err error) error {
 		case "22P02", "23514", "23503":
 			return problem(Validation, "invalid_value")
 		case "23505":
-			return problem(Conflict, "route_conflict")
+			return problem(Conflict, routeConflictCode)
 		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {

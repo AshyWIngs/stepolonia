@@ -1,337 +1,480 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { AdminSettingsError, getPortalSettings, publishPortalSettings, savePortalSettings } from '~/utils/admin-site-settings'
-import type { EditablePortal } from '~/utils/admin-site-settings'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { getPortalSettings } from '~/utils/admin-site-settings'
+import type { LanguageDirectoryEntry, EditablePortal, PortalSettingsPage, ScopedSettingsSection } from '~/utils/admin-site-settings'
+import { invalidSlugRuleIndex, type SlugRule } from '~/utils/slug-suggestion'
+import { PortalCatalogDrafts, incompleteCatalog } from '~/features/portal-settings/PortalCatalogDrafts'
+import { PortalRevisionPublication } from '~/features/portal-settings/PortalRevisionPublication'
+import { PortalSiteDrafts, isPortalAccent } from '~/features/portal-settings/PortalSiteDrafts'
+import { PortalSlugRuleDraft } from '~/features/portal-settings/PortalSlugRuleDraft'
+import { ScopedPortalPublication } from '~/features/portal-settings/ScopedPortalPublication'
 
 const props = defineProps<{
+  page: PortalSettingsPage
+  permissionTexts: boolean
   csrf: string
+  uiLanguage: string
+  uiMessages: Record<string, string>
   translate: (key: string) => string
 }>()
 const emit = defineEmits<{
   published: []
+  'show-page': [page: PortalSettingsPage]
+  'update:permission-texts': [enabled: boolean]
+  'editing-state': [state: { dirty: boolean, busy: boolean }]
   'step-up': []
   'session-changed': []
-  close: []
 }>()
 
-const draft = ref<EditablePortal | null>(null)
-const selectedLanguage = ref('')
-const heading = ref<HTMLElement | null>(null)
-const confirmationHeading = ref<HTMLElement | null>(null)
-const publishButton = ref<HTMLButtonElement | null>(null)
+const editableSettings = ref<EditablePortal | null>(null)
+const savedValueDifferences = ref(new Map<string, string[]>())
+const translate = (key: string) => props.translate(key)
+const removedValueLabel = () => translate('admin.settings_removed_value')
+const recordSavedValues = (scope: string, values: string[]) => savedValueDifferences.value.set(scope, values)
+const catalogDrafts = new PortalCatalogDrafts(editableSettings, localeLabel, translate, recordSavedValues)
+const siteDrafts = new PortalSiteDrafts(editableSettings, removedValueLabel, recordSavedValues)
+const slugRuleDraft = new PortalSlugRuleDraft(editableSettings, localeLabel, removedValueLabel, recordSavedValues)
+const {
+  selectedLanguage, catalogTarget, registryRepairRequired, registryKeysReloaded, editedCatalogCodes, dirty,
+  messages, reference, catalogLanguages, disabledCatalogCodes,
+} = catalogDrafts
+const { detailsDraft, detailsDirty, localeDefaultsDraft, localeDefaultsDirty, flagUpdates, flagLanguage, accentDraft, pickerColor } = siteDrafts
+const { rules: slugRulesDraft, dirty: slugRulesDirty } = slugRuleDraft
+const translations = ref<{ showMissing: () => Promise<void>, focusActive: () => Promise<void> }>()
+const slugRules = ref<{ showInvalid: (index: number) => Promise<void>, focusActive: () => Promise<void> }>()
+const flagEditor = ref<{ focusInvalid: () => Promise<void> }>()
+const settingsPanel = ref<HTMLDivElement>()
+const accentInput = ref<HTMLInputElement>()
+const titleInput = ref<HTMLInputElement>()
+const defaultLanguageInput = ref<HTMLSelectElement>()
 const publicationStatus = ref<HTMLOutputElement | null>(null)
-const busy = ref(false)
-const dirty = ref(false)
-const confirming = ref(false)
-const conflict = ref(false)
-const failure = ref('')
-const notice = ref('')
+const languageEditing = ref({ dirty: false, busy: false })
 let active = true
 
-const language = computed(() => draft.value?.languages.find(item => item.code === selectedLanguage.value))
-const catalogsByLanguage = computed(() => new Map(Object.entries(draft.value?.catalogs ?? {})))
-const messages = computed(() => catalogsByLanguage.value.get(selectedLanguage.value))
-const catalogLanguages = computed(() => {
-  const editable = draft.value
-  return editable?.languages.filter(item => catalogsByLanguage.value.has(item.code)) ?? []
+const publication = new ScopedPortalPublication({
+  settings: editableSettings, catalogs: catalogDrafts, site: siteDrafts, slugRules: slugRuleDraft, savedValueDifferences,
+  section: pageScope(props.page),
+  csrf: () => props.csrf,
+  isActive: () => active,
+  otherSaveInProgress: () => busy.value || languageEditing.value.busy,
+  translate,
+  started: () => { notice.value = '' },
+  published: () => emit('published'),
+  sessionChanged: () => emit('session-changed'),
 })
-const disabledCatalogCodes = computed(() => {
-  const editable = draft.value
-  if (!editable) return []
-  const enabled = new Set(editable.languages.map(item => item.code))
-  return Object.keys(editable.catalogs).filter(code => !enabled.has(code))
+const {
+  busy: scopedBusy, notice: scopedNotice, failure: scopedFailure, pendingDraftConflict,
+  hasReportedConflict: scopedConflict,
+} = publication
+const revision: PortalRevisionPublication = new PortalRevisionPublication({
+  settings: editableSettings, catalogs: catalogDrafts, scoped: publication,
+  csrf: () => props.csrf,
+  uiLanguage: () => props.uiLanguage,
+  isActive: () => active,
+  syncDrafts: loadScopeEditors,
+  validate: validateSettings,
+  invalidFlag: () => { void showPage('languages').then(() => flagEditor.value?.focusInvalid()) },
+  stepUp: () => emit('step-up'),
+  sessionChanged: () => emit('session-changed'),
+  published: () => emit('published'),
 })
-const publishDisabled = computed(() => busy.value || conflict.value || confirming.value || dirty.value || !draft.value?.has_draft)
+const { busy, notice, conflict, failure } = revision
+
+const hasEdits = computed(() => languageEditing.value.dirty || dirty.value || siteDrafts.dirty.value || slugRulesDirty.value)
+watch([hasEdits, () => busy.value || scopedBusy.value || languageEditing.value.busy], ([edited, saving]) => {
+  emit('editing-state', { dirty: edited, busy: saving })
+})
 
 function errorMessage(key: string) {
   failure.value = key
 }
 
-function handleFailure(error: unknown) {
-  if (!(error instanceof AdminSettingsError)) {
-    errorMessage('admin.unavailable')
-    return
+function pageScope(page: PortalSettingsPage): ScopedSettingsSection {
+  if (page === 'identity') return 'details'
+  if (page === 'translations') return 'catalogs'
+  return page === 'appearance' ? 'appearance' : 'language-flags'
+}
+
+function loadScopeEditors(editable: EditablePortal) {
+  siteDrafts.sync(editable)
+  slugRuleDraft.sync(editable)
+}
+
+async function refreshLanguageSettings(entry: LanguageDirectoryEntry) {
+  scopedBusy.value = true
+  try {
+    const fresh = await getPortalSettings()
+    if (!active) return
+    if (editableSettings.value && dirty.value) fresh.version = editableSettings.value.version
+    catalogDrafts.preserveCatalogVersions(fresh)
+    loadScopeEditors(fresh)
+    editableSettings.value = fresh
+    if (!entry.enabled) {
+      if (flagLanguage.value === entry.language.code) flagLanguage.value = fresh.settings.fallback_language
+      if (selectedLanguage.value === entry.language.code) selectedLanguage.value = fresh.settings.fallback_language
+    }
+    emit('published')
+  } catch (error: unknown) {
+    if (active) revision.handleFailure(error)
+  } finally {
+    scopedBusy.value = false
   }
-  if (error.code === 'step_up_required') {
-    emit('step-up')
-    errorMessage('admin.step_up_required')
-    return
+}
+
+async function showLanguageTranslations(code: string) {
+  selectedLanguage.value = code
+  await showPage('translations')
+  await translations.value?.focusActive()
+}
+
+async function showPage(target: PortalSettingsPage) {
+  if (props.page === target) return
+  emit('show-page', target)
+  await nextTick()
+}
+
+function updateSlugRules(rules: SlugRule[]) {
+  slugRulesDraft.value = rules
+  if (scopedFailure.value === 'admin.slug_rules_invalid') scopedFailure.value = ''
+  if (failure.value === 'admin.slug_rules_invalid') failure.value = ''
+}
+
+function updateLanguageFlags(flags: Record<string, string>) {
+  flagUpdates.value = flags
+  if (scopedFailure.value === 'admin.language_flag_invalid') scopedFailure.value = ''
+}
+
+watch(() => props.page, () => { notice.value = '' })
+
+watch([() => props.page, flagLanguage, selectedLanguage], () => publication.selectScope(pageScope(props.page)))
+
+async function saveScoped(scope: ScopedSettingsSection) {
+  const saved = await publication.save(scope, (editable, code) => validateScopedDraft(editable, scope, code))
+  if (saved) await focusScopedResult(scope)
+}
+
+async function focusScopedResult(scope: ScopedSettingsSection) {
+  if (!active || pendingDraftConflict.value || scopedFailure.value === 'admin.changed') return
+  if (publication.hasConflict(scope)) {
+    await nextTick()
+    settingsPanel.value?.querySelector<HTMLButtonElement>(`[data-reload-scope="${scope}"]`)?.focus()
+  } else if (scopedFailure.value) {
+    await focusScopeControl(scope)
+  } else if (scopedNotice.value) {
+    await nextTick()
+    settingsPanel.value?.querySelector<HTMLOutputElement>(`[data-saved-scope="${scope}"]`)?.focus()
   }
-  if (error.status === 401 || error.code === 'csrf_failed') {
-    emit('session-changed')
-    errorMessage('admin.changed')
-    return
-  }
-  switch (error.status) {
-    case 400:
-    case 413:
-      errorMessage('admin.settings_invalid')
+}
+
+async function validateScopedDraft(editable: EditablePortal, scope: ScopedSettingsSection, code: string) {
+  if (scope === 'slug-rules') return validateSlugRulesDraft()
+  if (scope === 'catalogs') return canSaveCatalog(editable, code)
+  return true
+}
+
+async function canSaveCatalog(editable: EditablePortal, code: string) {
+  const completeness = catalogDrafts.catalogCompleteness(editable, code)
+  if (completeness !== 'incomplete') return completeness === 'complete'
+  scopedNotice.value = ''
+  scopedFailure.value = 'admin.settings_complete_catalog'
+  await translations.value?.showMissing()
+  return false
+}
+
+async function validateSlugRulesDraft() {
+  const index = invalidSlugRuleIndex(slugRulesDraft.value)
+  if (index < 0) return true
+  scopedNotice.value = ''
+  scopedFailure.value = 'admin.slug_rules_invalid'
+  await slugRules.value?.showInvalid(index)
+  return false
+}
+
+async function refreshScoped(scope: ScopedSettingsSection) {
+  if (await publication.refresh(scope)) await refocusScopedInput(scope)
+}
+
+function localeLabel(code: string) {
+  return editableSettings.value?.languages.find(language => language.code === code)?.native_name ?? code
+}
+
+async function refocusScopedInput(scope: ScopedSettingsSection) {
+  if (!active || scopedConflict.value || scopedFailure.value) return
+  await focusScopeControl(scope)
+}
+
+async function focusScopeControl(scope: ScopedSettingsSection) {
+  await nextTick()
+  switch (scope) {
+    case 'details':
+      titleInput.value?.focus()
       break
-    case 403:
-      draft.value = null
-      errorMessage('admin.access_denied')
+    case 'appearance':
+      accentInput.value?.focus()
       break
-    case 409:
-      conflict.value = true
-      errorMessage('admin.settings_conflict')
+    case 'locale-defaults':
+      defaultLanguageInput.value?.focus()
+      break
+    case 'slug-rules':
+      await slugRules.value?.focusActive()
+      break
+    case 'catalogs':
+      await translations.value?.focusActive()
       break
     default:
-      errorMessage('admin.unavailable')
+      await flagEditor.value?.focusInvalid()
   }
 }
 
-async function load() {
-  if (busy.value) return
-  busy.value = true
-  failure.value = ''
-  notice.value = ''
-  try {
-    const editable = await getPortalSettings()
-    if (!active) return
-    draft.value = editable
-    const preferred = editable.settings.fallback_language
-    selectedLanguage.value = editable.languages.some(item => item.code === preferred)
-      ? preferred : (editable.languages[0]?.code ?? '')
-    dirty.value = false
-    conflict.value = false
+async function reviewPendingDraft() {
+  if (pendingDraftConflict.value && !dirty.value) await revision.load()
+  if (pendingDraftConflict.value) {
+    conflict.value = true
+    errorMessage('admin.settings_conflict')
   }
-  catch (error: unknown) {
-    if (active) handleFailure(error)
-  }
-  finally {
-    busy.value = false
-  }
+  await showPage('identity')
 }
 
-function addCatalog() {
-  const editable = draft.value
-  if (!editable || !language.value || messages.value) return
-  editable.catalogs[language.value.code] = {}
-  dirty.value = true
+function invalidSettingsSection(editable: EditablePortal): PortalSettingsPage | undefined {
+  const settings = editable.settings
+  if (!settings.title.trim()) return 'identity'
+  if (!isPortalAccent(settings.accent)) return 'appearance'
+  if (!editable.languages.some(language => language.code === settings.default_language) ||
+      !catalogLanguages.value.some(language => language.code === settings.fallback_language)) return 'languages'
+  return undefined
 }
 
-function removeCatalog(code: string) {
-  const editable = draft.value
-  if (!editable || code === editable.settings.fallback_language) return
-  editable.catalogs = Object.fromEntries(Object.entries(editable.catalogs).filter(([locale]) => locale !== code))
-  dirty.value = true
+async function validateSettings(editable: EditablePortal, catalogs: EditablePortal['catalogs']) {
+  const invalidSection = invalidSettingsSection(editable)
+  if (invalidSection) {
+    errorMessage('admin.settings_invalid')
+    await showPage(invalidSection)
+    return false
+  }
+  const invalidRule = invalidSlugRuleIndex(editable.slug_rules)
+  if (invalidRule >= 0) {
+    notice.value = ''
+    errorMessage('admin.slug_rules_invalid')
+    await showPage('languages')
+    await slugRules.value?.showInvalid(invalidRule)
+    return false
+  }
+  const incomplete = incompleteCatalog(catalogs, editable.message_keys)
+  if (incomplete) {
+    selectedLanguage.value = incomplete
+    notice.value = ''
+    errorMessage('admin.settings_complete_catalog')
+    await showPage('translations')
+    await translations.value?.showMissing()
+    return false
+  }
+  return true
 }
 
 async function save() {
-  const editable = draft.value
-  if (!editable || busy.value || conflict.value || confirming.value || !dirty.value) return
-  busy.value = true
-  failure.value = ''
-  notice.value = ''
-  try {
-    const version = await savePortalSettings(props.csrf, {
-      expected_version: editable.version,
-      settings: editable.settings,
-      catalogs: draftCatalogs(editable.catalogs),
-    })
-    if (!active) return
-    editable.version = version
-    editable.has_draft = true
-    dirty.value = false
-    notice.value = 'admin.draft_saved'
-  }
-  catch (error: unknown) {
-    if (active) handleFailure(error)
-  }
-  finally {
-    busy.value = false
-  }
-}
-
-function draftCatalogs(catalogs: EditablePortal['catalogs']): EditablePortal['catalogs'] {
-  return Object.fromEntries(Object.entries(catalogs).map(([code, entries]) => [
-    code,
-    Object.fromEntries(Object.entries(entries).filter(([, text]) => text.trim() !== '')),
-  ]))
-}
-
-function incompleteCatalog(editable: EditablePortal): string | undefined {
-  return Object.entries(editable.catalogs).find(([, entries]) => {
-    const nonBlankKeys = new Set(Object.entries(entries).filter(([, text]) => text.trim()).map(([key]) => key))
-    return editable.message_keys.some(key => !nonBlankKeys.has(key))
-  })?.[0]
-}
-
-async function confirmPublication() {
-  if (publishDisabled.value || !draft.value) return
-  const incomplete = incompleteCatalog(draft.value)
-  if (incomplete) {
-    selectedLanguage.value = incomplete
-    errorMessage('admin.settings_invalid')
-    return
-  }
-  confirming.value = true
-  await nextTick()
-  confirmationHeading.value?.focus()
-}
-
-async function cancelPublication() {
-  confirming.value = false
-  await nextTick()
-  publishButton.value?.focus()
-}
-
-async function publish() {
-  const editable = draft.value
-  if (!editable?.has_draft || busy.value || conflict.value || !confirming.value || dirty.value) return
-  busy.value = true
-  failure.value = ''
-  notice.value = ''
-  try {
-    const version = await publishPortalSettings(props.csrf, editable.version)
-    if (!active) return
-    editable.version = version
-    editable.has_draft = false
-    notice.value = 'admin.published'
-    emit('published')
+  if (await revision.publish()) {
     await nextTick()
     publicationStatus.value?.focus()
   }
-  catch (error: unknown) {
-    if (active) handleFailure(error)
-  }
-  finally {
-    busy.value = false
-    confirming.value = false
-  }
 }
 
-onMounted(async () => {
-  heading.value?.focus()
-  await load()
+onMounted(() => revision.load())
+onBeforeUnmount(() => {
+  active = false
+  publication.dispose()
 })
-onBeforeUnmount(() => { active = false })
 </script>
 
 <template>
-  <section class="portal-settings" aria-labelledby="portal-settings-heading" :aria-busy="busy">
-    <div class="settings-header">
-      <h2 id="portal-settings-heading" ref="heading" tabindex="-1">{{ translate('admin.settings') }}</h2>
-      <button type="button" :disabled="busy" @click="emit('close')">{{ translate('admin.close') }}</button>
-    </div>
+  <div ref="settingsPanel" class="portal-settings" :class="{ 'portal-settings--languages': page === 'languages' }" :aria-busy="busy || scopedBusy">
     <output v-if="notice" ref="publicationStatus" tabindex="-1">{{ translate(notice) }}</output>
     <output v-if="busy">{{ translate('admin.working') }}</output>
     <p v-if="failure" role="alert">{{ translate(failure) }}</p>
-    <button v-if="conflict" type="button" :disabled="busy" @click="load">{{ translate('admin.reload_settings') }}</button>
-    <button v-else-if="!draft && failure" type="button" :disabled="busy" @click="load">{{ translate('admin.retry') }}</button>
+    <button v-if="conflict" type="button" :disabled="busy || scopedBusy" @click="revision.load()">{{ translate('admin.reload_settings') }}</button>
+    <button v-else-if="!editableSettings && failure" type="button" :disabled="busy || scopedBusy" @click="revision.load()">{{ translate('admin.retry') }}</button>
 
-    <form v-if="draft" @submit.prevent="save">
-      <fieldset class="settings-fields" :disabled="busy || confirming" @input="dirty = true">
-        <label for="portal-title">{{ translate('admin.portal_name') }}</label>
-        <input id="portal-title" v-model="draft.settings.title" maxlength="200" required>
+    <template v-if="page !== 'identity' && (editableSettings?.has_draft || pendingDraftConflict)">
+      <p><output>{{ translate('admin.settings_scoped_pending') }}</output></p>
+      <div><button type="button" :disabled="busy || scopedBusy" @click="reviewPendingDraft">{{ translate('admin.settings_identity') }}</button></div>
+    </template>
 
-        <label for="portal-tagline">{{ translate('admin.tagline') }}</label>
-        <input id="portal-tagline" v-model="draft.settings.tagline" maxlength="300">
-
-        <label for="portal-description">{{ translate('admin.description') }}</label>
-        <textarea id="portal-description" v-model="draft.settings.description" maxlength="2000" rows="4" />
-
-        <label for="portal-notice">{{ translate('admin.notice') }}</label>
-        <textarea id="portal-notice" v-model="draft.settings.notice" maxlength="2000" rows="3" />
-
+    <form v-if="editableSettings && page === 'appearance'" class="admin-domain" @submit.prevent="saveScoped('appearance')">
+      <AdminDomainHeader
+        :save-label="translate('admin.settings_save_appearance')"
+        :disabled="publication.saveBlocked('appearance') || accentDraft === editableSettings.settings.accent"
+      />
+      <PortalScopeFeedback v-bind="publication.feedback('appearance')" @reload="refreshScoped('appearance')" />
+      <fieldset class="settings-fields" :disabled="busy || scopedBusy || editableSettings.has_draft || pendingDraftConflict">
         <label for="portal-accent">{{ translate('admin.accent') }}</label>
-        <input id="portal-accent" v-model="draft.settings.accent" pattern="#[0-9a-fA-F]{6}" required>
-
-        <label for="portal-default-language">{{ translate('admin.default_language') }}</label>
-        <select id="portal-default-language" v-model="draft.settings.default_language" required>
-          <option v-for="item in draft.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
-
-        <label for="portal-fallback-language">{{ translate('admin.fallback_language') }}</label>
-        <select id="portal-fallback-language" v-model="draft.settings.fallback_language" required>
-          <option v-for="item in catalogLanguages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
+        <div class="settings-accent">
+          <input id="portal-accent" ref="accentInput" v-model="accentDraft" aria-describedby="portal-accent-help" pattern="#[0-9a-fA-F]{6}" required>
+          <input
+            type="color" :aria-label="translate('admin.settings_choose_accent')" :value="pickerColor"
+            @input="accentDraft = ($event.target as HTMLInputElement).value"
+          >
+        </div>
+        <p id="portal-accent-help">{{ translate('admin.settings_accent_help') }} <code>#536f89</code></p>
       </fieldset>
+    </form>
 
-      <fieldset class="settings-fields" :disabled="busy || confirming">
-        <legend>{{ translate('admin.interface_texts') }}</legend>
-        <label for="portal-catalog-language">{{ translate('admin.language') }}</label>
-        <select id="portal-catalog-language" v-model="selectedLanguage">
-          <option v-for="item in draft.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
-            {{ item.native_name }}
-          </option>
-        </select>
-        <button v-if="language && !messages" type="button" @click="addCatalog">{{ translate('admin.add_catalog') }}</button>
-        <button
-          v-if="language && messages && language.code !== draft.settings.fallback_language"
-          type="button" @click="removeCatalog(language.code)"
-        >{{ translate('admin.remove_catalog') }}</button>
-        <template v-for="code in disabledCatalogCodes" :key="code">
-          <button v-if="code !== draft.settings.fallback_language" type="button" @click="removeCatalog(code)">
-            {{ translate('admin.remove_catalog') }} ({{ code }})
-          </button>
-        </template>
-        <template v-if="messages">
-          <template v-for="(key, index) in draft.message_keys" :key="key">
-            <label class="message-key" :for="`portal-message-${index}`"><code>{{ key }}</code></label>
-            <textarea
-              :id="`portal-message-${index}`"
-              v-model="messages[key]"
-              :lang="language?.code"
-              :dir="language?.direction"
-              rows="2"
-              maxlength="4000"
-              @input="dirty = true"
-            />
-          </template>
-        </template>
+    <PortalLanguageDirectory
+      v-if="editableSettings" v-show="page === 'languages'"
+      :visible="page === 'languages'" :disabled="busy || scopedBusy || editableSettings.has_draft || pendingDraftConflict"
+      :csrf="csrf" :translate="translate" :catalog-codes="editableSettings.has_draft ? null : Object.keys(editableSettings.catalogs)"
+      :pending-codes="[...editedCatalogCodes, ...Object.keys(flagUpdates)]"
+      @changed="refreshLanguageSettings" @translations="showLanguageTranslations"
+      @editing-state="languageEditing = $event" @step-up="emit('step-up')" @session-changed="emit('session-changed')"
+    />
+
+    <form v-if="editableSettings" v-show="page === 'languages'" class="admin-domain domain--flags" aria-labelledby="portal-flags-heading" @submit.prevent="saveScoped('language-flags')">
+      <AdminDomainHeader
+        :title="translate('admin.language_flags')" heading-id="portal-flags-heading" :save-label="translate('admin.language_flag_save')"
+        :disabled="publication.saveBlocked('language-flags') || !Object.hasOwn(flagUpdates, flagLanguage)"
+      />
+      <PortalScopeFeedback v-bind="publication.feedback('language-flags')" @reload="refreshScoped('language-flags')" />
+      <fieldset class="settings-fields" :disabled="busy || scopedBusy || editableSettings.has_draft || pendingDraftConflict">
+        <PortalLanguageFlags
+          ref="flagEditor" v-model:language="flagLanguage" :model-value="flagUpdates" :languages="editableSettings.languages"
+          :flags="editableSettings.language_flags ?? {}" :default-language="uiLanguage" :translate="translate"
+          :invalid="scopedFailure === 'admin.language_flag_invalid'" @update:model-value="updateLanguageFlags"
+        />
       </fieldset>
+    </form>
 
-      <div class="settings-actions">
-        <button type="submit" :disabled="busy || confirming || conflict || !dirty">{{ translate('admin.save_draft') }}</button>
-        <button ref="publishButton" type="button" :disabled="publishDisabled" @click="confirmPublication">
-          {{ translate('admin.publish_draft') }}
+    <form
+      v-if="editableSettings && page === 'identity' && detailsDraft"
+      class="admin-domain"
+      @submit.prevent="editableSettings.has_draft ? save() : saveScoped('details')">
+      <AdminDomainHeader
+        v-if="!editableSettings.has_draft" :save-label="translate('admin.settings_save_changes')"
+        :disabled="!detailsDirty || publication.saveBlocked('details') || conflict"
+      />
+      <div v-else class="settings-actions">
+        <button type="submit" class="settings-primary" :disabled="busy || scopedBusy || conflict || pendingDraftConflict">
+          {{ translate('admin.settings_apply_pending') }}
         </button>
       </div>
+      <PortalScopeFeedback v-bind="publication.feedback('details')" @reload="refreshScoped('details')" />
+      <fieldset class="settings-fields settings-field-grid" :disabled="busy || scopedBusy || pendingDraftConflict">
+        <div class="settings-field">
+          <label for="portal-title">{{ translate('admin.portal_name') }}</label>
+          <input v-if="editableSettings.has_draft" id="portal-title" :value="editableSettings.settings.title" readonly>
+          <input v-else id="portal-title" ref="titleInput" v-model="detailsDraft.title" maxlength="200" required>
+        </div>
+        <div class="settings-field">
+          <label for="portal-tagline">{{ translate('admin.tagline') }}</label>
+          <input v-if="editableSettings.has_draft" id="portal-tagline" :value="editableSettings.settings.tagline" readonly>
+          <input v-else id="portal-tagline" v-model="detailsDraft.tagline" maxlength="300">
+        </div>
+        <div class="settings-field">
+          <label for="portal-description">{{ translate('admin.description') }}</label>
+          <textarea v-if="editableSettings.has_draft" id="portal-description" :value="editableSettings.settings.description" readonly rows="4" />
+          <textarea v-else id="portal-description" v-model="detailsDraft.description" maxlength="2000" rows="4" />
+        </div>
+        <div class="settings-field">
+          <label for="portal-notice">{{ translate('admin.notice') }}</label>
+          <textarea v-if="editableSettings.has_draft" id="portal-notice" :value="editableSettings.settings.notice" readonly rows="4" />
+          <textarea v-else id="portal-notice" v-model="detailsDraft.notice" maxlength="2000" rows="4" />
+        </div>
+      </fieldset>
+      <p v-if="editableSettings.has_draft">{{ translate('admin.settings_pending') }}</p>
     </form>
-    <section v-if="confirming && draft" class="settings-confirmation" aria-labelledby="publication-confirmation-heading">
-      <h3 id="publication-confirmation-heading" ref="confirmationHeading" tabindex="-1">{{ translate('admin.confirm_publish') }}</h3>
-      <dl>
-        <dt>{{ translate('admin.portal_name') }}</dt>
-        <dd>{{ draft.settings.title }}</dd>
-        <dt>{{ translate('admin.interface_texts') }}</dt>
-        <dd>{{ Object.keys(draft.catalogs).length }}</dd>
-      </dl>
+
+    <form v-if="editableSettings && page === 'languages' && localeDefaultsDraft" class="admin-domain domain--defaults" aria-labelledby="portal-defaults-heading" @submit.prevent="saveScoped('locale-defaults')">
+      <AdminDomainHeader
+        :title="translate('admin.settings_locale_defaults_heading')" heading-id="portal-defaults-heading" :save-label="translate('admin.settings_save_locale_defaults')"
+        :disabled="!localeDefaultsDirty || publication.saveBlocked('locale-defaults')"
+      />
+      <PortalScopeFeedback v-bind="publication.feedback('locale-defaults')" @reload="refreshScoped('locale-defaults')" />
+      <fieldset class="settings-fields settings-field-grid" :disabled="busy || scopedBusy || editableSettings.has_draft || pendingDraftConflict">
+        <div class="settings-field">
+          <label for="portal-default-language">{{ translate('admin.default_language') }}</label>
+          <select id="portal-default-language" ref="defaultLanguageInput" v-model="localeDefaultsDraft.default_language" required>
+            <option v-for="item in editableSettings.languages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
+              {{ item.native_name }}
+            </option>
+          </select>
+        </div>
+        <div class="settings-field">
+          <label for="portal-fallback-language">{{ translate('admin.fallback_language') }}</label>
+          <select id="portal-fallback-language" v-model="localeDefaultsDraft.fallback_language" required>
+            <option v-for="item in catalogLanguages" :key="item.code" :value="item.code" :lang="item.code" :dir="item.direction">
+              {{ item.native_name }}
+            </option>
+          </select>
+        </div>
+      </fieldset>
+    </form>
+
+    <form v-if="editableSettings && page === 'languages'" class="admin-domain domain--rules" @submit.prevent="saveScoped('slug-rules')">
+      <AdminDomainHeader
+        :title="translate('admin.slug_rules_title')" heading-id="portal-slug-title" :save-label="translate('admin.settings_save_slug_rules')"
+        :disabled="!slugRulesDirty || publication.saveBlocked('slug-rules')"
+      />
+      <PortalScopeFeedback v-bind="publication.feedback('slug-rules')" @reload="refreshScoped('slug-rules')" />
+      <fieldset class="settings-fields" :disabled="busy || scopedBusy || editableSettings.has_draft || pendingDraftConflict">
+        <PortalSlugRules
+          ref="slugRules" :rules="slugRulesDraft" :languages="editableSettings.languages"
+          :default-language="editableSettings.settings.default_language" :translate="translate" @update:rules="updateSlugRules"
+        />
+      </fieldset>
+    </form>
+
+    <form v-if="editableSettings" v-show="page === 'translations'" class="admin-domain" @submit.prevent="saveScoped('catalogs')">
+      <AdminDomainHeader
+        v-if="!registryRepairRequired && !editableSettings.has_draft"
+        :title="localeLabel(catalogTarget || selectedLanguage)" :save-label="translate('admin.settings_save_translations')"
+        :disabled="!catalogDrafts.hasCatalogEdit(catalogTarget || selectedLanguage) || publication.saveBlocked('catalogs')"
+      />
+      <PortalScopeFeedback v-bind="publication.feedback('catalogs')" @reload="refreshScoped('catalogs')" />
       <div class="settings-actions">
-        <button type="button" :disabled="busy" @click="publish">{{ translate('admin.publish_draft') }}</button>
-        <button type="button" :disabled="busy" @click="cancelPublication">{{ translate('admin.cancel') }}</button>
+        <button v-if="registryRepairRequired && !registryKeysReloaded" type="button" :disabled="scopedBusy" @click="publication.reloadCatalogRegistry(loadScopeEditors)">
+          {{ translate('admin.settings_catalog_reload_keys') }}
+        </button>
+        <button v-if="registryKeysReloaded" type="button" :disabled="busy || scopedBusy || conflict" @click="save">
+          {{ translate('admin.settings_catalog_repair') }}
+        </button>
+        <button v-if="editableSettings.has_draft && dirty" type="button" :disabled="busy || scopedBusy || conflict || pendingDraftConflict" @click="save">
+          {{ translate('admin.settings_apply_pending') }}
+        </button>
       </div>
-    </section>
-  </section>
+      <fieldset class="settings-translations" :disabled="busy || scopedBusy || pendingDraftConflict">
+        <PortalTranslationSettings
+          ref="translations" v-model:language="selectedLanguage" :languages="editableSettings.languages" :keys="editableSettings.message_keys"
+          :messages="messages" :reference="reference" :reference-language="editableSettings.settings.fallback_language"
+          :ui-language="uiLanguage" :ui-messages="uiMessages" :disabled-catalogs="disabledCatalogCodes" :translate="translate"
+          :permission-texts="permissionTexts" @update:permission-texts="emit('update:permission-texts', $event)"
+          @add-catalog="catalogDrafts.addCatalog()" @remove-catalog="catalogDrafts.removeCatalog($event)"
+          @update:message="(key, value) => catalogDrafts.changeMessage(key, value)"
+        />
+      </fieldset>
+    </form>
+  </div>
 </template>
 
 <style scoped>
 .portal-settings {
   display: grid;
-  gap: 1rem;
+  align-items: start;
+  gap: .75rem;
   min-inline-size: 0;
 }
 
-.settings-header,
+.portal-settings--languages {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(26rem, calc((100% - .75rem) / 2))), 1fr));
+}
+
+.portal-settings--languages > :not(.domain--flags, .domain--defaults) {
+  grid-column: 1 / -1;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
+  gap: .5rem;
 }
 
-.settings-header {
-  justify-content: space-between;
-}
-
-.settings-header h2,
-.settings-confirmation h3,
-.settings-confirmation dl,
-.settings-confirmation dd {
+.portal-settings p {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -343,16 +486,30 @@ onBeforeUnmount(() => { active = false })
   min-inline-size: 0;
 }
 
-.settings-fields {
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px solid var(--admin-border);
-  border-radius: 0.4rem;
+.settings-field { display: grid; align-self: start; gap: .35rem; min-inline-size: 0; }
+
+@media (min-width: 62rem) {
+  .settings-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.5rem; }
 }
 
-.portal-settings input,
-.portal-settings select,
-.portal-settings textarea,
+.settings-accent {
+  display: flex;
+  gap: .5rem;
+}
+
+.settings-accent input[type='color'] {
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  padding: .35rem;
+}
+
+.settings-fields {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.portal-settings :deep(:is(input:not([type='checkbox']), select, textarea)),
 .portal-settings button {
   box-sizing: border-box;
   max-inline-size: 100%;
@@ -379,15 +536,17 @@ onBeforeUnmount(() => { active = false })
   resize: vertical;
 }
 
-.message-key {
-  overflow-wrap: anywhere;
+.settings-translations {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.settings-confirmation {
-  display: grid;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--admin-border);
-  border-radius: 0.4rem;
+.settings-actions button { overflow-wrap: break-word; }
+
+.portal-settings .settings-primary {
+  background: var(--admin-action);
+  color: var(--admin-action-text);
 }
 </style>

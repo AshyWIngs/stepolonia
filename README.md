@@ -21,6 +21,8 @@ Run `make swagger` from the repository root to serve the public API and Swagger 
 
 The Swagger demo includes published Article and Event items in Polish (`pl`). Use `welcome-to-stepolonia` and `community-meetup` for detail reads, `limit=1` for pagination, and `welcome-old` for an HTTP 301 redirect. `/api/v1/site?lang=kk` selects the published Kazakh UI catalog. The site catalog uses `lang`. Content endpoints use `language`. The API connects with a restricted runtime login, and the fixture writer uses an owner connection before the API starts. Private administration routes are disabled in this demo.
 
+When a local installation enables both documentation and administration, Swagger starts in **All operations** and serves the combined document at `/docs/openapi.json`. The selector also opens the public and administration contracts individually. Huma generates the public document from handler registrations. The administration document uses the same Go route registry as HTTP mounting. Language directory schemas are derived from the Go request and response types. The SDK consumes the public document.
+
 ### Full installation
 
 Install Docker with Compose and BuildKit, Make, and the CPython version in `.python-version`. The initial build needs network access. Go and Node.js are installed in the builder containers. If you use pyenv, run `pyenv install -s "$(cat .python-version)"` to install the pinned Python version.
@@ -30,15 +32,14 @@ make python-version-check
 make up
 ```
 
-The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until the operator applies the schema and publishes the first site settings revision. Seed the language directory, then initialize the selected installation with its own title and initial language.
+The default installation is `example.test`, served on [http://127.0.0.1:8080](http://127.0.0.1:8080). A new installation returns 503 until the operator applies the schema and publishes the first site settings revision. Initialize the selected installation with its own title and initial language.
 
 ```sh
 make SITE=example.test migrate
-make SITE=example.test seed
 python3 scripts/db_tools.py --site example.test initialize-site "Polacy w Kazachstanie" pl
 ```
 
-The command publishes the bundled interface catalogs for `en`, `kk`, `pl` and `ru` once. Later edits are available in Administration at `/admin` for an account with `settings.manage`. Saving a draft preserves the public revision until publication. Run `make SITE=example.test smoke` after the initial publication. The example installation serves local HTTP.
+The command publishes the initial PostgreSQL interface catalogs for `en`, `kk`, `pl` and `ru` once. Later edits are available in Administration at `/admin` for an account with `settings.manage`. Saving a draft preserves the public revision until publication. Run `make SITE=example.test smoke` after the initial publication. The example installation serves local HTTP.
 
 Administration requires the configured HTTPS origin. For a different installation:
 
@@ -61,7 +62,9 @@ SITE ?= another.test
 
 `/{lang}/articles` lists published articles, and `/{lang}/articles/{slug}` opens a published article. The homepage chooses the language from the visitor's saved choice, `Accept-Language`, or the published content default, in that order. A localized URL selects content directly. Article language switches link to published translations.
 
-`GET /api/v1/site` returns settings and UI text from the same published PostgreSQL revision. If the requested catalog is missing, the API uses the installation's published fallback. Missing publication or invalid language configuration returns 503. Compose sets `NUXT_API_ORIGIN` for SSR. Set it explicitly when starting Nuxt separately. Browser requests use the current site's origin. Set `NUXT_PUBLIC_SITE_ORIGIN` to a trusted public HTTPS origin to enable canonical links. Responses carry `noindex, nofollow`. The published revision controls settings and UI text without a frontend rebuild.
+`GET /api/v1/site` returns settings and visitor UI text from the same published PostgreSQL revision. If the requested catalog is missing, the API uses the installation's published fallback. Missing publication or invalid language configuration returns 503. Compose sets `NUXT_API_ORIGIN` for SSR. Set it explicitly when starting Nuxt separately. Browser requests use the current site's origin. Set `NUXT_PUBLIC_SITE_ORIGIN` to a trusted public HTTPS origin to enable canonical links. Responses carry `noindex, nofollow`. The published revision controls settings and UI text without a frontend rebuild.
+
+The administration page reads `GET /api/v1/admin/ui/entry` without credentials for sign-in, MFA, enrollment and recovery text. After a full session is established, `GET /api/v1/admin/ui/catalog` supplies the workspace catalog. Slug suggestions require an active authoring, content type administration or settings grant. Both read the same published settings and appear in the administration and combined OpenAPI documents.
 
 Markdown renders through the allowed Vue nodes. Images currently render as alternative text.
 
@@ -75,7 +78,6 @@ Run migrations separately from the API and pass the target `SITE` explicitly. Us
 python3 scripts/setup-local.py --site sandbox.test
 python3 scripts/site_config.py --site sandbox.test up -d --wait postgres
 make SITE=sandbox.test migrate
-make SITE=sandbox.test seed
 make SITE=sandbox.test migrate ACTION=status
 ```
 
@@ -83,7 +85,7 @@ The one-shot `db-tools` container uses the target database's owner secret. The r
 
 `ACTION=down` removes the application schema and its data. It requires `DISPOSABLE=1` and the test harness's ownership marker. The project, database, volume, `stage12_` database prefix, and database metadata token must agree. Recover persistent data from a separately managed backup.
 
-Seed adds `en`, `ru`, `pl`, and `kk` as initially disabled language entries. Seed and import preserve the enabled state of existing languages. Enabling a language is a separate administrative action.
+Migrations install `en`, `ru`, `pl` and `kk` as disabled language entries. Import preserves the enabled state of existing languages. Initialization enables the starter catalogs together with the first publication.
 
 The importer accepts UTF-8 CSV up to 8 MiB with this exact header:
 
@@ -96,7 +98,16 @@ pl,Polish,Polski,ltr
 make SITE=sandbox.test import-languages FILE=/absolute/path/languages.csv
 ```
 
-Normalized BCP 47 codes are stored in lowercase and have a length of 2–63 bytes. Invalid files are rejected atomically. Repeated import updates metadata while preserving availability and translations.
+Normalized BCP 47 codes are stored in lowercase and have a length of 2–63 bytes. Both names must be 1–200 characters after trimming and may not contain control characters. Invalid files are rejected atomically. Repeated import updates metadata while preserving availability and translations.
+
+Administration provides JSON exchange for the language directory. Requests use the installation’s canonical HTTPS origin and a full session with `settings.manage`. Writes also require `X-CSRF-Token` and fresh MFA.
+
+- `GET /api/v1/admin/settings/languages` lists enabled and disabled entries. Add `?code=pl` to filter.
+- `GET /api/v1/admin/settings/languages/definition?code=pl` exports a single editable JSON document.
+- `POST /api/v1/admin/settings/languages` imports that document. Keep the exported `expected_version` to edit the same code. Omit it and choose a new code to create a disabled entry. Correct any overlong names or control characters found in older CSV records before importing them.
+- `POST /api/v1/admin/settings/languages/availability` accepts `code`, `expected_version` and `enabled`. To disable a language, first remove references from active settings and published content.
+
+An enabled language appears in the interface menu after its complete UI catalog has been published. This takes effect without rebuilding the portal.
 
 The bootstrap container initializes the Alpine/musl PostgreSQL 18.7 cluster. The runtime uses UID/GID 999 and `/var/lib/postgresql/18/docker`. Validate locale and collation and use dump/restore before moving a cluster from Debian/glibc. The image includes PL/pgSQL, ICU, XML, LDAP, LLVM JIT and contrib, and uses SCRAM-SHA-256 for authentication. Kerberos/GSS, PL/Perl, PL/Python and PL/Tcl are excluded.
 
@@ -116,7 +127,7 @@ The bootstrap container initializes the Alpine/musl PostgreSQL 18.7 cluster. The
 | `make smoke` / `make lifecycle` | Live installation / controlled stop and recovery |
 | `make isolation` | Separate installation and PostgreSQL dump/restore |
 | `make resource-test` | Single-installation resource measurements |
-| `make image-audit` | Scan built images with Grype |
+| `make image-audit` | Scan built images with Grype and fail on High or Critical findings |
 | `make verify` | Full local verification |
 
 Pass `SITE=...` to select an installation. `make lifecycle` temporarily stops the selected stack. `make isolation` cleans up the resources it creates. Docker Compose `down --volumes` deletes managed volumes and their data.
@@ -126,6 +137,7 @@ The database tests require host Go and a C compiler for race detection. They cre
 `make resource-test` requires Docker with CPU 0, Go, Node.js and Chromium. Run `npm ci --ignore-scripts` and `node node_modules/playwright/cli.js install chromium` in `apps/web` first. The harness exercises a synthetic installation with keep-alive connections, a shared CPU, and a combined 1216 MiB container memory limit without swap. To set the duration and concurrency, run `python3 scripts/test-resources.py --seconds 60 --concurrency 4`. Build and load generation run outside the measured containers. The `docker stats` samples describe container usage at sampling times.
 
 Install SQLFluff 4.5.0 into a separate environment before running `make lint-sql` or the local lint and Verify targets.
+The SQL check also reports file size and top-level statements and objects for every migration. The portal settings schema and its starter data have separate migrations.
 
 ```sh
 make python-version-check

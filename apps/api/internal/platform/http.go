@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"stepolonia/apps/api/internal/adminhttp"
 	"stepolonia/apps/api/internal/content"
 	"stepolonia/apps/api/internal/siteconfig"
 )
@@ -61,23 +62,7 @@ func HandlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *s
 func handlerWithDocumentation(db Pinger, reader *content.PublicReader, logger *slog.Logger, auth http.Handler, docs bool, site ...*siteconfig.Reader) http.Handler {
 	mux, api := newAPI(db, reader, logger, site...)
 	if auth != nil {
-		mux.Handle("/api/v1/admin/auth/", auth)
-		for _, path := range []string{"me", "me/", "sessions", "sessions/", "audit"} {
-			mux.Handle("/api/v1/admin/"+path, auth)
-		}
-		mux.Handle("/api/v1/admin/settings", auth)
-		mux.Handle("/api/v1/admin/settings/publish", auth)
-		mux.Handle("/api/v1/admin/users", auth)
-		mux.Handle("/api/v1/admin/users/", auth)
-		mux.Handle("/api/v1/admin/roles", auth)
-		mux.Handle("/api/v1/admin/roles/", auth)
-		mux.Handle("/api/v1/admin/content-types", auth)
-		mux.Handle("/api/v1/admin/content-types/{type_key}", auth)
-		const draftPath = "/api/v1/admin/content/{type_key}/{item_id}"
-		for _, suffix := range []string{"", "/assignees", "/ready-shared", "/ready", "/publish", "/schema", "/adopt-schema", "/unpublish"} {
-			mux.Handle(draftPath+suffix, auth)
-		}
-		mux.Handle("/api/v1/admin/content/{type_key}", auth)
+		adminhttp.RegisterRoutes(mux, auth)
 	}
 	if docs {
 		registerDocumentation(mux, api, auth != nil)

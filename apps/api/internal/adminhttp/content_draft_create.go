@@ -19,7 +19,7 @@ const (
 var createDraftRoute = route{
 	kind: fullKind, method: http.MethodPost, operationID: createDraftOperation,
 	summary: "Create an empty content draft", response: createdDraftSchema,
-	description: "Available only with a verified draft database login. Requires a full session, CSRF, strong authentication no older than five minutes and content.items.create on the named collection. The current schema is checked under the shared security mutex. The item, empty draft, creator assignment and audit commit together. Each successful request creates a new item.",
+	description: "Available only with a verified draft database login. Requires a full session, CSRF and content.items.create on the named collection. The current schema is checked under the shared security mutex. The item, empty draft, creator assignment and audit commit together. Each successful request creates a new item.",
 }
 
 func createDraftTarget(path string) (routeTarget, bool) {

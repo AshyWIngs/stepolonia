@@ -55,10 +55,15 @@ if (process.argv.includes('--unavailable')) {
   assert.equal(event.data.type_key, 'event')
   assert.equal(event.data.shared.featured.kind, 'boolean')
   assert.equal(typeof event.data.shared.featured.value, 'boolean')
+  assert.deepEqual(event.data.field_labels, { featured: 'À la une', price: 'Prix' })
   assert.match(event.data.schema_no, /^[1-9]\d*$/u)
   assert.ok(!JSON.stringify(event.data).includes('private-event-secret'))
   const exact = event.data.shared.price
   assert.equal(exact.kind, 'decimal')
   assert.equal(exact.value, '123456789012.123456')
+  const eventPage = await client.listContent({ path: { type_key: 'event' }, query: { language: 'fr' } })
+  assert.equal(eventPage.response.status, 200)
+  assert.ok(eventPage.data.items.length)
+  assert.ok(eventPage.data.items.every(item => !Object.hasOwn(item, 'field_labels')))
   console.log('PASS: generated SDK -> HTTP -> runtime PostgreSQL, 200/301/400/404')
 }

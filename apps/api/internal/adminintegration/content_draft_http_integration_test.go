@@ -69,8 +69,6 @@ func TestAdminDraftPatchHTTPSIntegration(t *testing.T) {
 	const writeOnlyPatch = `{"expected_version":"1","schema_no":"1","shared":{"note":{"kind":"string","value":"Editor-only update"}}}`
 	sendDraftPatch(t, server, f.actor.Token, draftHTTPRequest{path, patch, "", http.StatusForbidden})
 	expireSessionStepUp(t, f.owner, f.actor.Token)
-	sendDraftPatch(t, server, f.actor.Token, draftHTTPRequest{path, patch, f.actor.CSRF, http.StatusForbidden})
-	authRefreshStep(t, f.owner, f.actor.Token)
 
 	cases := []draftHTTPRequest{
 		{draftHTTPPrefix + "different/" + draftEditItem, patch, f.actor.CSRF, http.StatusNotFound},

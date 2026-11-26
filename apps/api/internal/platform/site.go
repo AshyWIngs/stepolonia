@@ -22,8 +22,8 @@ type siteInput struct {
 type siteOutput struct{ Body siteconfig.Publication }
 
 func registerSite(api huma.API, reader *siteconfig.Reader, logger *slog.Logger) {
-	huma.Register(api, huma.Operation{Tags: []string{sitePublicationTag}, OperationID: "getSite", Method: http.MethodGet, Path: "/api/v1/site", Summary: "Read published site settings and one complete UI catalog",
-		Description: "One atomic publication supplies settings, UI languages and messages. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. Drafts and historical versions are private. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. messages contains a complete catalog from the same version. version is an optional consistency check, not a historical selector. Empty, repeated and unknown query parameters return 400. No session is required.",
+	huma.Register(api, huma.Operation{Tags: []string{sitePublicationTag}, OperationID: "getSite", Method: http.MethodGet, Path: "/api/v1/site", Summary: "Read published site settings and visitor messages",
+		Description: "One atomic publication supplies visitor-facing settings, UI languages and translations. Omitted lang uses the configured UI fallback. No publication or disabled default/fallback returns 503. The requested language is normalized and matched by exact code. An unavailable catalog uses fallback_language, and language.code identifies the actual catalog. version checks that the current publication matches a previously read version. Empty, repeated and unknown query parameters return 400. No session is required.",
 		Responses:   siteResponses(api), Middlewares: huma.Middlewares{siteQuery(api)}}, func(ctx context.Context, input *siteInput) (*siteOutput, error) {
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -75,25 +75,24 @@ func siteResponses(api huma.API) map[string]*huma.Response {
 	responses["503"].Description = "No usable site publication, disabled default or fallback language, unavailable complete catalog, or dependency failure. Code site_configuration_unavailable."
 	responses["503"].Content[problemJSONMediaType].Example = newProblem(503, siteUnavailableCode)
 	language := siteconfig.Language{Code: "pl", Name: "Polish", NativeName: "Polski", Direction: leftToRightDirection}
-	demo := apiexamples.DemoSite()
 	value := siteconfig.Publication{
 		Version:           "33333333-3333-4333-8333-333333333333",
-		Settings:          demo.Settings,
+		Settings:          apiexamples.PortalSettings(),
 		RequestedLanguage: "kk",
 		Language:          language,
 		Languages:         []siteconfig.Language{language},
-		Messages:          demo.Catalogs[language.Code],
+		Messages:          apiexamples.PortalMessageExample(),
 	}
 	omitted := value
 	omitted.RequestedLanguage = ""
 	responses["200"] = &huma.Response{
-		Description: "One atomic publication with settings and a complete UI catalog, possibly using the configured fallback.",
+		Description: "One atomic publication with settings and visitor translations, possibly using the configured fallback.",
 		Content: map[string]*huma.MediaType{
 			jsonMediaType: {
 				Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[siteconfig.Publication](), true, "Publication"),
 				Examples: map[string]*huma.Example{
-					"fallback": {Summary: "Kazakh requested, Polish catalog selected as fallback", Value: value},
-					"omitted":  {Summary: "lang omitted, requested_language empty and fallback catalog selected", Value: omitted},
+					"fallback": {Summary: "Kazakh requested, Polish fallback returned", Description: "The example includes one message to illustrate the catalog shape.", Value: value},
+					"omitted":  {Summary: "Polish fallback returned when lang is omitted", Description: "The example includes one message to illustrate the catalog shape.", Value: omitted},
 				},
 			},
 		},

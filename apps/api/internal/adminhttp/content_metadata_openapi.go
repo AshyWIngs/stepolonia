@@ -13,11 +13,13 @@ func addContentMetadataSchemas(schemas map[string]*huma.Schema) {
 	const fieldSchema = "ReadableDraftField"
 	collection := identity.ReadableCollection{TypeID: exampleUUID, TypeKey: "article", SchemaNo: 2, CanCreate: true}
 	schemas[collectionSchema] = closedObjectSchema("A collection available for draft browsing.", map[string]*huma.Schema{
-		typeIDField:   uuidSchema(exampleUUID),
-		typeKeyField:  contentTypeParameter("").Schema,
-		schemaNoField: contentVersionSchema("Current sealed schema number.", "2"),
-		"can_create":  {Type: huma.TypeBoolean, Description: "The current session may create drafts in this collection."},
-	}, []string{typeIDField, typeKeyField, schemaNoField, "can_create"}, collection)
+		typeIDField:              uuidSchema(exampleUUID),
+		typeKeyField:             contentTypeParameter("").Schema,
+		registryDisplayNameField: collectionDisplayNameSchema(),
+		collectionIconField:      collectionIconSchema(defaultIconDescription),
+		schemaNoField:            contentVersionSchema("Current sealed schema number.", "2"),
+		"can_create":             {Type: huma.TypeBoolean, Description: "The current session may create drafts in this collection."},
+	}, []string{typeIDField, typeKeyField, registryDisplayNameField, collectionIconField, schemaNoField, "can_create"}, collection)
 	schemas[collectionPageSchemaName] = privatePageSchema(
 		"Authorized collections ordered by collection key.", collectionSchema, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset,
 		identity.ReadableCollectionPage{Items: []identity.ReadableCollection{collection}},

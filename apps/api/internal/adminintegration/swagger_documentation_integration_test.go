@@ -31,9 +31,9 @@ func TestAuthSwaggerDocumentationBrowserIntegration(t *testing.T) {
 	server := newAuthTLSServer(t, service, func(auth http.Handler) http.Handler {
 		return platform.HandlerWithDocumentation(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), auth)
 	})
-	// The full browser flow reached role deletion at the old 60-second deadline
-	// on CI. Allow the remaining rolesGet and logout requests to finish.
-	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	// CI reached the stale-token logout at 75 seconds. Leave room for the last
+	// transitions while keeping each request independently bounded in Chromium.
+	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, nodeExecutable, "-e", qaSwaggerBrowserScript)
 	command.Env = append(os.Environ(), "QA_SWAGGER_ORIGIN="+server.URL, "QA_SWAGGER_LOGIN="+bootstrapTestLogin, "QA_SWAGGER_PASSWORD="+bootstrapTestPassphrase, "QA_SWAGGER_CODE="+bootstrapCode(t, f.state.db, f.state.secret), "QA_SWAGGER_ITEM_ID="+itemID)
@@ -98,15 +98,30 @@ const assert = require('node:assert/strict');
   const contentTypes='/api/v1/admin/content-types';
   const contentMetadataPaths=[contentTypes+'/renderers',contentDraft+'/schema'];
   const managedCollection=contentTypes+'/{type_key}';
-  const settingsPaths=['/api/v1/admin/settings','/api/v1/admin/settings/publish'];
-  assert.deepEqual(Object.keys(privateSpec.paths[settingsPaths[0]]||{}).sort(),['get','put']);
-  assert.deepEqual(Object.keys(privateSpec.paths[settingsPaths[1]]||{}),['post']);
+  const collectionAvailability=managedCollection+'/availability';
+  const collectionCommands=['fields','icon'].map(action=>managedCollection+'/'+action);
+  const settingsPath='/api/v1/admin/settings';
+  const languageDirectoryPath=settingsPath+'/languages';
+  const languageDefinitionPath=languageDirectoryPath+'/definition';
+  const settingsPaths=[settingsPath,settingsPath+'/publication',languageDirectoryPath,languageDefinitionPath];
+  const settingsCommands=['appearance','catalogs','details','language-flags','locale-defaults','slug-rules','languages/availability'].map(action=>settingsPath+'/'+action);
+  const uiEntry='/api/v1/admin/ui/entry';
+  const uiCatalog='/api/v1/admin/ui/catalog';
+  for(const path of [uiEntry,uiCatalog]) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['get']);
+  assert.equal(privateSpec.paths[uiEntry].get.security,undefined);
+  assert.deepEqual(privateSpec.paths[uiCatalog].get.security,[{'__Host-sp_session':[]}]);
+  assert.deepEqual(Object.keys(privateSpec.paths[settingsPath]||{}),['get']);
+  assert.deepEqual(Object.keys(privateSpec.paths[settingsPaths[1]]||{}),['put']);
+  assert.deepEqual(Object.keys(privateSpec.paths[languageDirectoryPath]||{}).sort(),['get','post']);
+  assert.deepEqual(Object.keys(privateSpec.paths[languageDefinitionPath]||{}),['get']);
+  assert.equal(privateSpec.paths[settingsPath+'/publish'],undefined);
   const contentCommands=['ready-shared','ready','publish','unpublish','adopt-schema'].map(action=>contentDraft+'/'+action);
-  for(const path of contentCommands) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
+  for(const path of [...contentCommands,...collectionCommands,...settingsCommands]) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentCollection]||{}).sort(),['get','post']);
   for(const path of contentMetadataPaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['get']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentTypes]||{}).sort(),['get','post']);
   assert.deepEqual(Object.keys(privateSpec.paths[managedCollection]||{}).sort(),['get','patch']);
+  assert.deepEqual(Object.keys(privateSpec.paths[collectionAvailability]||{}),['patch']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentDraft]||{}).sort(),['get','patch']);
   assert.deepEqual(Object.keys(privateSpec.paths[contentAssignees]||{}).sort(),['get','put']);
   const userPaths=['/api/v1/admin/users','/api/v1/admin/users/{id}','/api/v1/admin/users/{id}/onboarding-token','/api/v1/admin/users/{id}/activate','/api/v1/admin/users/{id}/disable',userRoles];
@@ -115,16 +130,25 @@ const assert = require('node:assert/strict');
   assert.deepEqual(Object.keys(privateSpec.paths[userRoles]).sort(),['get','put']);
   const accountReads=['/api/v1/admin/me','/api/v1/admin/sessions','/api/v1/admin/users/{id}/sessions','/api/v1/admin/audit'];
   const accountWrites=['/api/v1/admin/me/password','/api/v1/admin/me/mfa/replace','/api/v1/admin/me/recovery-codes','/api/v1/admin/sessions/{id}/revoke','/api/v1/admin/sessions/revoke-all'];
+  const sessionPolicy='/api/v1/admin/security/session-policy';
+  const ratePolicy='/api/v1/admin/security/rate-policy';
+  assert.deepEqual(Object.keys(privateSpec.paths[sessionPolicy]||{}).sort(),['get','put']);
+  assert.deepEqual(Object.keys(privateSpec.paths[ratePolicy]||{}).sort(),['get','post']);
   for(const path of accountReads) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['get']);
   for(const path of accountWrites) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   const rolePaths=['/api/v1/admin/roles','/api/v1/admin/roles/{id}'];
-  const roleCommandPaths=['enable','disable','archive','restore','copy'].map(action=>rolePaths[1]+'/'+action);
+  const roleCommandPaths=['enable','disable','archive','restore','copy','changes','display-name'].map(action=>rolePaths[1]+'/'+action);
   rolePaths.push(...roleCommandPaths,'/api/v1/admin/roles/grant-options');
   for(const path of roleCommandPaths) assert.deepEqual(Object.keys(privateSpec.paths[path]||{}),['post']);
   assert(rolePaths.every(p=>privateSpec.paths[p]),'Missing private role operation');
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[0]]).sort(),['get','post']);
   assert.deepEqual(Object.keys(privateSpec.paths[rolePaths[1]]).sort(),['delete','get','patch']);
-  assert(Object.keys(privateSpec.paths).every(p=>p.startsWith('/api/v1/admin/auth/')||userPaths.includes(p)||rolePaths.includes(p)||[contentCollection,contentDraft,contentAssignees,contentTypes,managedCollection,...contentMetadataPaths,...contentCommands,...settingsPaths,...accountReads,...accountWrites].includes(p)));
+  const otherPaths=[contentCollection,contentDraft,contentAssignees,contentTypes,managedCollection,collectionAvailability,sessionPolicy,ratePolicy,uiEntry,uiCatalog,...contentMetadataPaths,...contentCommands,...collectionCommands,...settingsPaths,...settingsCommands,...accountReads,...accountWrites];
+  assert.deepEqual(Object.keys(privateSpec.paths).filter(p=>!p.startsWith('/api/v1/admin/auth/')&&!userPaths.includes(p)&&!rolePaths.includes(p)&&!otherPaths.includes(p)),[]);
+  assert.equal(await page.locator('.topbar select option:checked').textContent(),'All operations');
+  for(const id of ['adminUIEntry','adminUICatalog','settingsExportLanguages','settingsExportLanguageDefinition','settingsSaveLanguage','settingsSetLanguageAvailability']){
+   await page.locator('[id$="-'+id+'"]').waitFor();
+  }
   await page.locator('.topbar select').selectOption({label:'Private Administration API'});
   await page.locator('[id$="-authCSRF"]').waitFor();
   const prepared=new Set();

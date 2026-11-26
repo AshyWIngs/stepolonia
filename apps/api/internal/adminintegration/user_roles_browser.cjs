@@ -29,9 +29,9 @@ const { browserAdminClient, chromium } = require('./browser_admin_client.cjs');
     assert.equal((await send(recipient, path, 403, { method: 'PUT', body: replacement, csrf: recipientCSRF })).body.code, 'permission_denied');
 
     assert.equal((await put(403, replacement)).body.code, 'csrf_failed');
-    for (const role_ids of [undefined, null, ['invalid-id']]) {
+    await Promise.all([undefined, null, ['invalid-id']].map(async role_ids => {
       assert.equal((await put(400, { role_ids, expected_version: version }, csrf)).body.code, 'validation_failed');
-    }
+    }));
     assert.equal((await put(404, { role_ids: ['00000000-0000-4000-8000-000000000099'], expected_version: version }, csrf)).body.code, 'not_found');
     const replaced = await put(200, replacement, csrf);
     assert.deepEqual(replaced.body, {

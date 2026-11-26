@@ -294,7 +294,7 @@ func TestBootstrapExactSeedGrantsIntegration(t *testing.T) {
 		count++
 	}
 	requireNoError(t, rows.Err())
-	if count != 35 {
+	if count != 36 {
 		t.Fatalf("seed grant count=%d", count)
 	}
 	for role, ops := range expected {
@@ -353,7 +353,7 @@ func expectedBootstrapGrants() map[string]map[string]string {
 		"Editor":     {bootstrapOpRead: bootstrapAny, bootstrapOpUpdate: bootstrapAny, bootstrapOpReady: bootstrapAny, bootstrapOpPublish: bootstrapAny, "content.items.unpublish": bootstrapAny},
 		"Site Admin": {bootstrapOpCreate: "type", bootstrapOpRead: bootstrapAny, bootstrapOpUpdate: bootstrapAny, bootstrapOpReady: bootstrapAny, bootstrapOpPublish: bootstrapAny, "content.items.unpublish": bootstrapAny, "content.items.assign": bootstrapAny},
 	}
-	installation := []string{"content_types.manage", "content_types.initialize_access", "content.permissions.delegate", "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage"}
+	installation := []string{"content_types.manage", "content_types.initialize_access", "content.permissions.delegate", "users.create", "users.read", "users.activate", "users.disable", "roles.create", "roles.read", "roles.edit", "roles.assign", "roles.disable", "roles.enable", "roles.archive", "roles.restore", "roles.delete", "sessions.revoke_any", "audit.read", "settings.manage", "security_policy.manage"}
 	for _, op := range installation {
 		expected["Site Admin"][op] = ""
 	}

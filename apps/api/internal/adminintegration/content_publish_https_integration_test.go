@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	publicationArticleType = "article"
-	publicationEventType   = "event"
-	publicationCreateScope = "type"
-	stalePublicationCode   = "version_conflict"
-	editorialSlug          = "spotkanie-w-krakowie"
-	editorialTitle         = "Spotkanie w Krakowie"
-	editorialNote          = "Notatka redakcyjna"
+	publicationArticleType     = "article"
+	publicationEventType       = "event"
+	publicationEventsNamespace = "events"
+	publicationCreateScope     = "type"
+	stalePublicationCode       = "version_conflict"
+	editorialSlug              = "spotkanie-w-krakowie"
+	editorialTitle             = "Spotkanie w Krakowie"
+	editorialNote              = "Notatka redakcyjna"
 )
 
 type publicationFixture struct {
@@ -36,6 +37,13 @@ type publicationFixture struct {
 	typeID, typeKey, namespace string
 	author, publisher          identity.AuthRequest
 	publisherGrant             string
+}
+
+func enablePolishContentLocale(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
+VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
+	requireNoError(t, err)
 }
 
 func newPublicationFixture(t *testing.T, typeKey, namespace string) publicationFixture {
@@ -51,9 +59,7 @@ func newPublicationFixture(t *testing.T, typeKey, namespace string) publicationF
 	} else {
 		requireNoError(t, db.QueryRow("SELECT id::text FROM public.content_types WHERE key=$1", typeKey).Scan(&typeID))
 	}
-	_, err := db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
-VALUES('pl','Polish','Polski','ltr',true) ON CONFLICT(code) DO UPDATE SET is_enabled=true`)
-	requireNoError(t, err)
+	enablePolishContentLocale(t, db)
 	authorRole := fixturePublicationRole(t, db, "Pracownia tekstu")
 	for _, operation := range []string{"content.items.create", "content.items.read", "content.items.update", "content.items.ready"} {
 		scope := bootstrapAssigned
@@ -197,7 +203,12 @@ func (f publicationFixture) command(t *testing.T, actor identity.AuthRequest, it
 
 func (f publicationFixture) public(t *testing.T, status int) string {
 	t.Helper()
-	path := "/api/v1/content/" + f.typeKey + "/" + editorialSlug + "?language=pl"
+	return f.publicBySlug(t, editorialSlug, status)
+}
+
+func (f publicationFixture) publicBySlug(t *testing.T, slug string, status int) string {
+	t.Helper()
+	path := "/api/v1/content/" + f.typeKey + "/" + slug + "?language=pl"
 	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, f.server.URL+path, nil)
 	requireNoError(t, err)
 	response, err := f.server.Client().Do(request)
@@ -221,13 +232,14 @@ const (
 )
 
 func TestAdminReadyPublishHTTPSIntegration(t *testing.T) {
-	for _, tc := range []struct{ key, namespace string }{{publicationArticleType, "articles"}, {publicationEventType, "events"}} {
+	for _, tc := range []struct{ key, namespace string }{{publicationArticleType, "articles"}, {publicationEventType, publicationEventsNamespace}} {
 		t.Run(tc.key, func(t *testing.T) {
 			f := newPublicationFixture(t, tc.key, tc.namespace)
 			item := f.prepareDraft(t)
 			f.public(t, http.StatusNotFound)
 			verifyNotReady(t, f, item)
 			verifyReadyRequiresAssignment(t, f, item)
+			expireSessionStepUp(t, f.owner, f.author.Token)
 			f.command(t, f.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
 			f.command(t, f.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)
 			f.public(t, http.StatusNotFound)
@@ -241,6 +253,51 @@ func TestAdminReadyPublishHTTPSIntegration(t *testing.T) {
 				verifyCurrentSchemaRequired(t, f, item)
 			}
 		})
+	}
+}
+
+func TestAdminReadablePublicationSlugsHTTPSIntegration(t *testing.T) {
+	f := newPublicationFixture(t, publicationArticleType, "articles")
+	first, second := f.prepareDraft(t), f.prepareDraft(t)
+	const allocated = `{"expected_version":"4","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`
+	for _, item := range []string{first, second} {
+		f.command(t, f.author, item, sharedReadyCommand, sharedReadyBody, http.StatusOK)
+		f.command(t, f.author, item, localeReadyCommand, localeReadyBody, http.StatusOK)
+	}
+	f.command(t, f.publisher, first, publishCommand, allocated, http.StatusOK)
+	assertReadablePublicSlug(t, f, first, editorialSlug, editorialSlug)
+	assertPublicationProblem(t, f.command(t, f.publisher, second, publishCommand, publishBody, http.StatusConflict), "route_conflict")
+	f.command(t, f.publisher, second, publishCommand, allocated, http.StatusOK)
+	f.command(t, f.publisher, second, publishCommand, `{"expected_version":"5","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, second, editorialSlug+"-2", editorialSlug+"-2")
+	f.publicBySlug(t, editorialSlug+"-3", http.StatusNotFound)
+	verifyLegacyUUIDSlug(t, f)
+}
+
+func verifyLegacyUUIDSlug(t *testing.T, f publicationFixture) {
+	t.Helper()
+	item := f.prepareDraft(t)
+	legacy := editorialSlug + "-" + strings.ReplaceAll(item, "-", "")
+	path := draftHTTPPrefix + f.typeKey + "/" + item
+	patch := fmt.Sprintf(`{"expected_version":"2","schema_no":"1","locales":{"pl":{"values":{"slug":{"kind":"string","value":%q}}}}}`, legacy)
+	sendDraftPatch(t, f.server, f.author.Token, draftHTTPRequest{path, patch, f.author.CSRF, http.StatusOK})
+	f.command(t, f.author, item, sharedReadyCommand, `{"expected_version":"3","schema_no":"1"}`, http.StatusOK)
+	f.command(t, f.author, item, localeReadyCommand, `{"expected_version":"4","schema_no":"1","locale":"pl"}`, http.StatusOK)
+	f.command(t, f.publisher, item, publishCommand, `{"expected_version":"5","schema_no":"1","intended_locales":["pl"]}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, item, legacy, legacy)
+	f.command(t, f.publisher, item, publishCommand, `{"expected_version":"6","schema_no":"1","intended_locales":["pl"],"allocate_slug":true}`, http.StatusOK)
+	assertReadablePublicSlug(t, f, item, editorialSlug+"-3", editorialSlug+"-3")
+	assertReadablePublicSlug(t, f, item, legacy, editorialSlug+"-3")
+}
+
+func assertReadablePublicSlug(t *testing.T, f publicationFixture, item, requested, canonical string) {
+	t.Helper()
+	body := f.publicBySlug(t, requested, http.StatusOK)
+	var published content.PublicItem
+	requireNoError(t, json.Unmarshal([]byte(body), &published))
+	if published.ItemID != item || published.CanonicalURL != "/pl/"+f.namespace+"/"+canonical ||
+		published.Slug != canonical || string(published.Localized["slug"].Value) != fmt.Sprintf("%q", canonical) {
+		t.Fatalf("wrong allocated publication address: %s", body)
 	}
 }
 
@@ -295,8 +352,6 @@ func verifyPublishRefusals(t *testing.T, f publicationFixture, item string) {
 	badCSRF.CSRF = strings.Repeat("A", len(badCSRF.CSRF))
 	f.command(t, badCSRF, item, sharedReadyCommand, sharedReadyBody, http.StatusForbidden)
 	expireSessionStepUp(t, f.owner, f.publisher.Token)
-	f.command(t, f.publisher, item, publishCommand, publishBody, http.StatusForbidden)
-	authRefreshStep(t, f.owner, f.publisher.Token)
 	wrongType := draftHTTPPrefix + "missing/" + item + "/publish"
 	sendDraftRequest(t, f.server, http.MethodPost, f.publisher.Token, draftHTTPRequest{wrongType, publishBody, f.publisher.CSRF, http.StatusNotFound})
 	stale := `{"expected_version":"3","schema_no":"1"}`

@@ -20,7 +20,7 @@ func (s *AuthService) Recover(ctx context.Context, req AuthRequest, login, passw
 	}); err != nil {
 		return out, err
 	}
-	snap, err := s.password(ctx, req, login, password)
+	snap, err := s.password(ctx, req, login, password, RateCredentials)
 	if err != nil {
 		return out, err
 	}

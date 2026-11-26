@@ -17,7 +17,6 @@ WRAPPERS = {
     "build": ("setup", "ci-build"),
     "test": ("setup docker-check python-tests api-checks web-checks", "ci-service-checks"),
     "db-test": ("sdk-check", "ci-db-test"),
-    "publishing-test": ("sdk-check", "ci-publishing-test"),
     "image-audit": ("lint build", "ci-image-audit"),
 }
 
@@ -45,6 +44,20 @@ class VerifyStagesTest(unittest.TestCase):
                 self.assertIn(line, self.makefile)
                 self.assertRegex(self.makefile, rf"(?m)^{re.escape(runner)}:$")
 
+    def test_auth_stage_builds_and_runs_admin_browser_workflows(self):
+        self.assertIn(
+            "auth-test: browser-dependencies\n"
+            "\tcd apps/web && npm run build\n"
+            "\tADMIN_UI_BROWSER_TEST=1 python3 scripts/test-auth.py",
+            self.makefile,
+        )
+        self.assertIn("publishing-test: sdk-check\n", self.makefile)
+        self.assertIn(
+            "publishing-test ci-publishing-test: browser-dependencies\n"
+            "\tpython3 scripts/test-publishing.py --runtime",
+            self.makefile,
+        )
+
     def test_all_exec_targets_are_phony(self):
         phony = next(line for line in self.makefile.splitlines()
                      if line.startswith(".PHONY:"))
@@ -55,6 +68,12 @@ class VerifyStagesTest(unittest.TestCase):
     def test_cve_gate_and_public_status_are_not_weakened(self):
         self.assertIn("--fail-on high", self.makefile)
         self.assertIn("sp-caddy:stage0", self.makefile)
+        self.assertIn(
+            '      - name: "Security: audit 11 images for CVEs"\n'
+            "        if: steps.scope.outputs.full == 'true'\n"
+            "        run: make SITE=ci.test ci-image-audit\n",
+            self.workflow,
+        )
         self.assertRegex(self.workflow, r"(?m)^  verify:$")
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertNotIn("continue-on-error:", self.workflow)

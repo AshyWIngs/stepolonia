@@ -8,6 +8,54 @@ import (
 
 const securityTestRole = "sp_security"
 
+func TestDomainMigrationsInitialSiteSettingsIntegration(t *testing.T) {
+	db, _ := domainQAFixture(t)
+	ctx := context.Background()
+	provider, err := Provider(db)
+	requireNoError(t, err)
+	_, err = provider.UpTo(ctx, 6)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, false)
+
+	_, err = provider.UpTo(ctx, 7)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, true)
+
+	_, err = provider.DownTo(ctx, 6)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, false)
+
+	_, err = provider.UpTo(ctx, 7)
+	requireNoError(t, err)
+	assertInitialSiteSettings(t, db, true)
+}
+
+func assertInitialSiteSettings(t *testing.T, db *sql.DB, populated bool) {
+	t.Helper()
+	var empty, complete, pristine bool
+	requireNoError(t, db.QueryRow(`SELECT
+ NOT EXISTS (SELECT 1 FROM public.initial_site_defaults)
+  AND NOT EXISTS (SELECT 1 FROM public.ui_message_keys)
+  AND NOT EXISTS (SELECT 1 FROM public.initial_ui_messages)
+  AND NOT EXISTS (SELECT 1 FROM public.initial_slug_rules),
+ EXISTS (SELECT 1 FROM public.initial_site_defaults WHERE singleton AND accent='#2563eb')
+  AND (SELECT array_agg(language_code ORDER BY language_code)
+         FROM (SELECT language_code FROM public.initial_ui_messages GROUP BY language_code
+          HAVING count(*)=(SELECT count(*) FROM public.ui_message_keys)) AS catalogs)
+      IS NOT DISTINCT FROM ARRAY['en','kk','pl','ru']
+  AND (SELECT count(DISTINCT language_code) FROM public.initial_ui_messages)=4
+  AND (SELECT array_agg(language_code||':'||rules ORDER BY language_code)
+       FROM (SELECT language_code,count(*) AS rules FROM public.initial_slug_rules GROUP BY language_code) AS defaults)
+      IS NOT DISTINCT FROM ARRAY['kk:42','pl:9','ru:33'],
+ EXISTS (SELECT 1 FROM public.site_state
+          WHERE singleton AND version=1 AND draft_id IS NULL AND published_id IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM public.languages WHERE is_enabled)`).Scan(&empty, &complete, &pristine))
+	if !pristine || empty == populated || complete != populated {
+		t.Fatalf("initial site settings: empty=%t complete=%t pristine=%t, expected populated=%t",
+			empty, complete, pristine, populated)
+	}
+}
+
 func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	db, _ := domainQAFixture(t)
 	ctx := context.Background()
@@ -26,10 +74,13 @@ func TestDomainMigrationsStepContractsIntegration(t *testing.T) {
 	requireNoError(t, err)
 	testDomainIdentityStep(t, ctx, db)
 
+	_, err = provider.UpTo(ctx, 6)
+	requireNoError(t, err)
+	testDomainAssigneeStep(t, ctx, db)
+
 	_, err = provider.Up(ctx)
 	requireNoError(t, err)
 	requireNoError(t, CheckSchema(ctx, db))
-	testDomainAssigneeStep(t, ctx, db)
 }
 
 func testDomainRegistryStep(t *testing.T, ctx context.Context, db *sql.DB) {
@@ -81,8 +132,7 @@ func testDomainEngineStep(t *testing.T, ctx context.Context, db *sql.DB) {
 	} {
 		rejectSQL(t, ctx, db, "", query, "23514")
 	}
-	_, err = db.Exec(`INSERT INTO public.languages(code,name,native_name,direction,is_enabled)
-VALUES ('en','English','English','ltr',true)`)
+	_, err = db.Exec(`UPDATE public.languages SET is_enabled=true WHERE code='en'`)
 	requireNoError(t, err)
 	tx := beginRoleTx(t, ctx, db, publisherTestRole)
 	execSQL(t, ctx, tx, `INSERT INTO public.content_publications(id,item_id,type_id,schema_no,revision_no,shared_seq)
@@ -97,7 +147,8 @@ VALUES ('d1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-00000000
 INSERT INTO public.content_routes(namespace,locale_code,slug,type_id,item_id)
 VALUES ('domain-step','en','step-publication','d1000000-0000-0000-0000-000000000001','d1000000-0000-0000-0000-000000000003');
 INSERT INTO public.content_publication_locales(publication_id,item_id,locale_code,locale_generation,slug)
-VALUES ('d1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-000000000003','en',1,'step-publication');
+SELECT 'd1000000-0000-0000-0000-000000000005','d1000000-0000-0000-0000-000000000003',code,generation,'step-publication'
+FROM public.languages WHERE code='en';
 UPDATE public.content_publications SET sealed=true;
 UPDATE public.content_items SET published_id='d1000000-0000-0000-0000-000000000005',version=version+1
 WHERE id='d1000000-0000-0000-0000-000000000003'`)
@@ -118,6 +169,10 @@ INSERT INTO public.security_audit(id,operation,reason)
 VALUES (gen_random_uuid(),'auth.denied','invalid_credentials')`)
 	requireNoError(t, tx.Commit())
 	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.users`, "42501")
+	rejectSQL(t, ctx, db, publisherTestRole, `SELECT * FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, languageImporterTestRole, `SELECT * FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, securityTestRole, `DELETE FROM public.session_policy`, "42501")
+	rejectSQL(t, ctx, db, securityTestRole, `UPDATE public.session_policy SET idle_timeout_minutes=61`, "23514")
 	auditRead := beginRoleTx(t, ctx, db, securityTestRole)
 	execSQL(t, ctx, auditRead, `SELECT operation,result,reason FROM public.security_audit`)
 	requireNoError(t, auditRead.Commit())

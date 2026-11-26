@@ -30,16 +30,22 @@ const documentationPage = `<!doctype html>
 <body><div id="swagger-ui"></div><script src="/docs/assets/swagger-ui-bundle.js"></script>
 <script src="/docs/assets/swagger-ui-standalone-preset.js"></script><script src="/docs/init.js"></script></body></html>`
 
+const allOperationsSpecPath = "/docs/openapi.json"
+const privateSpecPath = "/openapi-auth.json"
+
 func registerDocumentation(mux *http.ServeMux, api huma.API, private bool) {
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		writeSpecification(w, func() ([]byte, error) { return json.MarshalIndent(api.OpenAPI(), "", "  ") })
 	})
 	urls := `[{url:"/openapi.json",name:"Public API"}]`
 	if private {
-		mux.HandleFunc("GET /openapi-auth.json", func(w http.ResponseWriter, _ *http.Request) {
+		mux.HandleFunc("GET "+privateSpecPath, func(w http.ResponseWriter, _ *http.Request) {
 			writeSpecification(w, adminhttp.OpenAPIJSON)
 		})
-		urls = `[{url:"/openapi.json",name:"Public API"},{url:"/openapi-auth.json",name:"Private Administration API"}]`
+		mux.HandleFunc("GET "+allOperationsSpecPath, func(w http.ResponseWriter, _ *http.Request) {
+			writeSpecification(w, func() ([]byte, error) { return combinedOpenAPIJSON(api.OpenAPI(), adminhttp.OpenAPI()) })
+		})
+		urls = `[{url:"` + allOperationsSpecPath + `",name:"All operations"},{url:"/openapi.json",name:"Public API"},{url:"` + privateSpecPath + `",name:"Private Administration API"}]`
 	}
 	mux.HandleFunc("GET /docs/init.js", func(w http.ResponseWriter, _ *http.Request) {
 		documentationHeaders(w)

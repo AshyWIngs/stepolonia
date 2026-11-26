@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"slices"
 	"testing"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 const expectedRolesTag = "roles"
@@ -23,8 +25,40 @@ func TestPrivateRolesContract(t *testing.T) {
 	if _, exists := patch.Responses["200"].Headers["Set-Cookie"]; exists {
 		t.Fatal("role edit promises cookie mutation")
 	}
-	if len(doc.Components.Schemas[roleSchema].Properties) != 5 || *doc.Components.Schemas[roleSchema].Properties["grants"].MaxItems != 64 {
+	role := doc.Components.Schemas[roleSchema]
+	if len(role.Properties) != 7 || *role.Properties["grants"].MaxItems != 64 {
 		t.Fatal("safe role projection or policy cap drifted")
+	}
+	for _, name := range []string{roleSchema, "RoleMembershipOption"} {
+		schema := doc.Components.Schemas[name]
+		labels := schema.Properties["display_names"]
+		if labels == nil || labels.Type != huma.TypeObject || slices.Contains(schema.Required, "display_names") {
+			t.Fatal("role display names must be optional localized maps", name)
+		}
+	}
+	methods := doc.Paths[rolePath+"/display-name"]
+	if len(methods) != 1 || methods["post"].OperationID != roleDisplayNameOperation {
+		t.Fatal("role display name command drifted")
+	}
+	assertRoleCollectionKeyContract(t, doc)
+}
+
+func assertRoleCollectionKeyContract(t *testing.T, doc privateDocument) {
+	t.Helper()
+	const field = "collection_keys"
+	role := doc.Components.Schemas["Role"]
+	keys := role.Properties[field]
+	if keys == nil {
+		t.Fatal("role response omits collection keys")
+	}
+	values, ok := keys.AdditionalProperties.(*huma.Schema)
+	if keys.Type != huma.TypeObject || !ok || values.Type != huma.TypeString || slices.Contains(role.Required, field) {
+		t.Fatal("collection keys must be an optional string map on read")
+	}
+	for _, operation := range []string{createRoleOperation, editRoleOperation} {
+		if _, ok := doc.Components.Schemas[operation+"Request"].Properties[field]; ok {
+			t.Fatal("collection keys exposed in role write schema", operation)
+		}
 	}
 }
 

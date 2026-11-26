@@ -13,9 +13,13 @@ import (
 	"stepolonia/apps/api/internal/identity"
 )
 
-// OpenAPIJSON describes the registered private auth transport independently of
-// the public Huma API and SDK. Generating it does not register HTTP handlers.
+// OpenAPIJSON exports the private administration contract.
 func OpenAPIJSON() ([]byte, error) {
+	return json.Marshal(OpenAPI())
+}
+
+// OpenAPI builds a private document from the administration route registry.
+func OpenAPI() *huma.OpenAPI {
 	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
 	for name, schema := range privateSchemas() {
 		registry.Map()[name] = schema
@@ -27,7 +31,13 @@ func OpenAPIJSON() ([]byte, error) {
 			if item == nil {
 				item = &huma.PathItem{}
 			}
-			op := privateOperationSchema(registry, path, rt)
+			var op *huma.Operation
+			switch rt.operationID {
+			case adminEntryOperation, adminCatalogOperation:
+				op = adminUIOperation(rt, registry.Map()[rt.response].Examples[0])
+			default:
+				op = privateOperationSchema(registry, path, rt)
+			}
 			switch rt.method {
 			case http.MethodGet:
 				item.Get = op
@@ -43,16 +53,17 @@ func OpenAPIJSON() ([]byte, error) {
 			paths[path] = item
 		}
 	}
-	return json.Marshal(&huma.OpenAPI{
+	return &huma.OpenAPI{
 		OpenAPI: "3.1.0",
 		Info:    &huma.Info{Title: "Private Administration API", Version: "1.0.0", Description: "Implemented private sessions, invited-user onboarding, safe account reads, versioned activation, disable and membership replacement, role policy management, content assignee replacement, empty draft creation, scoped draft listing, projected draft reads, scalar draft editing, readiness and publication. This private contract is excluded from the public TypeScript SDK. Examples are synthetic and never authenticate. Flow: GET csrf, POST login, POST mfa/verify; replace X-CSRF-Token after every successful token response. Recovery and invited-user enrollment are separate restricted flows; neither grants administration permissions. " + boundaryDescription},
 		Tags:    authTags(),
 		Servers: []*huma.Server{{URL: "/", Description: "Current installation; authentication requires its canonical HTTPS origin."}},
 		Paths:   paths, Components: &huma.Components{Schemas: registry, SecuritySchemes: authSecuritySchemes()},
-	})
+	}
 }
 
 const openAPIPathParameter = "path"
+const openAPIQueryParameter = "query"
 
 func privateOperationSchema(registry huma.Registry, path string, rt route) *huma.Operation {
 	op := &huma.Operation{OperationID: rt.operationID, Summary: rt.summary, Description: rt.description + " " + boundaryDescription, Tags: []string{authTag(rt)}, Parameters: authParameters(rt), Responses: authResponses(rt), Security: authSecurity(rt)}
@@ -69,6 +80,10 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		op.Parameters = append(op.Parameters, &huma.Param{Name: "id", In: openAPIPathParameter, Required: true, Description: "Target " + target + " UUID; never selects the actor or grants permissions.", Schema: uuidSchema(exampleUUID)})
 	}
 	switch rt.operationID {
+	case readLanguagesOperation:
+		op.Parameters = append(op.Parameters, &huma.Param{Name: languageCodeField, In: openAPIQueryParameter, Description: "Optional BCP 47 code. An unknown code returns an empty list.", Schema: languageCodeSchema()})
+	case readLanguageDefinitionOperation:
+		op.Parameters = append(op.Parameters, &huma.Param{Name: languageCodeField, In: openAPIQueryParameter, Required: true, Description: "BCP 47 code of the definition to export. An unknown code returns 404.", Schema: languageCodeSchema()})
 	case createDraftOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection in which to create the draft."))
 	case listDraftsOperation:
@@ -78,7 +93,7 @@ func privateOperationSchema(registry huma.Registry, path string, rt route) *huma
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultAccountPageLimit, identity.MaxAccountPageLimit, identity.MaxAccountPageOffset)...)
 	case listCollectionsOperation:
 		op.Parameters = append(op.Parameters, privatePageParameters(identity.DefaultDraftPageLimit, identity.MaxDraftPageLimit, identity.MaxDraftPageOffset)...)
-	case registryReadOperation, registryReviseOperation:
+	case registryReadOperation, registryReviseOperation, registryAvailabilityOperation, registryIconOperation, registryFieldChangesOperation:
 		op.Parameters = append(op.Parameters, contentTypeParameter("Collection to manage."))
 	default:
 		if rt.operationID == replaceContentAssigneesOperation || rt.operationID == readContentAssigneesOperation || authTag(rt) == contentDraftTag {
@@ -102,9 +117,13 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 		return createDraftRequestBody(registry)
 	}
 	name := rt.operationID + "Request"
+	if schema := securityPolicyRequestSchema(rt.operationID); schema != nil {
+		registry.Map()[name] = schema
+		return &huma.RequestBody{Required: true, Description: "A JSON object up to 4096 bytes. Unknown, duplicate and null properties are rejected.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: schema.Examples[0]}}}
+	}
 	if schema := settingsRequestSchema(rt.operationID); schema != nil {
 		registry.Map()[name] = schema
-		return &huma.RequestBody{Required: true, Description: "One JSON object up to 1 MB. Versions are canonical positive int64 strings.", Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: schema.Examples[0]}}}
+		return &huma.RequestBody{Required: true, Description: settingsRequestDescription(rt), Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: schema.Examples[0]}}}
 	}
 	if rt.operationID == replaceUserRolesOperation {
 		schema, example := userRolesRequestSchema(rt)
@@ -122,19 +141,22 @@ func privateRequestBody(registry huma.Registry, rt route) *huma.RequestBody {
 	}
 	schema, example := credentialSchema(rt)
 	description := "One JSON object, at most 4096 bytes. Unknown or duplicate keys, null, incorrect scalar types and trailing JSON are rejected. All listed credential fields are required for a successful command. Missing strings decode as empty strings and fail service checks with the documented generic error; expected_version is a required positive integer. Examples are synthetic."
-	if authTag(rt) == rolesTag && rt.fields == expectedVersionField {
-		schema.Description = "Positive current role version required for this command."
-		schema.Properties[expectedVersionField].Description = "Positive current role version checked under the shared security mutex."
-		description = "One JSON object, at most 4096 bytes, containing only the positive integer expected_version. Duplicate keys, unknown fields and trailing JSON are rejected."
-	} else if authTag(rt) == rolesTag {
-		schema, example = roleRequestSchema(rt.operationID)
-		description = "One JSON object, at most 262144 bytes. Name and complete grants are required, plus positive expected_version for PATCH. Unknown, duplicate and irrelevant keys, including nested grant keys, null, incorrect types and trailing JSON are rejected. Grant shapes are conditional; omitted field_ids means no fields. Examples are synthetic."
-		if rt.operationID == copyRoleOperation {
-			description = "One JSON object, at most 4096 bytes. Supply the new name and positive expected_version of the source role. Unknown or duplicate keys and trailing JSON are rejected."
-		}
+	if authTag(rt) == rolesTag {
+		schema, example, description = roleRequestBodyContract(rt)
 	}
 	registry.Map()[name] = schema
 	return &huma.RequestBody{Required: true, Description: description, Content: map[string]*huma.MediaType{jsonMediaType: {Schema: schemaRef(name), Example: example}}}
+}
+
+func securityPolicyRequestSchema(operationID string) *huma.Schema {
+	switch operationID {
+	case replaceSessionPolicyOperation:
+		return sessionPolicyRequestContract
+	case replaceRatePolicyOperation:
+		return ratePolicyContract
+	default:
+		return nil
+	}
 }
 
 func authSecurity(rt route) []map[string][]string {
@@ -159,7 +181,7 @@ func authSecuritySchemes() map[string]*huma.SecurityScheme {
 	return schemes
 }
 
-const boundaryDescription = "All requests require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one Origin matching that canonical origin, application/json (optionally charset=utf-8), exactly one 43-character X-CSRF-Token, and exactly one matching session cookie. GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Only GET /api/v1/admin/users, GET /api/v1/admin/roles, GET /api/v1/admin/content-types and GET /api/v1/admin/content/{type_key} accept query parameters: one decimal limit and one decimal offset, with no unknown keys; all other query strings are rejected. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
+const boundaryDescription = "Protected administration routes require the configured canonical HTTPS authority, with TLS directly or HTTPS asserted by an explicitly trusted proxy. POST, PUT, PATCH and DELETE require exactly one matching Origin, application/json (optionally charset=utf-8), one 43-character X-CSRF-Token and one matching session cookie. Protected GET accepts that Origin or both Sec-Fetch-Site: same-origin and a same-origin HTTPS Referer. Send only the query parameters documented for the operation. There is no cross-origin CORS access. Responses are Cache-Control: no-store and X-Content-Type-Options: nosniff. Browser-managed Origin, Referer and cookies cannot be forged through Swagger UI; plain HTTP development cannot exercise authentication."
 
 const schemaPrefix = "#/components/schemas/"
 
@@ -292,6 +314,9 @@ func privateSchemas() map[string]*huma.Schema {
 	addAccessReadSetSchemas(schemas)
 	addRoleGrantOptionSchemas(schemas)
 	addSettingsSchemas(schemas)
+	addAdminUISchemas(schemas)
+	schemas[sessionPolicySchema] = sessionPolicyResponseSchema()
+	addRatePolicySchemas(schemas)
 	addLifecycleSchemas(schemas)
 	addRoleSchemas(schemas)
 	addContentMetadataSchemas(schemas)
@@ -402,7 +427,7 @@ func addAuthCookieHeader(rt route, headers map[string]*huma.Param) {
 		return
 	}
 	switch authTag(rt) {
-	case usersTag, rolesTag, contentAssigneesTag, contentDraftTag, settingsTag, registryTag, accountTag:
+	case usersTag, rolesTag, contentAssigneesTag, contentDraftTag, settingsTag, registryTag, accountTag, sessionPolicyTag:
 		return
 	default:
 		headers[setCookieHeader] = sessionCookieHeader()
@@ -410,6 +435,9 @@ func addAuthCookieHeader(rt route, headers map[string]*huma.Param) {
 }
 
 func privateErrorCodes(rt route) map[int][]string {
+	if authTag(rt) == sessionPolicyTag {
+		return securityPolicyErrorCodes(rt)
+	}
 	if rt.operationID == readUserRolesOperation || rt.operationID == readContentAssigneesOperation || rt.operationID == readRoleGrantOptionsOperation {
 		return accessReadSetErrorCodes()
 	}
@@ -481,7 +509,8 @@ func authErrorResponse(rt route, status int, codes []string) *huma.Response {
 		description += authConflictDescription(rt.operationID)
 	case 429:
 		description += authRateDescription(rt)
-		headers["Retry-After"] = &huma.Param{Description: "Fixed retry delay in seconds; obey it before retrying credential checks.", Schema: constantStringSchema("900", "900")}
+		headers["Retry-After"] = &huma.Param{Description: "Seconds until the applicable rolling budget can admit another attempt. Password-processing overload uses a short retry delay.",
+			Schema: &huma.Schema{Type: huma.TypeString, Pattern: `^[1-9][0-9]*$`, Examples: []any{"60"}}}
 	case 503:
 		description += " Security dependencies or credential-check capacity unavailable; fails closed."
 	case 401:
@@ -534,6 +563,8 @@ func authConflictDescription(operationID string) string {
 		return " The expected item version or pinned schema differs. Reload before editing again."
 	case createDraftOperation:
 		return " The expected schema differs from the current collection schema."
+	case replaceSessionPolicyOperation, replaceRatePolicyOperation:
+		return " The expected policy version differs. Reload the current policy before retrying."
 	default:
 		return ""
 	}
@@ -541,18 +572,22 @@ func authConflictDescription(operationID string) string {
 
 func authRateDescription(rt route) string {
 	if rt.operationID == readySharedOperation || rt.operationID == readyLocaleOperation {
-		return " Shared and locale readiness use the same denial budget: 5 per client address in 15 minutes. Publish has a separate operation budget. Both count toward limits of 30 per IP and 100 per installation. Successful commands do not consume denial capacity."
+		return " Shared and locale readiness use the same denial budget per action and client address. Publish has a separate action budget. Both count toward the configured denial audit limits per IP and installation. Successful commands do not consume denial capacity."
 	}
-	if authTag(rt) == usersTag || authTag(rt) == rolesTag || rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag && rt.method != http.MethodGet {
-		return " Denied commands reserve rolling 15-minute audit budgets: 5 per operation and client address, 30 per client IP and 100 per installation. Rotating a forged bearer does not reset this budget. Successful commands do not consume denial capacity."
+	if authTag(rt) == usersTag || authTag(rt) == rolesTag || authTag(rt) == sessionPolicyTag || authTag(rt) == settingsTag ||
+		isRegistryOperation(rt.operationID) || rt.operationID == replaceContentAssigneesOperation || authTag(rt) == contentDraftTag && rt.method != http.MethodGet {
+		return " Denied commands reserve capacity under the installation's audit policy per action and client address, per IP and per installation. Rotating a forged bearer does not reset limits. Successful commands do not consume denial capacity."
 	}
 	if rt.method == http.MethodGet {
-		return " New preauth issuance permits 30 attempts per client IP and 100 per installation in 15 minutes; existing-session CSRF rotation does not consume issuance budget."
+		return " New preauthentication issuance uses the configured limits per client IP and installation. Existing-session CSRF rotation does not consume issuance budget."
 	}
 	if rt.operationID == startEnrollmentOperation {
-		return " Credential checks reserve rolling 15-minute budgets: 5 per onboarding token, 30 per client IP and 100 per installation. Success releases its reservation; failed or interrupted checks retain it."
+		return " Enrollment uses configured credential limits per onboarding token, IP and installation. Successful checks release their reservations. Failed checks retain them for the policy window."
 	}
-	return " Credential checks reserve rolling 15-minute budgets: 5 per account, 30 per client IP and 100 per installation. Success releases its reservation; failed or interrupted checks retain it."
+	if rt.operationID == stepUpOperation {
+		return " Authenticated step-up uses separate rolling limits per account, IP and installation. A current full session and CSRF are required before step-up can reserve capacity."
+	}
+	return " Credential checks use the configured account, IP and installation limits. Successful checks release their reservations. Failed checks retain them for the policy window. Denied administrative actions use a separate audit policy."
 }
 
 func sortedCookieKinds() []string {
@@ -562,37 +597,6 @@ func sortedCookieKinds() []string {
 	}
 	slices.Sort(kinds)
 	return kinds
-}
-
-func privateRoutes() map[string][]route {
-	all := make(map[string][]route, len(routes)+len(userRoutes))
-	for path, rt := range routes {
-		all[authPrefix+path] = []route{rt}
-	}
-	for path, methods := range userRoutes {
-		all[path] = methods
-	}
-	for path, methods := range roleRoutes {
-		all[path] = methods
-	}
-	all[roleGrantOptionsPath] = []route{readRoleGrantOptionsRoute}
-	all[contentAssigneesPath] = []route{readContentAssigneesRoute, replaceContentAssigneesRoute}
-	all[createDraftPath] = collectionDraftRoutes
-	all[contentDraftPath] = itemDraftRoutes
-	all[contentCollectionsPath] = []route{listCollectionsRoute, registryCreateRoute}
-	all[registryCollectionPath] = []route{registryReadRoute, registryReviseRoute}
-	all[registryRenderersPath] = []route{registryRendererRoute}
-	all[draftMetadataPath] = []route{readDraftMetadataRoute}
-	for path, rt := range draftCandidateRoutes {
-		all[path] = []route{rt}
-	}
-	for path, methods := range settingsRoutes {
-		all[path] = methods
-	}
-	for path, rt := range accountRoutes {
-		all[path] = []route{rt}
-	}
-	return all
 }
 
 func responseDTOSchema(description string, example any) *huma.Schema {
@@ -620,6 +624,8 @@ func authTags() []*huma.Tag {
 		{Name: rolesTag, Description: "Authorized role policy reads, disabled creation, explicit-grant replacement, copying, versioned state transitions and deletion."},
 		{Name: contentAssigneesTag, Description: "Versioned replacement of explicit content item assignees."},
 		{Name: settingsTag, Description: "Authorized editing and atomic publication of installation settings and interface translations."},
+		{Name: adminUITag, Description: "Published interface texts for administration entry and the authenticated workspace."},
+		{Name: sessionPolicyTag, Description: "Installation-wide session lifetime and attempt limit policies."},
 		{Name: contentDraftTag, Description: "Empty draft creation, projected reads, versioned editing, readiness and publication when the installation enables its draft editor."},
 		{Name: registryTag, Description: "Managed collection schemas and explicit initial field access."},
 	}
@@ -636,7 +642,7 @@ func authTag(rt route) string {
 		return rolesTag
 	}
 	switch rt.operationID {
-	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, copyRoleOperation, deleteRoleOperation, readRoleGrantOptionsOperation:
+	case listRolesOperation, getRoleOperation, createRoleOperation, editRoleOperation, changeRoleOperation, roleDisplayNameOperation, copyRoleOperation, deleteRoleOperation, readRoleGrantOptionsOperation:
 		return rolesTag
 	case createUserOperation, issueOnboardingOperation, listUsersOperation, getUserOperation, activateUserOperation, disableUserOperation, readUserRolesOperation, replaceUserRolesOperation:
 		return usersTag
@@ -644,8 +650,10 @@ func authTag(rt route) string {
 		return contentAssigneesTag
 	case createDraftOperation, listDraftsOperation, listCollectionsOperation, readDraftMetadataOperation, readDraftOperation, saveDraftOperation, readySharedOperation, readyLocaleOperation, publishOperation, adoptSchemaOperation, unpublishOperation:
 		return contentDraftTag
-	case readSettingsOperation, saveSettingsOperation, publishSettingsOperation:
+	case readSettingsOperation, applySettingsOperation, appearanceSettingsOperation, languageFlagSettingsOperation, portalDetailsSettingsOperation, localeDefaultsSettingsOperation, slugRulesSettingsOperation, catalogSettingsOperation, readLanguagesOperation, readLanguageDefinitionOperation, saveLanguageOperation, languageAvailabilityOperation:
 		return settingsTag
+	case readSessionPolicyOperation, replaceSessionPolicyOperation, readRatePoliciesOperation, replaceRatePolicyOperation:
+		return sessionPolicyTag
 	case recoverOperation, completeRecoveryOperation, cancelRecoveryOperation:
 		return "account-recovery"
 	case startEnrollmentOperation, completeEnrollmentOperation:
@@ -661,7 +669,7 @@ func domainSuccessDescription(rt route) string {
 		return roleSuccessDescription(rt)
 	case usersTag:
 		return userSuccessDescription(rt)
-	case settingsTag:
+	case settingsTag, sessionPolicyTag:
 		return rt.summary + "."
 	case contentDraftTag:
 		return draftSuccessDescription(rt.operationID)

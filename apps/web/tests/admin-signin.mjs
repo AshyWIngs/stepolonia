@@ -1,19 +1,17 @@
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { chromium } from 'playwright'
-import { eachInOrder, verifyAccessAdministration } from './admin-access.mjs'
+import { verifyAccessAdministration, waitForContentMutation } from './admin-access.mjs'
+import { admin, assertFit, assertTheme, heading, origin, verifyScopedSaveButton } from './admin-browser-helpers.mjs'
+import { verifyContentWorkflow, verifyEditorialNavigation } from './admin-editorial.mjs'
+import { assertPublishedLocales, verifyCompactNavigation, verifyNestedNavigation, verifyWorkspaceGeometry } from './admin-layout.mjs'
+import { signInAfterAnotherTabRefreshesPreauth } from './admin-preauth.mjs'
+import { verifyCustomCollection, verifyTypeBuilder } from './admin-registry.mjs'
+import { verifyCatalogConflictAfterDirectorySave, verifyLanguageFlagSettings, verifySettingsSave, verifySlugRuleSettings, verifyTextSearchAfterResize } from './admin-settings.mjs'
+import { chooseTheme } from './header-preferences.mjs'
 
-const endpoint = new URL(process.env.QA_ADMIN_ORIGIN)
-assert.equal(endpoint.protocol, 'https:')
-assert.equal(endpoint.hostname, '127.0.0.1')
-const { origin } = endpoint
-const admin = new URL('/admin', origin).href
 const authPath = '/api/v1/admin/auth/'
 const sessionCookie = '__Host-sp_session'
-
-function heading(page, name) {
-  return page.getByRole('heading', { name, exact: true })
-}
 
 function waitForAuth(page, action, status) {
   return page.waitForResponse(response => {
@@ -22,32 +20,11 @@ function waitForAuth(page, action, status) {
   })
 }
 
-async function assertFit(page) {
-  const fits = await page.evaluate(() =>
-    document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-  )
-  assert.ok(fits, 'The admin sign-in page must fit without horizontal scrolling')
-}
-
-async function assertTheme(page, preference, actual) {
-  await page.waitForFunction(({ preference, actual }) => {
-    const shell = document.querySelector('.admin-shell')
-    const card = document.querySelector('.admin-card')
-    const shellColor = actual === 'dark' ? 'rgb(20, 28, 26)' : 'rgb(241, 244, 240)'
-    const cardColor = actual === 'dark' ? 'rgb(28, 42, 37)' : 'rgb(255, 255, 255)'
-    return document.documentElement.dataset.adminTheme === preference &&
-      getComputedStyle(document.documentElement).colorScheme === actual &&
-      shell && getComputedStyle(shell).backgroundColor === shellColor &&
-      card && getComputedStyle(card).backgroundColor === cardColor
-  }, { preference, actual })
-}
-
 async function assertLayouts(page) {
-  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
   const verifyViewport = async (width, height) => {
     await page.setViewportSize({ width, height })
     const verifyTheme = async value => {
-      await theme.selectOption(value)
+      await chooseTheme(page, value)
       await assertTheme(page, value, value)
       await assertFit(page)
       assert.ok(await page.getByRole('button', { name: 'Continue', exact: true }).isVisible())
@@ -64,7 +41,7 @@ async function assertLayouts(page) {
   await page.reload()
   await heading(page, 'Sign in').waitFor()
   await assertTheme(page, 'dark', 'dark')
-  await theme.selectOption('system')
+  await chooseTheme(page, 'system')
   await page.emulateMedia({ colorScheme: 'dark' })
   await assertTheme(page, 'system', 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
@@ -88,12 +65,16 @@ async function signIn(page, context) {
   await page.getByRole('alert').waitFor()
   await heading(page, 'Sign in').waitFor()
   assert.equal(await password.inputValue(), '')
-  await password.fill(process.env.QA_ADMIN_PASSWORD)
-  const login = waitForAuth(page, 'login', 200)
-  await password.press('Enter')
-  await login
-  const mfaHeading = heading(page, 'Two-step verification')
-  await mfaHeading.waitFor()
+  await loginField.evaluate((element, credentials) => {
+    element.value = credentials.login
+    element.form.elements.namedItem('password').value = credentials.password
+  }, { login: process.env.QA_ADMIN_LOGIN, password: process.env.QA_ADMIN_PASSWORD })
+  await signInAfterAnotherTabRefreshesPreauth(page, async () => {
+    const login = waitForAuth(page, 'login', 200)
+    await password.press('Enter')
+    await login
+    await heading(page, 'Two-step verification').waitFor()
+  })
   await page.waitForFunction(() => document.activeElement === document.querySelector('main h1'))
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 
@@ -121,63 +102,22 @@ async function signIn(page, context) {
   return cookie
 }
 
-async function readPublicSite(context) {
-  const result = await context.request.get(new URL('/api/v1/site?lang=en', origin).href)
-  assert.equal(result.status(), 200)
-  return result.json()
-}
-
-async function verifySettingsPublication(page, context) {
-  const oldSite = await readPublicSite(context)
-  const newTitle = 'Polacy w Kazachstanie'
-  const newMessage = 'Enter your code to open the community portal.'
-  await page.getByRole('button', { name: 'Portal settings', exact: true }).click()
-  const portalName = page.getByLabel('Portal name', { exact: true })
-  assert.equal(await portalName.inputValue(), oldSite.settings.title)
-  const message = page.getByLabel('admin.code_help', { exact: true })
-  assert.equal(await message.inputValue(), oldSite.messages['admin.code_help'])
-  await page.setViewportSize({ width: 320, height: 844 })
-  await assertFit(page)
-  await portalName.fill(newTitle)
-  await message.fill('   ')
-  const saveDraft = page.getByRole('button', { name: 'Save draft', exact: true })
-  const publishDraft = page.getByRole('button', { name: 'Publish draft', exact: true })
-  const confirmation = page.getByRole('region', { name: 'Publish the saved settings and interface texts?', exact: true })
-  await saveDraft.click()
-  await page.getByText('Draft saved.', { exact: true }).waitFor()
-  await publishDraft.click()
-  const messageAlert = page.getByRole('alert')
-  await messageAlert.waitFor()
-  assert.equal(await messageAlert.textContent(), 'Check the portal fields and complete each selected translation.')
-  assert.equal(await confirmation.count(), 0)
-  assert.deepEqual(await readPublicSite(context), oldSite)
-
-  await message.fill(newMessage)
-  await saveDraft.click()
-  await page.getByText('Draft saved.', { exact: true }).waitFor()
-  assert.deepEqual(await readPublicSite(context), oldSite)
-
-  await publishDraft.click()
-  await confirmation.getByText(newTitle, { exact: true }).waitFor()
-  await confirmation.getByRole('button', { name: 'Publish draft', exact: true }).click()
-  await page.getByText('Settings published.', { exact: true }).waitFor()
-  await page.locator('.admin-name').getByText(newTitle, { exact: false }).waitFor()
-  const published = await readPublicSite(context)
-  assert.notEqual(published.version, oldSite.version)
-  assert.equal(published.settings.title, newTitle)
-  assert.equal(published.messages['admin.code_help'], newMessage)
-  const document = await page.reload()
-  assert.equal(document.status(), 200)
-  assert.match(await document.text(), /Polacy w Kazachstanie/u)
-  await heading(page, 'Signed in').waitFor()
-}
-
 async function signOut(page, context, revokedCookie) {
+  const peer = await context.newPage()
+  await peer.goto(admin)
+  await peer.locator('.admin-navigation').waitFor()
+  // Session restoration rotates CSRF. Refresh the tab that performs logout.
+  await page.reload()
   const logout = waitForAuth(page, 'logout', 204)
   await page.getByRole('button', { name: 'Sign out', exact: true }).click()
   await logout
   await heading(page, 'Sign in').waitFor()
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
+
+  await peer.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await heading(peer, 'Sign in').waitFor()
+  assert.equal(await peer.locator('.admin-navigation').count(), 0)
+  await peer.close()
 
   // Simulate a browser that still has a previously valid cookie after revocation.
   await context.clearCookies()
@@ -189,129 +129,74 @@ async function signOut(page, context, revokedCookie) {
   assert.ok(!(await context.cookies(origin)).some(cookie => cookie.name === sessionCookie))
 }
 
-async function verifyTypeBuilder(page) {
-  await page.getByRole('button', { name: 'Type Builder', exact: true }).click()
-  const renderer = page.getByRole('combobox', { name: 'Renderer and collection', exact: true })
-  await renderer.selectOption('event')
-  const initial = page.getByRole('checkbox', { name: 'Grant me access to this new collection', exact: true })
-  assert.equal(await initial.isChecked(), false)
-  await initial.check()
-  await page.getByRole('button', { name: 'Create collection', exact: true }).click()
-  await page.getByText('Collection created.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Add optional field', exact: true }).click()
-  await page.getByLabel('Field key', { exact: true }).fill('subtitle')
-  await page.getByRole('checkbox', { name: 'Extend my existing access to the new fields', exact: true }).check()
-  await page.getByRole('button', { name: 'Save schema changes', exact: true }).click()
-  await page.getByText('Current schema 2', { exact: true }).waitFor()
-  await page.getByText('Collection changes saved.', { exact: true }).waitFor()
-  const articleSchema = '**/api/v1/admin/content-types/article'
-  await page.route(articleSchema, route => route.fulfill({ status: 503, json: { code: 'security_unavailable' } }))
-  await renderer.selectOption('article')
-  await page.getByRole('alert').waitFor()
-  assert.equal(await page.getByRole('button', { name: 'Save schema changes', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Create collection', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
-  await page.unroute(articleSchema)
-  await page.getByRole('button', { name: 'Reload collection', exact: true }).click()
-  await page.getByRole('group', { name: 'title', exact: true }).waitFor()
-  assert.equal(await page.getByRole('group', { name: 'subtitle', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+async function verifySessionPolicy(page) {
+  const action = name => page.getByRole('button', { name, exact: true })
+  await page.locator('header').getByRole('button', { name: 'My account', exact: true }).click()
+  await heading(page, 'Active sessions').waitFor()
+  await action('Access').click()
+  await action('Security').click()
+  const idle = page.getByLabel('Inactivity limit (minutes)', { exact: true })
+  const absolute = page.getByLabel('Maximum session length (hours)', { exact: true })
+  assert.equal(await idle.inputValue(), '30')
+  assert.equal(await absolute.inputValue(), '12')
+  await idle.fill('45')
+  await absolute.fill('8')
+  const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/admin/security/session-policy' &&
+    response.request().method() === 'PUT' && response.status() === 200)
+  await action('Save session policy').click()
+  const policy = await (await saved).json()
+  assert.equal(policy.idle_timeout_minutes, 45)
+  assert.equal(policy.absolute_timeout_hours, 8)
+  await page.getByText('Session policy saved.', { exact: true }).waitFor()
 }
 
-async function verifyContentWorkflow(page, context, { type, namespace, slug, title, checkLayout = false }) {
-  await page.getByRole('button', { name: 'Content', exact: true }).click()
-  const collection = page.getByRole('combobox', { name: 'Collection', exact: true })
-  await collection.selectOption(type)
-  const create = page.getByRole('button', { name: 'Create draft', exact: true, disabled: false })
-  await create.waitFor()
-  await create.focus()
-  await page.keyboard.press('Enter')
-  const editor = page.getByRole('region', { name: 'Draft editor', exact: true })
-  await editor.getByLabel(/^title(?: \(|$)/).waitFor()
-  await editor.getByLabel(/^title(?: \(|$)/).fill(title)
-  await editor.getByLabel(/^slug(?: \(|$)/).fill(slug)
-  const bodyField = editor.getByLabel(/^body(?: \(|$)/)
-  if (await bodyField.count()) await bodyField.fill('An editorial draft.')
-  const optionalField = editor.getByLabel('subtitle', { exact: true })
-  if (await optionalField.count()) await optionalField.fill('Private editor text.')
-  if (checkLayout) await assertEditorLayouts(page, editor)
-  await editor.getByRole('button', { name: 'Save draft', exact: true }).click()
-  await editor.getByText('Draft saved.', { exact: true }).waitFor()
-
-  const apiPath = `/api/v1/content/${type}/${slug}?language=en`
-  const publicPath = `/en/${namespace}/${slug}`
-  const request = path => context.request.get(new URL(path, origin).href)
-  assert.equal((await request(apiPath)).status(), 404)
-  await editor.getByRole('button', { name: 'Mark shared fields ready', exact: true }).click()
-  await editor.getByText('Shared fields are ready.', { exact: true }).waitFor()
-  await editor.getByRole('button', { name: 'Mark translation ready', exact: true }).click()
-  await editor.getByText('This translation is ready.', { exact: true }).waitFor()
-
-  await editor.getByRole('button', { name: 'Publish translations', exact: true }).click()
-  const publish = editor.getByRole('region', { name: 'Publish the selected translations?', exact: true })
-  await publish.getByRole('button', { name: 'Confirm', exact: true }).click()
-  const link = editor.getByRole('link', { name: publicPath, exact: true })
-  await link.waitFor()
-  assert.equal(await link.getAttribute('href'), publicPath)
-  const published = await request(apiPath)
-  assert.equal(published.status(), 200)
-  const body = await published.json()
-  assert.equal(body.localized.title.value, title)
-  assert.equal(Object.hasOwn(body.localized, 'subtitle'), false)
-  const rendered = await request(publicPath)
-  assert.equal(rendered.status(), 200)
-  assert.ok((await rendered.text()).includes(title))
-
-  await editor.getByRole('button', { name: 'Unpublish', exact: true }).click()
-  const removal = editor.getByRole('region', { name: 'Remove this publication and clear readiness?', exact: true })
-  await removal.getByRole('button', { name: 'Confirm', exact: true }).click()
-  await editor.getByText('Publication removed.', { exact: true }).waitFor()
-  assert.equal((await request(apiPath)).status(), 404)
-  assert.equal((await request(publicPath)).status(), 404)
-  await editor.getByRole('button', { name: 'Back to drafts', exact: true }).click()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+async function verifyRatePolicy(page) {
+  const section = page.getByRole('button', { name: 'Rate limits', exact: true })
+  await section.click()
+  await page.waitForURL(url => url.searchParams.get('section') === 'access' && url.searchParams.get('view') === 'rate_limits')
+  await page.reload()
+  const credentials = page.locator('form[data-rate-scope="credentials"]')
+  const preauth = page.locator('form[data-rate-scope="preauth"]')
+  const activeWindow = credentials.locator('input[name="window_seconds"]')
+  const otherWindow = preauth.locator('input[name="window_seconds"]')
+  const save = credentials.locator('button[type="submit"]')
+  await verifyScopedSaveButton(save, 'input[name="window_seconds"]')
+  assert.equal(await section.getAttribute('aria-current'), 'page')
+  const original = await activeWindow.inputValue()
+  const other = await otherWindow.inputValue()
+  await otherWindow.fill(String(Number(other) + 1))
+  await activeWindow.fill(String(Number(original) + 1))
+  const saveBeforeHover = await save.evaluate(button => getComputedStyle(button).boxShadow)
+  await save.hover()
+  await page.waitForFunction((before) => {
+    const button = document.querySelector('form[data-rate-scope="credentials"] button[type="submit"]')
+    return button && getComputedStyle(button).boxShadow !== before
+  }, saveBeforeHover)
+  const path = '/api/v1/admin/security/rate-policy'
+  const saved = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  const updated = await (await saved).json()
+  assert.equal(updated.scope, 'credentials')
+  assert.equal(updated.window_seconds, Number(original) + 1)
+  assert.equal(await otherWindow.inputValue(), String(Number(other) + 1))
+  await otherWindow.fill(other)
+  await activeWindow.fill(original)
+  const restored = waitForContentMutation(page, path, 'POST', 200)
+  await save.click()
+  assert.equal((await (await restored).json()).window_seconds, Number(original))
 }
 
-async function assertEditorLayouts(page, editor) {
-  const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
-  const verifyViewport = async (width, height) => {
-    await page.setViewportSize({ width, height })
-    const verifyTheme = async value => {
-      await theme.selectOption(value)
-      await assertTheme(page, value, value)
-      await assertFit(page)
-      assert.ok(await editor.getByRole('button', { name: 'Save draft', exact: true }).isVisible())
-      console.log(`Draft editor visible at ${width}×${height} in ${value} mode`)
-    }
-    await verifyTheme('light')
-    await verifyTheme('dark')
-  }
-  await verifyViewport(1440, 900)
-  await verifyViewport(768, 1024)
-  await verifyViewport(390, 844)
-  await page.setViewportSize({ width: 320, height: 844 })
-  await assertFit(page)
-}
-
-async function assertPublishedLocales(page) {
-  await heading(page, 'Sign in').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'en')
-  const language = page.getByRole('combobox', { name: 'Language', exact: true })
-  assert.deepEqual(await language.getByRole('option').evaluateAll(options => options.map(option => option.value)), ['en', 'kk', 'pl', 'ru'])
-  await eachInOrder([['kk', 'Кіру'], ['ru', 'Вход'], ['pl', 'Zaloguj się']], async ([locale, name]) => {
-    await page.locator('#admin-language').selectOption(locale)
-    await heading(page, name).waitFor()
-    await page.waitForFunction(value => document.documentElement.lang === value, locale)
-  })
-  const localized = await page.reload()
-  assert.equal(localized.status(), 200)
-  assert.match(await localized.text(), /<html[^>]+lang="pl"/u)
-  await heading(page, 'Zaloguj się').waitFor()
-  const polish = page.getByRole('combobox', { name: 'Język', exact: true })
-  assert.equal(await polish.inputValue(), 'pl')
-  await polish.selectOption('en')
-  await heading(page, 'Sign in').waitFor()
-  await page.waitForFunction(() => document.documentElement.lang === 'en')
+async function verifyPermissionTextNavigation(page) {
+  await page.getByRole('button', { name: 'Roles', exact: true }).click()
+  await page.getByRole('button', { name: 'Translate permission labels', exact: true }).click()
+  await page.waitForURL(url => url.searchParams.get('view') === 'translations' && url.searchParams.get('group') === 'permissions')
+  await page.reload()
+  const group = page.locator('#portal-message-group')
+  await group.waitFor()
+  assert.equal(await group.inputValue(), 'permissions')
+  const search = page.locator('#portal-message-search')
+  await search.fill('admin.permission.audit.read')
+  await page.getByRole('button', { name: 'Read the audit log', exact: true }).waitFor()
 }
 
 const browser = await chromium.launch()
@@ -324,12 +209,32 @@ try {
   const document = await page.goto(admin)
   assert.equal(document.status(), 200)
   assert.match(document.headers()['cache-control'], /no-store/u)
+  const entryHTML = await document.text()
+  assert.match(entryHTML, /admin\.sign_in/u)
+  assert.doesNotMatch(entryHTML, /admin\.leave_unsaved|slug_rules/u)
+  const publicHTML = await context.request.get(origin)
+  assert.equal(publicHTML.status(), 200)
+  assert.doesNotMatch(await publicHTML.text(), /admin\.sign_in|admin\.leave_unsaved|slug_rules/u)
+  const negotiated = await context.request.get(admin, { headers: { 'Accept-Language': 'kk-KZ, en;q=0.5' } })
+  assert.match(await negotiated.text(), /<html[^>]+lang="kk"/u)
   await assertPublishedLocales(page)
   const cookie = await signIn(page, context)
-  await verifySettingsPublication(page, context)
+  await verifyWorkspaceGeometry(page)
+  await verifyCompactNavigation(page)
+  await verifySessionPolicy(page)
+  await verifyRatePolicy(page)
+  await verifyPermissionTextNavigation(page)
+  await verifyNestedNavigation(page)
+  await verifyTextSearchAfterResize(page)
+  await verifySettingsSave(page, context)
+  await verifyCatalogConflictAfterDirectorySave(page, context)
+  await verifySlugRuleSettings(page, context)
+  await verifyLanguageFlagSettings(page, context)
   await verifyTypeBuilder(page)
-  await verifyContentWorkflow(page, context, { type: 'article', namespace: 'articles', slug: 'portal-workflow', title: 'Portal workflow verification', checkLayout: true })
-  await verifyContentWorkflow(page, context, { type: 'event', namespace: 'events', slug: 'community-workshop', title: 'Community workshop' })
+  await verifyContentWorkflow(page, context, { type: 'article', label: 'Article', namespace: 'articles', slugBase: 'portal-workflow-verification', title: 'Portal workflow verification', checkLayout: true })
+  await verifyContentWorkflow(page, context, { type: 'event', label: 'Event', namespace: 'events', slugBase: 'community-workshop', title: 'Community workshop' })
+  await verifyCustomCollection(page, context)
+  await verifyEditorialNavigation(page)
   await verifyAccessAdministration(browser, page, origin, assertTheme, assertFit)
   await signOut(page, context, cookie)
   await assertLayouts(page)
