@@ -17,6 +17,7 @@ RUN apk upgrade --no-cache \
         'libcrypto3>=3.5.9-r1' \
         libpq=18.7-r0 \
         'libssl3>=3.5.9-r1' \
+        'libxml2>=2.13.9-r3' \
         postgresql18-client=18.7-r0 \
         postgresql18-contrib-jit=18.7-r0 \
         postgresql18-contrib=18.7-r0 \
